@@ -1,0 +1,63 @@
+import { fireEvent, render, screen } from '@testing-library/react-native';
+import { Button, Text, View } from 'react-native';
+import { createMMKV, MMKV } from 'react-native-mmkv';
+
+import { ThemeProvider, useTheme } from '@/theme';
+
+function TestChildComponent() {
+  const { changeTheme, variant } = useTheme();
+  return (
+    <View>
+      <Text testID="theme-variant">{variant}</Text>
+      <Button
+        onPress={() => {
+          changeTheme('dark');
+        }}
+        testID="change-btn"
+        title="button"
+      />
+    </View>
+  );
+}
+
+describe('ThemeProvider', () => {
+  let storage: MMKV;
+
+  beforeEach(() => {
+    storage = createMMKV();
+  });
+
+  it('initializes with the default theme when no theme is defined in storage', () => {
+    render(
+      <ThemeProvider storage={storage}>
+        <TestChildComponent />
+      </ThemeProvider>,
+    );
+    expect(screen.getByText('default')).toBeTruthy();
+  });
+
+  it('loads the theme from storage if defined', () => {
+    storage.set('theme', 'dark');
+
+    render(
+      <ThemeProvider storage={storage}>
+        <TestChildComponent />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByText('dark')).toBeTruthy();
+  });
+
+  it('changes the theme when calling changeTheme', () => {
+    render(
+      <ThemeProvider storage={storage}>
+        <TestChildComponent />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByText('default')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('change-btn'));
+
+    expect(screen.getByText('dark')).toBeTruthy();
+  });
+});
