@@ -1,61 +1,59 @@
 import { Image } from 'expo-image';
 import * as SplashScreen from 'expo-splash-screen';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
-import Animated, { Easing, Keyframe } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  Keyframe,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
+const FADE_DELAY = DURATION * 0.2;
+const FADE_DURATION = DURATION * 0.5;
+
+let hasPlayedSplashIntro = false;
 
 export function AnimatedSplashOverlay() {
-  const [animate, setAnimate] = useState(false);
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(!hasPlayedSplashIntro);
+  const started = useRef(false);
+  const opacity = useSharedValue(1);
+
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  useEffect(() => {
+    if (!visible) {
+      hasPlayedSplashIntro = true;
+    }
+  }, [visible]);
 
   if (!visible) return null;
 
-  const splashKeyframe = new Keyframe({
-    0: {
-      transform: [{ scale: 1 }],
-      opacity: 1,
-    },
-    20: {
-      opacity: 1,
-    },
-    70: {
-      opacity: 0,
-      easing: Easing.elastic(0.7),
-    },
-    100: {
-      opacity: 0,
-      transform: [{ scale: 1 }],
-      easing: Easing.elastic(0.7),
-    },
-  });
+  const startFadeOut = () => {
+    if (started.current) return;
+    started.current = true;
+    SplashScreen.hideAsync().finally(() => {
+      opacity.value = withDelay(
+        FADE_DELAY,
+        withTiming(0, { duration: FADE_DURATION, easing: Easing.out(Easing.quad) }, (finished) => {
+          'worklet';
+          if (finished) {
+            scheduleOnRN(setVisible, false);
+          }
+        }),
+      );
+    });
+  };
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
-
-  return animate ? (
-    <Animated.View
-      entering={splashKeyframe.duration(DURATION).withCallback((finished) => {
-        'worklet';
-        if (finished) {
-          scheduleOnRN(setVisible, false);
-        }
-      })}
-      style={styles.splashOverlay}>
-      {image}
+  return (
+    <Animated.View onLayout={startFadeOut} style={[styles.splashOverlay, fadeStyle]}>
+      <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
     </Animated.View>
-  ) : (
-    <View
-      onLayout={() => {
-        SplashScreen.hideAsync().finally(() => {
-          setAnimate(true);
-        });
-      }}
-      style={styles.splashOverlay}>
-      {image}
-    </View>
   );
 }
 

@@ -1,60 +1,85 @@
-import { View, Text, TextInput as RNTextInput, type TextInputProps } from "react-native";
-import { cn } from "@/utils/cn";
+import { useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  TextInput as RNTextInput,
+  View,
+  type TextInputProps,
+} from 'react-native';
+
+import { colors } from '@/constants/colors';
+import { fonts, radius } from './tokens';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   helper?: string;
-  containerClassName?: string;
 }
 
-export function TextInput({
-  label,
-  error,
-  helper,
-  containerClassName,
-  className,
-  ...props
-}: InputProps) {
+export function TextInput({ label, error, helper, style, onFocus, onBlur, ...props }: InputProps) {
+  const [focused, setFocused] = useState(false);
+  const c = colors.light;
+
   return (
-    <View className={cn("mb-4", containerClassName)}>
-      {label && (
-        <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {label}
-        </Text>
-      )}
+    <View style={styles.container}>
+      {label != null && <Text style={styles.label}>{label}</Text>}
       <RNTextInput
-        className={cn(
-          "w-full border rounded-lg px-4 py-3 text-gray-900 dark:text-white bg-white dark:bg-gray-800",
-          error
-            ? "border-red-500 dark:border-red-400"
-            : "border-gray-300 dark:border-gray-600",
-          className,
-        )}
-        placeholderTextColor="#9ca3af"
-        accessible
+        style={[
+          styles.input,
+          focused && { borderColor: c.accent },
+          error != null && { borderColor: c.accent },
+          style,
+        ]}
+        placeholderTextColor={c.placeholder}
+        onFocus={(e) => {
+          setFocused(true);
+          onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          onBlur?.(e);
+        }}
         accessibilityLabel={label}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${label}-error` : helper ? `${label}-helper` : undefined}
         {...props}
       />
-      {error && (
-        <Text
-          className="text-red-500 dark:text-red-400 text-xs mt-1"
-          nativeID={`${label}-error`}
-          accessibilityRole="alert"
-        >
+      {error != null ? (
+        <Text style={[styles.helper, styles.error]} accessibilityRole="alert">
           {error}
         </Text>
-      )}
-      {helper && !error && (
-        <Text
-          className="text-gray-500 dark:text-gray-400 text-xs mt-1"
-          nativeID={`${label}-helper`}
-        >
-          {helper}
-        </Text>
-      )}
+      ) : helper != null ? (
+        <Text style={styles.helper}>{helper}</Text>
+      ) : null}
     </View>
   );
 }
+
+const c = colors.light;
+
+const styles = StyleSheet.create({
+  container: { alignSelf: 'stretch' },
+  label: {
+    fontFamily: fonts.sans,
+    fontWeight: '500',
+    fontSize: 13,
+    color: c.textSecondary,
+    marginBottom: 6,
+  },
+  input: {
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    color: c.text,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 16,
+    height: 50,
+  },
+  helper: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: c.textSecondary,
+    marginTop: 6,
+  },
+  error: { color: c.accentText },
+});

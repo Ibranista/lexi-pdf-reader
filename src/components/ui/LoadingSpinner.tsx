@@ -1,33 +1,42 @@
-import { View, ActivityIndicator, Text } from "react-native";
-import { cn } from "@/utils/cn";
+import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+
+import { colors } from '@/constants/colors';
+import { fonts } from './tokens';
 
 interface LoadingSpinnerProps {
-  size?: "small" | "large";
+  size?: 'small' | 'large';
   color?: string;
   label?: string;
-  className?: string;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function LoadingSpinner({
-  size = "large",
-  color = "#f4511e",
+  size = 'large',
+  color = colors.light.accent,
   label,
-  className,
+  style,
 }: LoadingSpinnerProps) {
   return (
     <View
-      className={cn("items-center justify-center", className)}
-      accessible
-      accessibilityLabel={label ?? "Loading"}
+      style={[styles.container, style]}
       accessibilityRole="progressbar"
-      aria-busy
+      accessibilityLabel={label ?? 'Loading'}
     >
       <ActivityIndicator size={size} color={color} />
-      {label && (
-        <Text className="mt-2 text-gray-500 dark:text-gray-400 text-sm">
-          {label}
-        </Text>
-      )}
+      {label != null && <Text style={styles.label}>{label}</Text>}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.light.textSecondary,
+    marginTop: 8,
+  },
+});
