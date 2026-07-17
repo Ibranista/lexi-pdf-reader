@@ -1,0 +1,87 @@
+{
+    "steps": [
+        {
+            "title": "What type of reader are you?",
+            "subtitle": "This only sets calm defaults. You can change anything later.",
+            "ctaLabel": "Continue"
+        },
+        {
+            "title": "What helps you read better?",
+            "subtitle": "Pick as many as you like.",
+            "ctaLabel": "Set up my reader"
+        },
+        {
+            "title": "Your reader is ready",
+            "subtitle": "Set from your answers — change anything in Settings.",
+            "ctaLabel": "Start reading"
+        }
+    ],
+    "readerTypes": {
+        "student": {
+            "title": "Student",
+            "description": "Textbooks, lectures, exam prep",
+            "summary": {
+                "title": "Set up for students",
+                "description": "Calm defaults for textbooks, lectures and exam prep"
+            }
+        },
+        "researcher": {
+            "title": "Researcher",
+            "description": "Papers, citations, deep reading",
+            "summary": {
+                "title": "Set up for researchers",
+                "description": "Calm defaults for papers, citations and deep reading"
+            }
+        },
+        "professional": {
+            "title": "Professional",
+            "description": "Docs, reports, contracts",
+            "summary": {
+                "title": "Set up for professionals",
+                "description": "Calm defaults for docs, reports and contracts"
+            }
+        },
+        "casual": {
+            "title": "Casual reader",
+            "description": "Books, articles, curiosity",
+            "summary": {
+                "title": "Set up for casual reading",
+                "description": "Calm defaults for books, articles and curiosity"
+            }
+        }
+    },
+    "readingHelps": {
+        "focus": {
+            "title": "Staying focused",
+            "description": "Focus mode & gentle sessions turned on",
+            "summary": {
+                "title": "Focus reminders on",
+                "description": "Gentle nudges to keep your momentum"
+            }
+        },
+        "explain": {
+            "title": "Understanding difficult concepts",
+            "description": "\"Explain this\" close at hand",
+            "summary": {
+                "title": "\"Explain this\" close at hand",
+                "description": "One tap on any selection, at your level"
+            }
+        },
+        "remember": {
+            "title": "Remembering information",
+            "description": "Highlights become gentle review cards",
+            "summary": {
+                "title": "Highlights become review cards",
+                "description": "Gentle spaced review — no scores"
+            }
+        },
+        "organize": {
+            "title": "Organizing notes",
+            "description": "Collections & auto-filing set up for you",
+            "summary": {
+                "title": "Auto-filing switched on",
+                "description": "New PDFs get a suggested collection"
+            }
+        }
+    }
+}

@@ -33,6 +33,7 @@
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "^57.0.1",
     "expo-font": "~57.0.0",
+    "expo-gl": "~57.0.2",
     "expo-glass-effect": "~57.0.0",
     "expo-haptics": "~57.0.1",
     "expo-image": "~57.0.0",
@@ -62,6 +63,7 @@
     "react-i18next": "^15.4.1",
     "react-native": "0.86.0",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-heroicons": "^4.0.0",
     "react-native-keyboard-controller": "1.21.9",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-mmkv": "^4.3.1",
@@ -79,12 +81,15 @@
     "styled-components": "^6.4.2",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^3.4.17",
+    "three": "^0.162.0",
     "toastify-react-native": "^7.2.3",
     "zod": "^3.24.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@types/three": "^0.162.0",
+    "eslint-config-expo": "~57.0.0",
     "expo-module-scripts": "^56.0.3",
     "typescript": "~6.0.3"
   },

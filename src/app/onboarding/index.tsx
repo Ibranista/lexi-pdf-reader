@@ -1,14 +1,14 @@
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 
 import { OnboardingScreen, READER_TYPE_ICONS } from '@/components/onboarding';
 import { Button, SelectRow } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import { ONBOARDING_STEPS, READER_TYPE_OPTIONS } from '@/constants/onboarding';
+import { READER_TYPE_IDS } from '@/constants/onboarding';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 
-const STEP = ONBOARDING_STEPS[0];
-
 export default function ReaderTypeScreen() {
+  const { t } = useTranslation('onboarding');
   const readerType = useOnboardingStore((s) => s.readerType);
   const selectReaderType = useOnboardingStore((s) => s.selectReaderType);
   const completeOnboarding = useOnboardingStore((s) => s.completeOnboarding);
@@ -21,25 +21,25 @@ export default function ReaderTypeScreen() {
   return (
     <OnboardingScreen
       stepIndex={0}
-      title={STEP.title}
-      subtitle={STEP.subtitle}
+      title={t('steps.0.title')}
+      subtitle={t('steps.0.subtitle')}
       onSkip={skip}
       footer={
-        <Button label={STEP.ctaLabel} onPress={() => router.push('/onboarding/reading-helps')} />
+        <Button label={t('steps.0.ctaLabel')} onPress={() => router.push('/onboarding/reading-helps')} />
       }
     >
-      {READER_TYPE_OPTIONS.map((option) => {
-        const selected = readerType === option.id;
-        const Icon = READER_TYPE_ICONS[option.id];
+      {READER_TYPE_IDS.map((id) => {
+        const selected = readerType === id;
+        const Icon = READER_TYPE_ICONS[id];
         return (
           <SelectRow
-            key={option.id}
-            title={option.title}
-            subtitle={option.description}
+            key={id}
+            title={t(`readerTypes.${id}.title`)}
+            subtitle={t(`readerTypes.${id}.description`)}
             shape="radio"
             selected={selected}
             icon={<Icon color={selected ? colors.light.accentText : colors.light.text} />}
-            onPress={() => selectReaderType(option.id)}
+            onPress={() => selectReaderType(id)}
           />
         );
       })}

@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import type { MMKV } from 'react-native-mmkv';
 
-import { DarkTheme, DefaultTheme } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme } from '../navigation-themes';
 import { createContext, useCallback, useMemo, useState } from 'react';
 
 import {

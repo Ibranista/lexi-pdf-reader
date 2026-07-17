@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { DarkTheme, DefaultTheme } from "./navigation-themes";
 
 import { colors as palette } from "@/theme/colors";
 import type { ThemeConfiguration } from "@/theme/types/config";
