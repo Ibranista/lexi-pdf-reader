@@ -1,0 +1,245 @@
+{
+    "splash": {
+        "title": "Reading rewires your mind",
+        "benefits": {
+            "stress": "Calms stress",
+            "focus": "Deepens focus",
+            "memory": "Strengthens memory"
+        },
+        "tapToContinue": "Tap anywhere to continue"
+    },
+    "nav": {
+        "features": "Features",
+        "whyRead": "Why read",
+        "pro": "Pro",
+        "pricing": "Pricing",
+        "contact": "Contact",
+        "getCTA": "Get LexiPDF free"
+    },
+    "hero": {
+        "badge": "A calmer PDF reader",
+        "title": "Read deeper.\nRemember more.",
+        "description": "LexiPDF is a focused reading space for textbooks, papers and reports — with an AI companion that explains, summarizes and helps you remember what you read.",
+        "downloadCTA": "Download free",
+        "pricingCTA": "See Pro pricing",
+        "subtext": "Reading is free forever · AI companion included in Pro"
+    },
+    "features": {
+        "title": "Everything reading needs, free",
+        "subtitle": "The reader is complete on its own — and always will be.",
+        "items": {
+            "focusMode": {
+                "title": "Focus mode",
+                "description": "Gentle sessions that fade everything but the page you're on."
+            },
+            "highlights": {
+                "title": "Highlights & notes",
+                "description": "Color-coded marks and margin thoughts, kept with the page."
+            },
+            "smartReturn": {
+                "title": "Smart return",
+                "description": "Reopen any document to your page, your last thought, your context."
+            },
+            "library": {
+                "title": "Library & collections",
+                "description": "A quiet shelf for everything you're reading, sorted your way."
+            }
+        }
+    },
+    "whyRead": {
+        "badge": "Why we read",
+        "title": "Your attention is worth defending",
+        "description": "Feeds are engineered to fragment your focus. A page is built to hold it. LexiPDF exists for people who want their attention back — we're building a society that reads.",
+        "stats": {
+            "stress": {
+                "value": "68%",
+                "title": "less stress after six minutes of reading",
+                "source": "Reading quiets the body faster than music or a walk — University of Sussex"
+            },
+            "attention": {
+                "value": "47 sec",
+                "title": "average attention on a screen before we switch",
+                "source": "Deep reading is how you train it back — Dr. Gloria Mark, UC Irvine"
+            },
+            "page": {
+                "value": "1 page",
+                "title": "at a time is all it takes",
+                "source": "Focus is a muscle — every sustained page is a rep, and it compounds"
+            }
+        },
+        "comparison": {
+            "feed": {
+                "title": "20 minutes in a feed",
+                "description": "Dozens of context switches. Nothing kept. It reads you."
+            },
+            "book": {
+                "title": "20 minutes in a book",
+                "description": "One sustained idea, still yours tomorrow. You read it."
+            }
+        },
+        "cta": {
+            "primary": "Start reading tonight — it's free",
+            "secondary": "See what Pro adds"
+        }
+    },
+    "pro": {
+        "badge": "LEXIPDF PRO",
+        "title": "An AI companion for serious reading",
+        "description": "It never reads for you — it reads with you. Every answer cites the page it came from, so you can always check the source.",
+        "cta": "Start 7-day free trial",
+        "features": {
+            "summaries": {
+                "title": "Summaries",
+                "description": "Any page or chapter, distilled to what matters."
+            },
+            "explain": {
+                "title": "Explain this",
+                "description": "Select a hard passage, get it in plain words."
+            },
+            "ask": {
+                "title": "Ask your document",
+                "description": "Questions answered with page citations."
+            },
+            "review": {
+                "title": "Review cards",
+                "description": "Highlights become gentle spaced review."
+            }
+        }
+    },
+    "pricing": {
+        "title": "Simple, honest pricing",
+        "subtitle": "Reading is free forever. Pro adds the AI companion.",
+        "toggle": {
+            "monthly": "Monthly",
+            "annual": "Annual",
+            "discount": "−29%"
+        },
+        "plans": {
+            "free": {
+                "name": "Free",
+                "price": "$0",
+                "period": "forever",
+                "description": "The complete reader, no strings.",
+                "features": [
+                    "Unlimited PDF reading",
+                    "Highlights, notes & focus mode",
+                    "Smart return",
+                    "3 collections · 1 device"
+                ],
+                "cta": "Download free"
+            },
+            "pro": {
+                "name": "Pro",
+                "badge": "MOST POPULAR",
+                "priceMonthly": "$6.99",
+                "priceAnnual": "$4.99",
+                "periodMonthly": "per month, billed monthly",
+                "periodAnnual": "per month, billed $59.88 a year",
+                "description": "",
+                "featuresPrefix": "Everything in Free, plus",
+                "features": [
+                    "AI summaries & Explain this",
+                    "Ask your document, with citations",
+                    "Review cards & spaced review",
+                    "Unlimited collections & devices"
+                ],
+                "cta": "Start 7-day free trial",
+                "studentNote": "Students save 40% with an academic email"
+            },
+            "team": {
+                "name": "Team",
+                "price": "$9",
+                "period": "per person / month",
+                "description": "Billed annually · for labs, classes & teams of 5+.",
+                "featuresPrefix": "Everything in Pro, plus",
+                "features": [
+                    "Shared libraries & annotations",
+                    "Central billing & admin",
+                    "Priority support"
+                ],
+                "cta": "Contact us"
+            }
+        },
+        "notes": [
+            "Cancel anytime",
+            "7-day free trial on Pro",
+            "Your highlights & notes stay yours if you downgrade"
+        ]
+    },
+    "faq": {
+        "title": "Common questions",
+        "items": [
+            {
+                "question": "Is the free plan really free?",
+                "answer": "Yes. Reading, highlights, notes and focus mode are free forever, with no page limits and no ads. Pro only unlocks the AI companion and unlimited sync."
+            },
+            {
+                "question": "Do my PDFs leave my device?",
+                "answer": "Documents stay on your device. Only the passages you ask about are sent for AI processing, and they're never used for training."
+            },
+            {
+                "question": "What happens if I downgrade?",
+                "answer": "Everything you made stays readable — AI summaries, review cards, all your notes. You just can't generate new ones until you're back on Pro."
+            },
+            {
+                "question": "Is there a student discount?",
+                "answer": "Students and educators with an academic email get 40% off Pro — that's $2.99 a month billed annually."
+            }
+        ]
+    },
+    "contact": {
+        "title": "Talk to us",
+        "description": "Questions about Pro, a team plan for your lab or class, or just something that didn't work — we read everything and reply within a day.",
+        "emails": {
+            "support": {
+                "label": "Support",
+                "email": "support@lexipdf.app"
+            },
+            "teams": {
+                "label": "Teams",
+                "email": "teams@lexipdf.app"
+            },
+            "press": {
+                "label": "Press",
+                "email": "hello@lexipdf.app"
+            }
+        },
+        "form": {
+            "name": {
+                "label": "Name",
+                "placeholder": "Your name"
+            },
+            "email": {
+                "label": "Email",
+                "placeholder": "you@example.com"
+            },
+            "message": {
+                "label": "Message",
+                "placeholder": "How can we help?"
+            },
+            "submit": "Send message"
+        }
+    },
+    "footer": {
+        "tagline": "A calmer way to read, understand and remember your PDFs.",
+        "sections": {
+            "product": {
+                "title": "Product",
+                "links": {
+                    "features": "Features",
+                    "pro": "Pro",
+                    "pricing": "Pricing"
+                }
+            },
+            "company": {
+                "title": "Company",
+                "links": {
+                    "contact": "Contact",
+                    "privacy": "Privacy",
+                    "terms": "Terms"
+                }
+            }
+        },
+        "copyright": "© 2026 LexiPDF. All rights reserved."
+    }
+}

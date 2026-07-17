@@ -1,18 +1,13 @@
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { OnboardingScreen } from '@/components/onboarding';
 import { Button, Card, FeatureRow, space } from '@/components/ui';
 import { colors } from '@/constants/colors';
-import {
-  ONBOARDING_STEPS,
-  READER_TYPE_SUMMARY,
-  READING_HELP_SUMMARY,
-} from '@/constants/onboarding';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 
-const STEP = ONBOARDING_STEPS[2];
 const c = colors.light;
 
 function CheckIcon() {
@@ -30,11 +25,21 @@ function CheckIcon() {
 }
 
 export default function ReadyScreen() {
+  const { t } = useTranslation('onboarding');
   const readerType = useOnboardingStore((s) => s.readerType);
   const helps = useOnboardingStore((s) => s.helps);
   const completeOnboarding = useOnboardingStore((s) => s.completeOnboarding);
 
-  const rows = [READER_TYPE_SUMMARY[readerType], ...helps.map((help) => READING_HELP_SUMMARY[help])];
+  const rows = [
+    {
+      title: t(`readerTypes.${readerType}.summary.title`),
+      description: t(`readerTypes.${readerType}.summary.description`),
+    },
+    ...helps.map((id) => ({
+      title: t(`readingHelps.${id}.summary.title`),
+      description: t(`readingHelps.${id}.summary.description`),
+    })),
+  ];
 
   const start = () => {
     completeOnboarding();
@@ -44,9 +49,9 @@ export default function ReadyScreen() {
   return (
     <OnboardingScreen
       stepIndex={2}
-      title={STEP.title}
-      subtitle={STEP.subtitle}
-      footer={<Button label={STEP.ctaLabel} onPress={start} />}
+      title={t('steps.2.title')}
+      subtitle={t('steps.2.subtitle')}
+      footer={<Button label={t('steps.2.ctaLabel')} onPress={start} />}
     >
       <View style={styles.rows}>
         {rows.map((row) => (
