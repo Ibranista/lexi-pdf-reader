@@ -111,6 +111,11 @@ interface AppState {
   items: NoteItem[];
   books: number;
   brainPct: number;
+  // Device library — user-picked folder scanned for PDFs (iOS fallback)
+  libRootUri: string | null;
+  libRootName: string | null;
+  /** Whether we already auto-asked for device storage access on first open. */
+  storageAsked: boolean;
 
   setPage: (page: number) => void;
   toggleBookmark: (page: number) => void;
@@ -153,6 +158,9 @@ export const useAppStore = create<AppState>()(
       items: SEED_NOTES,
       books: 21,
       brainPct: 42,
+      libRootUri: null,
+      libRootName: null,
+      storageAsked: false,
 
       setPage: (page) => set({ page }),
 
