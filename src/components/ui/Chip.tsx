@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts, radius } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
+import { radius } from './tokens';
 
 interface ChipProps {
   label: string;
@@ -48,8 +49,7 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.75 },
   label: {
-    fontFamily: fonts.sans,
-    fontWeight: '500',
+    fontFamily: sansFamily['500'],
     fontSize: 13,
   },
 });

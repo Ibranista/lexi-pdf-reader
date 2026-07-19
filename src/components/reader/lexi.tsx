@@ -8,7 +8,7 @@ import {
   IconClose,
   IconSend,
   IconSpark,
-  PText,
+  Text,
   Tap,
 } from "@/components/lexi-components";
 import { LEXI_SEED } from "@/constants/library";
@@ -82,9 +82,9 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
         }}
       >
         <IconSpark color={t.accent} size={16} />
-        <PText size={13} weight="600">
+        <Text size={13} weight="600">
           Hey Lexi
-        </PText>
+        </Text>
       </Box>
     </Tap>
   );
@@ -191,17 +191,17 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
             <IconSpark color={t.accent} size={18} />
           </Box>
           <Box flex={1}>
-            <PText size={15} weight="600">
+            <Text size={15} weight="600">
               Lexi
-            </PText>
-            <PText color={t.sub} numberOfLines={1} size={11}>
+            </Text>
+            <Text color={t.sub} numberOfLines={1} size={11}>
               Your reading companion · Ch. 3
-            </PText>
+            </Text>
           </Box>
           <Box bg={t.calmSoft} paddingX={10} paddingY={4} rounded={12}>
-            <PText color={t.calm} size={11} weight="600">
+            <Text color={t.calm} size={11} weight="600">
               You’re on track ✓
-            </PText>
+            </Text>
           </Box>
           <Tap onPress={onClose}>
             <Box
@@ -245,9 +245,9 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
                   rounded={16}
                   style={{ maxWidth: "80%" }}
                 >
-                  <PText color={user ? t.pillText : t.ink} lh={20} size={13.5}>
+                  <Text color={user ? t.pillText : t.ink} lh={20} size={13.5}>
                     {m.text}
-                  </PText>
+                  </Text>
                   {m.kind === "drift" ? (
                     <Tap
                       onPress={onClose}
@@ -260,9 +260,9 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
                         paddingY={8}
                         rounded={10}
                       >
-                        <PText color={t.calm} size={12} weight="600">
+                        <Text color={t.calm} size={12} weight="600">
                           Back to reading
-                        </PText>
+                        </Text>
                       </Box>
                     </Tap>
                   ) : null}
@@ -274,9 +274,9 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
                       rounded={10}
                       style={{ alignSelf: "flex-start" }}
                     >
-                      <PText color={t.calm} size={10.5} weight="600">
+                      <Text color={t.calm} size={10.5} weight="600">
                         You’re on track ✓
-                      </PText>
+                      </Text>
                     </Box>
                   ) : null}
                 </Box>

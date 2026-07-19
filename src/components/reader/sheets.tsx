@@ -14,7 +14,7 @@ import {
   IconPencil,
   IconSpark,
   ProgressBar,
-  PText,
+  Text,
   SectionLabel,
   Segmented,
   Tap,
@@ -68,12 +68,12 @@ export function SummarizeSheet({
             <IconSpark color={t.accent} size={18} />
           </Box>
           <Box flex={1}>
-            <PText size={15} weight="600">
+            <Text size={15} weight="600">
               Page {app.page} — Summary
-            </PText>
-            <PText color={t.sub} size={11}>
+            </Text>
+            <Text color={t.sub} size={11}>
               Generated on device · this page only
-            </PText>
+            </Text>
           </Box>
           <Tap onPress={onClose}>
             <Box
@@ -106,9 +106,9 @@ export function SummarizeSheet({
                 style={{ width: w as `${number}%` }}
               />
             ))}
-            <PText color={t.sub} size={12}>
+            <Text color={t.sub} size={12}>
               Reading page {app.page}…
-            </PText>
+            </Text>
           </Box>
         ) : (
           <>
@@ -128,9 +128,9 @@ export function SummarizeSheet({
                     width={5}
                   />
                   <Box flex={1}>
-                    <PText lh={22} size={14}>
+                    <Text lh={22} size={14}>
                       {point}
-                    </PText>
+                    </Text>
                   </Box>
                 </Box>
               ))}
@@ -142,9 +142,9 @@ export function SummarizeSheet({
                 style={{ flex: 1 }}
               >
                 <Box align="center" bg={t.chip} paddingY={12} rounded={12}>
-                  <PText size={13} weight="600">
+                  <Text size={13} weight="600">
                     Copy
-                  </PText>
+                  </Text>
                 </Box>
               </Tap>
               <Tap
@@ -155,9 +155,9 @@ export function SummarizeSheet({
                 style={{ flex: 1 }}
               >
                 <Box align="center" bg={t.chip} paddingY={12} rounded={12}>
-                  <PText size={13} weight="600">
+                  <Text size={13} weight="600">
                     {summLang}
-                  </PText>
+                  </Text>
                 </Box>
               </Tap>
               <Tap
@@ -177,9 +177,9 @@ export function SummarizeSheet({
                 style={{ flex: 1 }}
               >
                 <Box align="center" bg={t.pill} paddingY={12} rounded={12}>
-                  <PText color={t.pillText} size={13} weight="600">
+                  <Text color={t.pillText} size={13} weight="600">
                     Save note
-                  </PText>
+                  </Text>
                 </Box>
               </Tap>
             </Box>
@@ -247,13 +247,13 @@ export function WordPopover({
           marginBottom={4}
           style={{ alignItems: "baseline" }}
         >
-          <PText serif size={20} weight="600">
+          <Text serif size={20} weight="600">
             {word}
-          </PText>
+          </Text>
           <Box bg={t.chip} paddingX={9} paddingY={3} rounded={14}>
-            <PText color={t.sub} size={11} weight="500">
+            <Text color={t.sub} size={11} weight="500">
               {d.pos}
-            </PText>
+            </Text>
           </Box>
         </Box>
         <Box
@@ -263,12 +263,12 @@ export function WordPopover({
           marginBottom={14}
           wrap="wrap"
         >
-          <PText color={t.accentText} size={22} weight="600">
+          <Text color={t.accentText} size={22} weight="600">
             {tr}
-          </PText>
-          <PText color={t.sub} size={12}>
+          </Text>
+          <Text color={t.sub} size={12}>
             · {translit} · {langName}
-          </PText>
+          </Text>
         </Box>
         <Box bg={t.line} height={1} marginBottom={14} />
         <Box direction="row" gap={9} marginBottom={10}>
@@ -276,9 +276,9 @@ export function WordPopover({
             <IconSpark color={t.accent} size={14} />
           </Box>
           <Box flex={1}>
-            <PText lh={21} size={13.5}>
+            <Text lh={21} size={13.5}>
               {d.s1}
-            </PText>
+            </Text>
           </Box>
         </Box>
         <Box direction="row" gap={9} marginBottom={16}>
@@ -286,17 +286,17 @@ export function WordPopover({
             <IconSpark color={t.accentMid} size={14} />
           </Box>
           <Box flex={1}>
-            <PText lh={21} size={13.5}>
+            <Text lh={21} size={13.5}>
               {d.s2}
-            </PText>
+            </Text>
           </Box>
         </Box>
         <Box direction="row" gap={8}>
           <Tap onPress={() => showToast(`🔊 ${tr}`)} scale={0.95}>
             <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-              <PText size={12} weight="600">
+              <Text size={12} weight="600">
                 Hear it
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Tap
@@ -308,9 +308,9 @@ export function WordPopover({
             scale={0.95}
           >
             <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-              <PText size={12} weight="600">
+              <Text size={12} weight="600">
                 Save word
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Tap
@@ -330,9 +330,9 @@ export function WordPopover({
             scale={0.95}
           >
             <Box bg={t.accentSoft} paddingX={14} paddingY={9} rounded={11}>
-              <PText color={t.accentText} size={12} weight="600">
+              <Text color={t.accentText} size={12} weight="600">
                 Highlight
-              </PText>
+              </Text>
             </Box>
           </Tap>
         </Box>
@@ -457,9 +457,9 @@ export function SelectionMenu({
                   }
                   width={34}
                 />
-                <PText color={t.sub} size={10} weight="500">
+                <Text color={t.sub} size={10} weight="500">
                   {c.name}
-                </PText>
+                </Text>
               </Box>
             </Tap>
           ))}
@@ -490,9 +490,9 @@ function SelAction({
         rounded={11}
       >
         {icon}
-        <PText color="#F6F3EE" size={10.5} weight="500">
+        <Text color="#F6F3EE" size={10.5} weight="500">
           {label}
-        </PText>
+        </Text>
       </Box>
     </Tap>
   );
@@ -536,12 +536,12 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
             <IconSpark color={t.accent} size={18} />
           </Box>
           <Box flex={1}>
-            <PText size={15} weight="600">
+            <Text size={15} weight="600">
               Explain this
-            </PText>
-            <PText color={t.sub} size={11}>
+            </Text>
+            <Text color={t.sub} size={11}>
               Knows this page, your highlights & notes
-            </PText>
+            </Text>
           </Box>
           <Tap onPress={onClose}>
             <Box align="center" height={34} justify="center" width={34}>
@@ -558,10 +558,10 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
             paddingLeft: 12,
           }}
         >
-          <PText color={t.sub} italic lh={20} serif size={13}>
+          <Text color={t.sub} italic lh={20} serif size={13}>
             “Gas companies collapsed within a decade, taking whole neighborhoods
             of lamplighters with them…”
-          </PText>
+          </Text>
         </Box>
 
         <Box marginBottom={14}>
@@ -584,24 +584,24 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
           padding={18}
           rounded={16}
         >
-          <PText lh={23} size={14}>
+          <Text lh={23} size={14}>
             {body}
-          </PText>
+          </Text>
         </Box>
 
         <Box align="center" direction="row" gap={8} marginTop={14}>
           <Tap onPress={() => setAsk("example")} scale={0.96}>
             <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-              <PText size={12} weight="600">
+              <Text size={12} weight="600">
                 Give an example
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Tap onPress={() => setAsk("connect")} scale={0.96}>
             <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-              <PText size={12} weight="600">
+              <Text size={12} weight="600">
                 Connect to Ch. 2
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Box flex={1} />
@@ -613,9 +613,9 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
             scale={0.96}
           >
             <Box bg={t.accent} paddingX={14} paddingY={9} rounded={11}>
-              <PText color={t.onAccent} size={12} weight="600">
+              <Text color={t.onAccent} size={12} weight="600">
                 Save note
-              </PText>
+              </Text>
             </Box>
           </Tap>
         </Box>
@@ -645,12 +645,12 @@ export function SmartReturnSheet({
         <Box align="center" direction="row" gap={16} marginTop={14}>
           <Cover height={74} label="cover" rounded={8} width={56} />
           <Box flex={1}>
-            <PText serif size={17} weight="600">
+            <Text serif size={17} weight="600">
               {BOOK_TITLE}
-            </PText>
-            <PText color={t.sub} size={13} style={{ marginTop: 4 }}>
+            </Text>
+            <Text color={t.sub} size={13} style={{ marginTop: 4 }}>
               Chapter {ch.n} · {ch.t} · Page {page} of {BOOK_PAGES}
-            </PText>
+            </Text>
             <Box marginTop={8}>
               <ProgressBar pct={(page / BOOK_PAGES) * 100} />
             </Box>
@@ -670,25 +670,25 @@ export function SmartReturnSheet({
             <IconPencil color={t.accentText} size={14} />
           </Box>
           <Box flex={1}>
-            <PText color={t.accentText} ls={0.7} size={11} upper weight="600">
+            <Text color={t.accentText} ls={0.7} size={11} upper weight="600">
               Your last thought
-            </PText>
-            <PText italic lh={21} serif size={14} style={{ marginTop: 4 }}>
+            </Text>
+            <Text italic lh={21} serif size={14} style={{ marginTop: 4 }}>
               “Reread the Pearl Street section before class”
-            </PText>
+            </Text>
           </Box>
         </Box>
 
         <Box align="center" direction="row" gap={10} marginTop={12}>
           <Box bg={t.chip} paddingX={11} paddingY={5} rounded={14}>
-            <PText color={t.sub} size={12}>
+            <Text color={t.sub} size={12}>
               Last highlight · p. 23
-            </PText>
+            </Text>
           </Box>
           <Box bg={t.chip} paddingX={11} paddingY={5} rounded={14}>
-            <PText color={t.sub} size={12}>
+            <Text color={t.sub} size={12}>
               Last search · “electric”
-            </PText>
+            </Text>
           </Box>
         </Box>
 
@@ -702,9 +702,9 @@ export function SmartReturnSheet({
               rounded={14}
               style={{ height: 52 }}
             >
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Start fresh
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Tap onPress={onClose} scale={0.98} style={{ flex: 1 }}>
@@ -717,9 +717,9 @@ export function SmartReturnSheet({
               justify="center"
               rounded={14}
             >
-              <PText color={t.onAccent} size={15} weight="600">
+              <Text color={t.onAccent} size={15} weight="600">
                 Continue reading
-              </PText>
+              </Text>
               <IconChevron color={t.onAccent} size={16} strokeWidth={2} />
             </Box>
           </Tap>

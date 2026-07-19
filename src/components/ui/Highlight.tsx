@@ -1,7 +1,7 @@
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
 import { palette } from '@/constants/colors';
-import { fonts } from './tokens';
+import { serifFamily } from '@/theme/app-fonts';
 
 type Tone = 'amber' | 'green';
 
@@ -25,7 +25,7 @@ export function Highlight({ tone = 'amber', strong = false, style, ...props }: H
 
 const styles = StyleSheet.create({
   mark: {
-    fontFamily: fonts.serif,
+    fontFamily: serifFamily,
     color: palette.ink[800],
     borderRadius: 3,
   },

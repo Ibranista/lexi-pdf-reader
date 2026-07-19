@@ -7,7 +7,7 @@ import {
   Card,
   ProtoScreen,
   ProtoSlider,
-  PText,
+  Text,
   ScreenHeader,
   SectionLabel,
   Segmented,
@@ -70,7 +70,7 @@ export default function ReadingComfortScreen() {
           paddingY={18}
           rounded={16}
         >
-          <PText
+          <Text
             color={t.readerInk}
             lh={app.textSize * (LINE_SPACING[app.lineSp] ?? 1.75)}
             serif={app.fontFam === "serif"}
@@ -78,7 +78,7 @@ export default function ReadingComfortScreen() {
           >
             The quick preview shows exactly how your pages will read with these
             settings.
-          </PText>
+          </Text>
         </Box>
 
         <Card gap={12}>
@@ -88,14 +88,14 @@ export default function ReadingComfortScreen() {
             style={{ alignItems: "baseline" }}
           >
             <SectionLabel>Font size</SectionLabel>
-            <PText color={t.accentText} size={14} weight="600">
+            <Text color={t.accentText} size={14} weight="600">
               {app.textSize} pt
-            </PText>
+            </Text>
           </Box>
           <Box align="center" direction="row" gap={14}>
-            <PText color={t.sub} serif size={13}>
+            <Text color={t.sub} serif size={13}>
               A
-            </PText>
+            </Text>
             <Box flex={1}>
               <ProtoSlider
                 max={22}
@@ -104,9 +104,9 @@ export default function ReadingComfortScreen() {
                 value={app.textSize}
               />
             </Box>
-            <PText color={t.sub} serif size={20}>
+            <Text color={t.sub} serif size={20}>
               A
-            </PText>
+            </Text>
           </Box>
           <Box marginTop={4}>
             <SectionLabel>Typeface</SectionLabel>
@@ -145,9 +145,9 @@ export default function ReadingComfortScreen() {
             style={{ alignItems: "baseline" }}
           >
             <SectionLabel>Page brightness</SectionLabel>
-            <PText color={t.accentText} size={14} weight="600">
+            <Text color={t.accentText} size={14} weight="600">
               {app.bright}%
-            </PText>
+            </Text>
           </Box>
           <ProtoSlider
             max={100}
@@ -168,9 +168,9 @@ export default function ReadingComfortScreen() {
           </Box>
         </Card>
 
-        <PText align="center" color={t.faint} size={12}>
+        <Text align="center" color={t.faint} size={12}>
           Set once from your onboarding answers — adjust anytime.
-        </PText>
+        </Text>
       </ScrollView>
     </ProtoScreen>
   );

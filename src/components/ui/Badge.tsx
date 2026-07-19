@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts, radius } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
+import { radius } from './tokens';
 
 type Tone = 'accent' | 'neutral' | 'ink';
 
@@ -45,8 +46,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   label: {
-    fontFamily: fonts.sans,
-    fontWeight: '700',
+    fontFamily: sansFamily['700'],
     fontSize: 10,
   },
   uppercase: {

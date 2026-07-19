@@ -1,7 +1,7 @@
 import { Text as RNText, StyleSheet, type TextProps as RNTextProps } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts } from './tokens';
+import { sansFamily, serifFamily } from '@/theme/app-fonts';
 
 type Variant =
   | 'display' // large serif headline (Literata)
@@ -32,51 +32,49 @@ const c = colors.light;
 
 const styles = StyleSheet.create({
   display: {
-    fontFamily: fonts.serif,
+    fontFamily: serifFamily,
     fontSize: 28,
     lineHeight: 35,
     letterSpacing: -0.3,
     color: c.text,
   },
   title: {
-    fontFamily: fonts.serif,
+    fontFamily: serifFamily,
     fontSize: 22,
     lineHeight: 28,
     letterSpacing: -0.2,
     color: c.text,
   },
   heading: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
     fontSize: 15,
     color: c.text,
   },
   body: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 14,
     lineHeight: 21,
     color: c.text,
   },
   reading: {
-    fontFamily: fonts.serif,
+    fontFamily: serifFamily,
     fontSize: 17,
     lineHeight: 30,
     color: colors.light.text,
   },
   secondary: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 13,
     lineHeight: 19,
     color: c.textSecondary,
   },
   label: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
     fontSize: 12,
     color: c.text,
   },
   caption: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 11.5,
     lineHeight: 16,
     color: c.textSecondary,

@@ -16,4 +16,4 @@ export { StatusBar } from './StatusBar';
 export { Text } from './Text';
 export { TextInput } from './TextInput';
 
-export { fonts, radius, space } from './tokens';
+export { radius, space } from './tokens';

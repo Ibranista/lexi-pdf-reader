@@ -13,7 +13,7 @@ import {
   IconGraph,
   IconPencil,
   ProtoScreen,
-  PText,
+  Text,
   Segmented,
   Tap,
 } from "@/components/lexi-components";
@@ -65,12 +65,12 @@ export default function NotesScreen() {
           <IconBack color={t.ink} size={18} />
         </HeaderButton>
         <Box>
-          <PText serif size={20} weight="600">
+          <Text serif size={20} weight="600">
             My Notes
-          </PText>
-          <PText color={t.sub} size={12}>
+          </Text>
+          <Text color={t.sub} size={12}>
             {BOOK_TITLE}
-          </PText>
+          </Text>
         </Box>
         <Box flex={1} />
         <HeaderButton onPress={() => router.push("/review")}>
@@ -103,14 +103,14 @@ export default function NotesScreen() {
                 <Tap key={p} onPress={() => jump(p)}>
                   <Box align="center" direction="row" gap={16}>
                     <Box align="end" width={44}>
-                      <PText
+                      <Text
                         color={current ? t.accentText : t.faint}
                         mono
                         size={12}
                         weight="600"
                       >
                         p. {p}
-                      </PText>
+                      </Text>
                     </Box>
                     <Box
                       bg={current ? t.accent : t.faint}
@@ -141,10 +141,10 @@ export default function NotesScreen() {
                       >
                         <Cover height={52} label="page" width={40} />
                         <Box flex={1}>
-                          <PText size={13.5} weight="600">
+                          <Text size={13.5} weight="600">
                             Ch. {ch.n} · {ch.t}
-                          </PText>
-                          <PText
+                          </Text>
+                          <Text
                             color={current ? t.accentText : t.sub}
                             size={11.5}
                             style={{ marginTop: 3 }}
@@ -152,7 +152,7 @@ export default function NotesScreen() {
                             {current
                               ? "Current page"
                               : `${Math.abs(p - page)} pages ${p < page ? "back" : "ahead"}`}
-                          </PText>
+                          </Text>
                         </Box>
                       </Box>
                     </Box>
@@ -162,9 +162,9 @@ export default function NotesScreen() {
             })}
             {bms.length === 0 ? (
               <Box paddingX={20} paddingY={40}>
-                <PText align="center" color={t.sub} size={13}>
+                <Text align="center" color={t.sub} size={13}>
                   No bookmarks yet — tap the bookmark icon while reading.
-                </PText>
+                </Text>
               </Box>
             ) : null}
           </>
@@ -173,12 +173,12 @@ export default function NotesScreen() {
             <Tap key={`${n.p}-${i}`} onPress={() => jump(n.p)} scale={0.985}>
               <Card gap={10}>
                 <Box align="center" direction="row" justify="between">
-                  <PText color={t.faint} mono size={11} weight="600">
+                  <Text color={t.faint} mono size={11} weight="600">
                     PAGE {n.p} · CH. {n.ch}
-                  </PText>
-                  <PText color={t.faint} size={11}>
+                  </Text>
+                  <Text color={t.faint} size={11}>
                     {n.when}
-                  </PText>
+                  </Text>
                 </Box>
                 <Box
                   style={{
@@ -187,9 +187,9 @@ export default function NotesScreen() {
                     paddingLeft: 12,
                   }}
                 >
-                  <PText lh={22} serif size={14}>
+                  <Text lh={22} serif size={14}>
                     {n.text}
-                  </PText>
+                  </Text>
                 </Box>
                 {n.note ? (
                   <Box
@@ -204,9 +204,9 @@ export default function NotesScreen() {
                       <IconPencil color={t.accentText} size={13} />
                     </Box>
                     <Box flex={1}>
-                      <PText color={t.sub} lh={19} size={12.5}>
+                      <Text color={t.sub} lh={19} size={12.5}>
                         {n.note}
-                      </PText>
+                      </Text>
                     </Box>
                   </Box>
                 ) : null}

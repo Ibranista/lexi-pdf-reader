@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '@/constants/colors';
-import { fonts } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
 
 interface SectionHeaderProps {
   title: string;
@@ -64,8 +64,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.6 },
   title: {
     flex: 1,
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
     fontSize: 16,
     color: colors.light.text,
   },

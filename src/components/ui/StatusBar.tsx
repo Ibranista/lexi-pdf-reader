@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
 
 interface StatusBarProps {
   time?: string;
@@ -28,8 +28,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   time: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
     fontSize: 14,
   },
   battery: {

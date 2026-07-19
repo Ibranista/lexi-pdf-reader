@@ -1,4 +1,4 @@
-import { Platform, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -32,19 +32,7 @@ export interface ProtoTheme {
   calmLine: string;
   accentHi: string;
   accentLo: string;
-  serif: string;
-  mono: string;
 }
-
-const serif = Platform.select({
-  android: 'serif',
-  default: 'Georgia',
-});
-
-const mono = Platform.select({
-  android: 'monospace',
-  default: 'Menlo',
-});
 
 export const protoDark: ProtoTheme = {
   dark: true,
@@ -74,8 +62,6 @@ export const protoDark: ProtoTheme = {
   calmLine: 'rgba(78,116,95,.45)',
   accentHi: '#BA6541',
   accentLo: '#944929',
-  serif: serif ?? 'serif',
-  mono: mono ?? 'monospace',
 };
 
 export const protoLight: ProtoTheme = {
@@ -106,8 +92,6 @@ export const protoLight: ProtoTheme = {
   calmLine: '#A8D4B8',
   accentHi: '#BA6440',
   accentLo: '#934727',
-  serif: serif ?? 'serif',
-  mono: mono ?? 'monospace',
 };
 
 export type ThemeMode = 'auto' | 'dark' | 'light';

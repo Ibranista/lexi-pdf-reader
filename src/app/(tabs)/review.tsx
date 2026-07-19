@@ -7,7 +7,7 @@ import {
   Card,
   Divider,
   ProtoScreen,
-  PText,
+  Text,
   ScreenHeader,
   SectionLabel,
   Tap,
@@ -70,16 +70,16 @@ export default function ReviewScreen() {
           }}
         >
           <SectionLabel size={11}>Question</SectionLabel>
-          <PText lh={30} serif size={21} weight="500">
+          <Text lh={30} serif size={21} weight="500">
             {card.q}
-          </PText>
+          </Text>
           <Divider />
           <SectionLabel color={t.accentText} size={11}>
             Answer
           </SectionLabel>
-          <PText lh={26} serif size={16}>
+          <Text lh={26} serif size={16}>
             {card.a}
-          </PText>
+          </Text>
           <Box
             align="center"
             bg={t.accentSoft}
@@ -91,9 +91,9 @@ export default function ReviewScreen() {
           >
             <Box bg="#F2CE93" height={28} rounded={2} width={4} />
             <Box flex={1}>
-              <PText color={t.sub} lh={17} size={11.5}>
+              <Text color={t.sub} lh={17} size={11.5}>
                 From your highlight · The Age of Light · p. {card.p} ·{" "}
-                <PText
+                <Text
                   color={t.accentText}
                   onPress={() => {
                     setPage(card.p);
@@ -104,8 +104,8 @@ export default function ReviewScreen() {
                   weight="600"
                 >
                   Reread in context
-                </PText>
-              </PText>
+                </Text>
+              </Text>
             </Box>
           </Box>
         </Card>
@@ -123,9 +123,9 @@ export default function ReviewScreen() {
               justify="center"
               rounded={14}
             >
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Show again later
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Tap onPress={() => next()} scale={0.97} style={{ flex: 1 }}>
@@ -136,18 +136,18 @@ export default function ReviewScreen() {
               justify="center"
               rounded={14}
             >
-              <PText color={t.onAccent} size={14} weight="600">
+              <Text color={t.onAccent} size={14} weight="600">
                 Got it
-              </PText>
+              </Text>
             </Box>
           </Tap>
         </Box>
       </Box>
 
       <Box paddingX={20} style={{ paddingBottom: 30 + insets.bottom }}>
-        <PText align="center" color={t.faint} size={12}>
+        <Text align="center" color={t.faint} size={12}>
           Cards come from your highlights. Stop anytime — nothing expires.
-        </PText>
+        </Text>
       </Box>
     </ProtoScreen>
   );

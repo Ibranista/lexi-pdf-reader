@@ -23,7 +23,7 @@ import {
   IconCheck,
   IconExternal,
   IconStar,
-  PText,
+  Text,
   Tap,
 } from "@/components/lexi-components";
 import { useAppStore, useToastStore } from "@/stores/app-store";
@@ -163,9 +163,9 @@ export default function BrainScreen() {
             <IconBack color={INK} size={18} />
           </Box>
         </Tap>
-        <PText color={INK} ls={-0.2} size={17} weight="600">
+        <Text color={INK} ls={-0.2} size={17} weight="600">
           Brain Progress
-        </PText>
+        </Text>
         <Box
           bg="rgba(139,147,255,.12)"
           borderColor="rgba(139,147,255,.32)"
@@ -174,9 +174,9 @@ export default function BrainScreen() {
           paddingY={6}
           rounded={999}
         >
-          <PText color={INDIGO_SOFT} size={10.5} weight="600">
+          <Text color={INDIGO_SOFT} size={10.5} weight="600">
             Lv {lvl + 1} · {LEVEL_NAMES[lvl]}
-          </PText>
+          </Text>
         </Box>
       </Box>
 
@@ -271,21 +271,21 @@ export default function BrainScreen() {
             pointerEvents="none"
             style={{ position: "absolute", right: 16, bottom: 8 }}
           >
-            <PText
+            <Text
               color="rgba(226,232,255,.35)"
               ls={0.76}
               size={9.5}
               weight="500"
             >
               DRAG TO ROTATE
-            </PText>
+            </Text>
           </Box>
         </Box>
 
         <Box align="center" paddingTop={4} paddingX={28}>
-          <PText color={SUB} ls={1.9} size={10.5} weight="600">
+          <Text color={SUB} ls={1.9} size={10.5} weight="600">
             BRAIN CAPACITY
-          </PText>
+          </Text>
           <Svg height={60} width={240}>
             <Defs>
               <LinearGradient id="brainNum" x1="0" x2="0.866" y1="0" y2="0.5">
@@ -308,18 +308,18 @@ export default function BrainScreen() {
               </TSpan>
             </SvgText>
           </Svg>
-          <PText color="rgba(226,232,255,.4)" ls={1.7} size={11} weight="500">
+          <Text color="rgba(226,232,255,.4)" ls={1.7} size={11} weight="500">
             FILLED
-          </PText>
+          </Text>
           <Box marginTop={11} maxWidth={280}>
-            <PText
+            <Text
               align="center"
               color="rgba(226,232,255,.7)"
               lh={20}
               size={13}
             >
               {msg}
-            </PText>
+            </Text>
           </Box>
         </Box>
 
@@ -342,7 +342,7 @@ export default function BrainScreen() {
               rounded={14}
               style={{ width: "31%", flexGrow: 1 }}
             >
-              <PText
+              <Text
                 color="#EEF1FF"
                 ls={-0.2}
                 numberOfLines={1}
@@ -350,8 +350,8 @@ export default function BrainScreen() {
                 weight="600"
               >
                 {st.v}
-              </PText>
-              <PText
+              </Text>
+              <Text
                 color={SUB}
                 ls={0.9}
                 numberOfLines={1}
@@ -361,13 +361,13 @@ export default function BrainScreen() {
                 weight="500"
               >
                 {st.l}
-              </PText>
+              </Text>
             </Box>
           ))}
         </Box>
 
         <Box marginTop={22} marginX={20}>
-          <PText
+          <Text
             color={SUB}
             ls={1.7}
             size={10.5}
@@ -375,7 +375,7 @@ export default function BrainScreen() {
             weight="600"
           >
             MILESTONES
-          </PText>
+          </Text>
           <Box>
             <Box
               bg="rgba(255,255,255,.09)"
@@ -471,23 +471,23 @@ export default function BrainScreen() {
                       {on ? (
                         <IconCheck color="#fff" size={13} strokeWidth={2.6} />
                       ) : (
-                        <PText
+                        <Text
                           color="rgba(226,232,255,.55)"
                           size={9.5}
                           weight="600"
                         >
                           {m}%
-                        </PText>
+                        </Text>
                       )}
                     </Box>
-                    <PText
+                    <Text
                       color={on ? INDIGO_SOFT : "rgba(226,232,255,.35)"}
                       ls={0.4}
                       size={9}
                       weight="500"
                     >
                       {MILESTONE_NAMES[i]}
-                    </PText>
+                    </Text>
                   </Box>
                 );
               })}
@@ -510,9 +510,9 @@ export default function BrainScreen() {
           rounded={14}
         >
           <IconStar color={INDIGO} size={15} />
-          <PText color="rgba(226,232,255,.75)" size={12.5} weight="500">
+          <Text color="rgba(226,232,255,.75)" size={12.5} weight="500">
             {nextLabel}
-          </PText>
+          </Text>
         </Box>
 
         <Box
@@ -533,26 +533,26 @@ export default function BrainScreen() {
             y2="1"
           />
           <Box paddingBottom={15} paddingTop={16} paddingX={16}>
-            <PText color={INDIGO_SOFT} ls={1.7} size={10.5} weight="600">
+            <Text color={INDIGO_SOFT} ls={1.7} size={10.5} weight="600">
               THE SCIENCE
-            </PText>
-            <PText color={BODY} lh={20} size={12.5} style={{ marginTop: 9 }}>
+            </Text>
+            <Text color={BODY} lh={20} size={12.5} style={{ marginTop: 9 }}>
               Your brain fills automatically as you read — every book you finish
               in your library counts toward capacity. And it’s not just a
               metaphor: fMRI studies at Emory University found that reading a
               novel increases connectivity in the left temporal cortex — the
               brain’s language region — with the changes persisting for days
               after you finish.
-            </PText>
+            </Text>
             <Tap
               onPress={() =>
                 Linking.openURL("https://pubmed.ncbi.nlm.nih.gov/24382981/")
               }
             >
               <Box align="center" direction="row" gap={6} marginTop={11}>
-                <PText color={INDIGO} size={12} weight="600">
+                <Text color={INDIGO} size={12} weight="600">
                   Read the study
-                </PText>
+                </Text>
                 <IconExternal color={INDIGO} size={12} />
               </Box>
             </Tap>

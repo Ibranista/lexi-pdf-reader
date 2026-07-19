@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
 
 interface LoadingSpinnerProps {
   size?: 'small' | 'large';
@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   label: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 13,
     color: colors.light.textSecondary,
     marginTop: 8,

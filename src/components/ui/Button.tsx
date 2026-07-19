@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts, radius } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
+import { radius } from './tokens';
 
 type Variant = 'primary' | 'accent' | 'secondary' | 'ghost';
 type Size = 'sm' | 'md' | 'lg';
@@ -114,8 +115,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.45 },

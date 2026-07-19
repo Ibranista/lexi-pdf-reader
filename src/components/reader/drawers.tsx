@@ -8,7 +8,7 @@ import {
   IconBookmark,
   IconSearch,
   IconSpark,
-  PText,
+  Text,
   SectionLabel,
   Tap,
 } from "@/components/lexi-components";
@@ -60,9 +60,9 @@ export function TocDrawer({
           }}
         >
           <SectionLabel>Contents</SectionLabel>
-          <PText serif size={18} style={{ marginTop: 6 }} weight="600">
+          <Text serif size={18} style={{ marginTop: 6 }} weight="600">
             {BOOK_TITLE}
-          </PText>
+          </Text>
         </Box>
 
         <ScrollView
@@ -83,22 +83,22 @@ export function TocDrawer({
                   rounded={12}
                 >
                   <Box flex={1}>
-                    <PText
+                    <Text
                       color={on ? t.accentText : t.ink}
                       size={14}
                       weight={on ? "600" : "500"}
                     >
                       {c.n} · {c.t}
-                    </PText>
+                    </Text>
                   </Box>
-                  <PText
+                  <Text
                     color={on ? t.accentText : t.faint}
                     mono
                     size={12}
                     weight="500"
                   >
                     {c.p}
-                  </PText>
+                  </Text>
                 </Box>
               </Tap>
             );
@@ -118,9 +118,9 @@ export function TocDrawer({
           }}
         >
           <IconBookmark color={t.sub} size={14} />
-          <PText color={t.sub} size={12}>
+          <Text color={t.sub} size={12}>
             {bookmarks.length} bookmarks in this document
-          </PText>
+          </Text>
         </Box>
       </Box>
     </>
@@ -212,18 +212,18 @@ export function SearchPanel({
             />
           </Box>
           <Tap onPress={onClose}>
-            <PText color={t.accentText} size={14} weight="500">
+            <Text color={t.accentText} size={14} weight="500">
               Cancel
-            </PText>
+            </Text>
           </Tap>
         </Box>
 
         <Box paddingBottom={8} paddingX={18}>
-          <PText color={t.sub} size={12} weight="500">
+          <Text color={t.sub} size={12} weight="500">
             {results.length
               ? `${results.length} matches · ${pages.size} pages`
               : "Type to search this document"}
-          </PText>
+          </Text>
         </Box>
 
         <ScrollView
@@ -246,34 +246,34 @@ export function SearchPanel({
                 padding={12}
                 rounded={12}
               >
-                <PText
+                <Text
                   color={i === 0 ? t.accentText : t.faint}
                   mono
                   size={11}
                   weight="600"
                 >
                   PAGE {r.p}
-                </PText>
-                <PText lh={21} serif size={13} style={{ marginTop: 5 }}>
+                </Text>
+                <Text lh={21} serif size={13} style={{ marginTop: 5 }}>
                   …{r.before}
-                  <PText
+                  <Text
                     lh={21}
                     serif
                     size={13}
                     style={{ backgroundColor: t.hl }}
                   >
                     {r.match}
-                  </PText>
+                  </Text>
                   {r.after}…
-                </PText>
+                </Text>
               </Box>
             </Tap>
           ))}
           {q.length > 0 && results.length === 0 ? (
             <Box paddingX={12} paddingY={32}>
-              <PText align="center" color={t.sub} size={13}>
+              <Text align="center" color={t.sub} size={13}>
                 No matches for “{query}”
-              </PText>
+              </Text>
             </Box>
           ) : null}
         </ScrollView>
@@ -292,9 +292,9 @@ export function SearchPanel({
             }}
           >
             <IconSpark color={t.accent} size={15} />
-            <PText size={13} weight="500">
+            <Text size={13} weight="500">
               Ask AI about “{query}”
-            </PText>
+            </Text>
           </Box>
         </Tap>
       </Box>

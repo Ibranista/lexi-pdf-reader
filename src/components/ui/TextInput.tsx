@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 
 import { colors } from '@/constants/colors';
-import { fonts, radius } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
+import { radius } from './tokens';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -58,14 +59,13 @@ const c = colors.light;
 const styles = StyleSheet.create({
   container: { alignSelf: 'stretch' },
   label: {
-    fontFamily: fonts.sans,
-    fontWeight: '500',
+    fontFamily: sansFamily['500'],
     fontSize: 13,
     color: c.textSecondary,
     marginBottom: 6,
   },
   input: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 15,
     color: c.text,
     backgroundColor: c.surface,
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     height: 50,
   },
   helper: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 12,
     color: c.textSecondary,
     marginTop: 6,

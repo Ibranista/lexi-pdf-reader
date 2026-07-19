@@ -4,5 +4,6 @@ export type {
   TextColor,
   TextProps,
   TextSize,
+  TextType,
   TextWeight,
 } from './Text';

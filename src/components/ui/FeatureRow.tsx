@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '@/constants/colors';
-import { fonts } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
 
 interface FeatureRowProps {
   title: string;
@@ -45,13 +45,12 @@ const styles = StyleSheet.create({
   icon: { marginTop: 2 },
   text: { flex: 1 },
   title: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
     fontSize: 14,
     color: c.text,
   },
   description: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 12.5,
     lineHeight: 18,
     color: c.textSecondary,
