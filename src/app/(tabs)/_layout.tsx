@@ -1,11 +1,23 @@
-import { Stack } from 'expo-router';
+import { Stack } from "expo-router";
+import { useEffect } from "react";
+import { InteractionManager } from "react-native";
 
-import { Box } from '@/components/atoms';
-import { Toast } from '@/components/proto';
-import { useProtoTheme } from '@/theme/proto';
+import { Box } from "@/components/atoms";
+import { prewarmBrainAssets } from "@/components/brain/BrainCanvas";
+import { Toast } from "@/components/lexi-components";
+import { useProtoTheme } from "@/theme/proto";
 
 export default function TabLayout() {
   const t = useProtoTheme();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      InteractionManager.runAfterInteractions(() => {
+        prewarmBrainAssets();
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <Box flex={1}>
       <Stack
@@ -25,7 +37,7 @@ export default function TabLayout() {
         <Stack.Screen name="plan" />
         <Stack.Screen name="reading-comfort" />
         <Stack.Screen name="ai-focus" />
-        <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="paywall" options={{ presentation: "modal" }} />
       </Stack>
       <Toast />
     </Box>

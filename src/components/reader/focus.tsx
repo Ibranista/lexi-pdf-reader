@@ -1,8 +1,8 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from '@/components/atoms';
-import { IconCheck, IconClose, PText, Tap } from '@/components/proto';
-import { useProtoTheme } from '@/theme/proto';
+import { Box } from "@/components/atoms";
+import { IconCheck, IconClose, PText, Tap } from "@/components/lexi-components";
+import { useProtoTheme } from "@/theme/proto";
 
 export function FocusPill({
   onExit,
@@ -22,7 +22,13 @@ export function FocusPill({
     <Box
       align="center"
       pointerEvents="box-none"
-      style={{ position: 'absolute', top: insets.top + 14, left: 0, right: 0, zIndex: 32 }}
+      style={{
+        position: "absolute",
+        top: insets.top + 14,
+        left: 0,
+        right: 0,
+        zIndex: 32,
+      }}
     >
       <Box
         align="center"
@@ -42,12 +48,19 @@ export function FocusPill({
         </PText>
         {timerOn ? (
           <PText color={t.sub} mono size={12.5} weight="500">
-            {mm}:{ss < 10 ? '0' : ''}
+            {mm}:{ss < 10 ? "0" : ""}
             {ss}
           </PText>
         ) : null}
         <Tap onPress={onExit} scale={0.9}>
-          <Box align="center" bg={t.chip} height={28} justify="center" rounded={14} width={28}>
+          <Box
+            align="center"
+            bg={t.chip}
+            height={28}
+            justify="center"
+            rounded={14}
+            width={28}
+          >
             <IconClose color={t.sub} size={13} />
           </Box>
         </Tap>
@@ -63,7 +76,13 @@ export function NextSectionPill({ onPress }: { onPress: () => void }) {
     <Box
       align="center"
       pointerEvents="box-none"
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 34 + insets.bottom, zIndex: 32 }}
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 34 + insets.bottom,
+        zIndex: 32,
+      }}
     >
       <Tap onPress={onPress} scale={0.96}>
         <Box
@@ -75,7 +94,7 @@ export function NextSectionPill({ onPress }: { onPress: () => void }) {
           paddingY={12}
           rounded={24}
           style={{
-            shadowColor: '#14100C',
+            shadowColor: "#14100C",
             shadowOffset: { width: 0, height: 10 },
             shadowOpacity: 0.35,
             shadowRadius: 30,
@@ -92,11 +111,25 @@ export function NextSectionPill({ onPress }: { onPress: () => void }) {
   );
 }
 
-export function BreakCard({ onSkip, onTake }: { onSkip: () => void; onTake: () => void }) {
+export function BreakCard({
+  onSkip,
+  onTake,
+}: {
+  onSkip: () => void;
+  onTake: () => void;
+}) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   return (
-    <Box style={{ position: 'absolute', left: 20, right: 20, bottom: 100 + insets.bottom, zIndex: 33 }}>
+    <Box
+      style={{
+        position: "absolute",
+        left: 20,
+        right: 20,
+        bottom: 100 + insets.bottom,
+        zIndex: 33,
+      }}
+    >
       <Box
         align="center"
         bg={t.glass}

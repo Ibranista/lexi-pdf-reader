@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
-import { ScrollView } from 'react-native';
+import { router } from "expo-router";
+import { ScrollView } from "react-native";
 
-import { Box } from '@/components/atoms';
+import { Box } from "@/components/atoms";
 import {
   Card,
   Divider,
@@ -22,23 +22,23 @@ import {
   Segmented,
   Tap,
   Toggle,
-} from '@/components/proto';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useOnboardingStore } from '@/stores/onboarding-store';
-import { COLLECTIONS } from '@/constants/library';
-import type { ThemeMode } from '@/theme/proto';
-import { useProtoTheme, useThemeModeStore } from '@/theme/proto';
+} from "@/components/lexi-components";
+import { COLLECTIONS } from "@/constants/library";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import type { ThemeMode } from "@/theme/proto";
+import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 
 const THEME_ITEMS: { key: ThemeMode; label: string }[] = [
-  { key: 'light', label: 'Light' },
-  { key: 'dark', label: 'Dark' },
-  { key: 'auto', label: 'Auto' },
+  { key: "light", label: "Light" },
+  { key: "dark", label: "Dark" },
+  { key: "auto", label: "Auto" },
 ];
 
 const LANGS = [
-  { key: 'am' as const, label: 'አማርኛ · Amharic' },
-  { key: 'en' as const, label: 'English' },
-  { key: 'ar' as const, label: 'العربية · Arabic' },
+  { key: "am" as const, label: "አማርኛ · Amharic" },
+  { key: "en" as const, label: "English" },
+  { key: "ar" as const, label: "العربية · Arabic" },
 ];
 
 export default function SettingsScreen() {
@@ -49,20 +49,28 @@ export default function SettingsScreen() {
   const readerType = useOnboardingStore((s) => s.readerType);
   const app = useAppStore();
 
-  const readerLabel = COLLECTIONS[readerType]?.label ?? 'Student';
+  const readerLabel = COLLECTIONS[readerType]?.label ?? "Student";
 
   return (
     <ProtoScreen>
       <ScreenHeader onBack={() => router.back()} title="Settings" />
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 18, paddingBottom: 30, gap: 16 }} style={{ flex: 1 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 20,
+          paddingTop: 18,
+          paddingBottom: 30,
+          gap: 16,
+        }}
+        style={{ flex: 1 }}
+      >
         <Card gap={12}>
           <SectionLabel>Appearance</SectionLabel>
           <Segmented
             items={THEME_ITEMS}
             onChange={(key) => {
               setMode(key);
-              if (key === 'auto') showToast('Auto — following system');
+              if (key === "auto") showToast("Auto — following system");
             }}
             size={13}
             value={mode}
@@ -72,7 +80,14 @@ export default function SettingsScreen() {
         <Card gap={12}>
           <SectionLabel>Personalization</SectionLabel>
           <Box align="center" direction="row" gap={12}>
-            <Box align="center" bg={t.accentSoft} height={34} justify="center" rounded={10} width={34}>
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              height={34}
+              justify="center"
+              rounded={10}
+              width={34}
+            >
               <IconGradCap color={t.accentText} size={17} />
             </Box>
             <Box flex={1}>
@@ -84,7 +99,9 @@ export default function SettingsScreen() {
               </PText>
             </Box>
             <Tap
-              onPress={() => useOnboardingStore.setState({ hasCompletedOnboarding: false })}
+              onPress={() =>
+                useOnboardingStore.setState({ hasCompletedOnboarding: false })
+              }
               scale={0.95}
             >
               <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
@@ -103,15 +120,19 @@ export default function SettingsScreen() {
           <SettingsLink
             icon={<IconSpark color={t.accent} size={16} />}
             iconBg={t.accentSoft}
-            onPress={() => router.push('/plan')}
-            sub={app.pro ? 'LexiPDF Pro · trial active' : 'Free — reading forever free'}
+            onPress={() => router.push("/plan")}
+            sub={
+              app.pro
+                ? "LexiPDF Pro · trial active"
+                : "Free — reading forever free"
+            }
             title="Your plan"
           />
           <Divider />
           <SettingsLink
             icon={<IconType color={t.ink} size={16} />}
             iconBg={t.chip}
-            onPress={() => router.push('/reading-comfort')}
+            onPress={() => router.push("/reading-comfort")}
             sub="Type, spacing, width & light"
             title="Reading comfort"
           />
@@ -119,7 +140,7 @@ export default function SettingsScreen() {
           <SettingsLink
             icon={<IconChat color={t.ink} size={16} />}
             iconBg={t.chip}
-            onPress={() => router.push('/ai-focus')}
+            onPress={() => router.push("/ai-focus")}
             sub="Explanation style, reminders, sync"
             title="AI, focus & review"
           />
@@ -130,7 +151,14 @@ export default function SettingsScreen() {
             <SectionLabel>AI features</SectionLabel>
           </Box>
           <Box align="center" direction="row" gap={12} paddingY={8}>
-            <Box align="center" bg={t.accentSoft} height={34} justify="center" rounded={10} width={34}>
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              height={34}
+              justify="center"
+              rounded={10}
+              width={34}
+            >
               <IconSpark color={t.accent} size={17} />
             </Box>
             <Box flex={1}>
@@ -145,13 +173,26 @@ export default function SettingsScreen() {
               on={app.aiOn}
               onToggle={() => {
                 app.set({ aiOn: !app.aiOn });
-                showToast(app.aiOn ? 'AI assistance off' : 'AI assistance on');
+                showToast(app.aiOn ? "AI assistance off" : "AI assistance on");
               }}
             />
           </Box>
           <Divider />
-          <Box align="center" direction="row" gap={12} paddingBottom={4} paddingTop={10}>
-            <Box align="center" bg={t.chip} height={34} justify="center" rounded={10} width={34}>
+          <Box
+            align="center"
+            direction="row"
+            gap={12}
+            paddingBottom={4}
+            paddingTop={10}
+          >
+            <Box
+              align="center"
+              bg={t.chip}
+              height={34}
+              justify="center"
+              rounded={10}
+              width={34}
+            >
               <IconGlobe color={t.ink} size={17} />
             </Box>
             <Box flex={1}>
@@ -171,12 +212,22 @@ export default function SettingsScreen() {
                   direction="row"
                   justify="between"
                   paddingY={10}
-                  style={i < LANGS.length - 1 ? { borderBottomWidth: 1, borderBottomColor: t.line } : undefined}
+                  style={
+                    i < LANGS.length - 1
+                      ? { borderBottomWidth: 1, borderBottomColor: t.line }
+                      : undefined
+                  }
                 >
-                  <PText color={app.lang === l.key ? t.ink : t.sub} size={14} weight="500">
+                  <PText
+                    color={app.lang === l.key ? t.ink : t.sub}
+                    size={14}
+                    weight="500"
+                  >
                     {l.label}
                   </PText>
-                  {app.lang === l.key ? <IconCheck color={t.accent} size={16} /> : null}
+                  {app.lang === l.key ? (
+                    <IconCheck color={t.accent} size={16} />
+                  ) : null}
                 </Box>
               </Tap>
             ))}
@@ -185,7 +236,14 @@ export default function SettingsScreen() {
 
         <Card>
           <Box align="center" direction="row" gap={12}>
-            <Box align="center" bg={t.calmSoft} height={34} justify="center" rounded={10} width={34}>
+            <Box
+              align="center"
+              bg={t.calmSoft}
+              height={34}
+              justify="center"
+              rounded={10}
+              width={34}
+            >
               <IconLeaf color={t.calm} size={17} />
             </Box>
             <Box flex={1}>
@@ -200,13 +258,23 @@ export default function SettingsScreen() {
         </Card>
 
         <Card gap={10}>
-          <Box direction="row" justify="between" style={{ alignItems: 'baseline' }}>
+          <Box
+            direction="row"
+            justify="between"
+            style={{ alignItems: "baseline" }}
+          >
             <SectionLabel>Smart zoom level</SectionLabel>
             <PText color={t.accentText} size={15} weight="600">
               {app.zoom}%
             </PText>
           </Box>
-          <ProtoSlider max={200} min={100} onChange={(v) => app.set({ zoom: v })} step={5} value={app.zoom} />
+          <ProtoSlider
+            max={200}
+            min={100}
+            onChange={(v) => app.set({ zoom: v })}
+            step={5}
+            value={app.zoom}
+          />
           <Box direction="row" justify="between">
             <PText color={t.faint} size={11}>
               100%
@@ -222,7 +290,14 @@ export default function SettingsScreen() {
 
         <Card>
           <Box align="center" direction="row" gap={12}>
-            <Box align="center" bg={t.chip} height={34} justify="center" rounded={10} width={34}>
+            <Box
+              align="center"
+              bg={t.chip}
+              height={34}
+              justify="center"
+              rounded={10}
+              width={34}
+            >
               <IconSync color={t.ink} size={17} />
             </Box>
             <Box flex={1}>
@@ -237,7 +312,7 @@ export default function SettingsScreen() {
               on={app.syncPos}
               onToggle={() => {
                 app.set({ syncPos: !app.syncPos });
-                showToast(app.syncPos ? 'Sync off' : 'Syncing across devices');
+                showToast(app.syncPos ? "Sync off" : "Syncing across devices");
               }}
             />
           </Box>
@@ -264,7 +339,14 @@ function SettingsLink({
   return (
     <Tap onPress={onPress}>
       <Box align="center" direction="row" gap={12} paddingY={8}>
-        <Box align="center" bg={iconBg} height={34} justify="center" rounded={10} width={34}>
+        <Box
+          align="center"
+          bg={iconBg}
+          height={34}
+          justify="center"
+          rounded={10}
+          width={34}
+        >
           {icon}
         </Box>
         <Box flex={1}>

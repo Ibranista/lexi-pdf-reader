@@ -1,6 +1,6 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from '@/components/atoms';
+import { Box } from "@/components/atoms";
 import {
   BottomSheet,
   Divider,
@@ -16,22 +16,22 @@ import {
   Segmented,
   Tap,
   Toggle,
-} from '@/components/proto';
-import { BOOK_PAGES, BOOK_TITLE } from '@/constants/library';
-import type { FocusSensitivity, FontFam } from '@/stores/app-store';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+} from "@/components/lexi-components";
+import { BOOK_PAGES, BOOK_TITLE } from "@/constants/library";
+import type { FocusSensitivity, FontFam } from "@/stores/app-store";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
 const FAM_ITEMS: { key: FontFam; label: string; serif?: boolean }[] = [
-  { key: 'sans', label: 'Sans' },
-  { key: 'serif', label: 'Serif', serif: true },
-  { key: 'dys', label: 'Dyslexic' },
+  { key: "sans", label: "Sans" },
+  { key: "serif", label: "Serif", serif: true },
+  { key: "dys", label: "Dyslexic" },
 ];
 
 const SENS_ITEMS: { key: FocusSensitivity; label: string }[] = [
-  { key: 'relaxed', label: 'Relaxed' },
-  { key: 'balanced', label: 'Balanced' },
-  { key: 'frequent', label: 'Frequent' },
+  { key: "relaxed", label: "Relaxed" },
+  { key: "balanced", label: "Balanced" },
+  { key: "frequent", label: "Frequent" },
 ];
 
 export function ReaderTopBar({
@@ -59,7 +59,7 @@ export function ReaderTopBar({
     <Box
       bg={t.glass}
       style={{
-        position: 'absolute',
+        position: "absolute",
         top: 0,
         left: 0,
         right: 0,
@@ -69,7 +69,14 @@ export function ReaderTopBar({
         borderBottomColor: t.line,
       }}
     >
-      <Box align="center" direction="row" gap={10} paddingBottom={12} paddingTop={6} paddingX={16}>
+      <Box
+        align="center"
+        direction="row"
+        gap={10}
+        paddingBottom={12}
+        paddingTop={6}
+        paddingX={16}
+      >
         <TopIcon onPress={onBack}>
           <IconBack color={t.ink} size={19} />
         </TopIcon>
@@ -95,7 +102,11 @@ export function ReaderTopBar({
             <IconPencil color={t.ink} size={18} />
           </TopIcon>
           <TopIcon onPress={onBookmark}>
-            <IconBookmark color={isBookmarked ? t.accent : t.ink} fill={isBookmarked ? t.accent : 'none'} size={18} />
+            <IconBookmark
+              color={isBookmarked ? t.accent : t.ink}
+              fill={isBookmarked ? t.accent : "none"}
+              size={18}
+            />
           </TopIcon>
         </Box>
       </Box>
@@ -103,7 +114,13 @@ export function ReaderTopBar({
   );
 }
 
-function TopIcon({ children, onPress }: { children: React.ReactNode; onPress: () => void }) {
+function TopIcon({
+  children,
+  onPress,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+}) {
   return (
     <Tap onPress={onPress} scale={0.92}>
       <Box align="center" height={38} justify="center" rounded={11} width={38}>
@@ -132,7 +149,12 @@ export function ReaderControlsSheet({
   return (
     <BottomSheet onHandle={onClose} paddingX={20}>
       <Box gap={4} paddingBottom={12}>
-        <ProtoSlider max={BOOK_PAGES} min={1} onChange={(v) => app.set({ page: v })} value={app.page} />
+        <ProtoSlider
+          max={BOOK_PAGES}
+          min={1}
+          onChange={(v) => app.set({ page: v })}
+          value={app.page}
+        />
         <Box direction="row" justify="between">
           <PText color={t.sub} size={11}>
             Page {app.page} of {BOOK_PAGES}
@@ -148,10 +170,27 @@ export function ReaderControlsSheet({
       </Box>
       <Box align="center" direction="row" gap={10} paddingBottom={14}>
         <Box flex={1}>
-          <Segmented items={FAM_ITEMS} onChange={(key) => app.set({ fontFam: key })} size={12.5} value={app.fontFam} />
+          <Segmented
+            items={FAM_ITEMS}
+            onChange={(key) => app.set({ fontFam: key })}
+            size={12.5}
+            value={app.fontFam}
+          />
         </Box>
-        <Box align="center" bg={t.chip} direction="row" gap={2} padding={3} rounded={12}>
-          <Tap onPress={() => app.set({ textSize: Math.max(13, app.textSize - 1) })} scale={0.9}>
+        <Box
+          align="center"
+          bg={t.chip}
+          direction="row"
+          gap={2}
+          padding={3}
+          rounded={12}
+        >
+          <Tap
+            onPress={() =>
+              app.set({ textSize: Math.max(13, app.textSize - 1) })
+            }
+            scale={0.9}
+          >
             <Box align="center" paddingY={8} width={36}>
               <PText size={15} weight="600">
                 −
@@ -163,7 +202,12 @@ export function ReaderControlsSheet({
               {app.textSize}
             </PText>
           </Box>
-          <Tap onPress={() => app.set({ textSize: Math.min(23, app.textSize + 1) })} scale={0.9}>
+          <Tap
+            onPress={() =>
+              app.set({ textSize: Math.min(23, app.textSize + 1) })
+            }
+            scale={0.9}
+          >
             <Box align="center" paddingY={8} width={36}>
               <PText size={15} weight="600">
                 +
@@ -189,13 +233,21 @@ export function ReaderControlsSheet({
           on={app.focusRem}
           onToggle={() => {
             app.set({ focusRem: !app.focusRem });
-            showToast(app.focusRem ? 'Focus reminders off — no nudges anywhere' : 'Focus reminders on');
+            showToast(
+              app.focusRem
+                ? "Focus reminders off — no nudges anywhere"
+                : "Focus reminders on",
+            );
           }}
         />
       </Box>
       {app.focusRem ? (
         <Box marginBottom={6} marginTop={2}>
-          <Segmented items={SENS_ITEMS} onChange={(key) => app.set({ focusSens: key })} value={app.focusSens} />
+          <Segmented
+            items={SENS_ITEMS}
+            onChange={(key) => app.set({ focusSens: key })}
+            value={app.focusSens}
+          />
         </Box>
       ) : null}
       <Divider />
@@ -208,7 +260,10 @@ export function ReaderControlsSheet({
             Offer a short summary when a section loops
           </PText>
         </Box>
-        <Toggle on={app.flowRead} onToggle={() => app.set({ flowRead: !app.flowRead })} />
+        <Toggle
+          on={app.flowRead}
+          onToggle={() => app.set({ flowRead: !app.flowRead })}
+        />
       </Box>
       <Divider />
       <Box align="center" direction="row" gap={12} paddingTop={7}>
@@ -223,8 +278,19 @@ export function ReaderControlsSheet({
         <Toggle on={focusMode} onToggle={onToggleFocusMode} />
       </Box>
       {focusMode ? (
-        <Box align="center" direction="row" gap={12} paddingLeft={14} paddingTop={7}>
-          <Box bg={t.calmLine} rounded={2} style={{ alignSelf: 'stretch' }} width={3} />
+        <Box
+          align="center"
+          direction="row"
+          gap={12}
+          paddingLeft={14}
+          paddingTop={7}
+        >
+          <Box
+            bg={t.calmLine}
+            rounded={2}
+            style={{ alignSelf: "stretch" }}
+            width={3}
+          />
           <Box flex={1}>
             <PText size={13} weight="600">
               Session timer
@@ -237,7 +303,9 @@ export function ReaderControlsSheet({
             on={app.fmTimer}
             onToggle={() => {
               app.set({ fmTimer: !app.fmTimer });
-              showToast(app.fmTimer ? 'Focus without the clock' : 'Session timer on');
+              showToast(
+                app.fmTimer ? "Focus without the clock" : "Session timer on",
+              );
             }}
           />
         </Box>

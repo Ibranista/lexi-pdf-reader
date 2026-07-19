@@ -16,6 +16,55 @@
         "contact": "Contact",
         "getCTA": "Get LexiPDF free"
     },
+    "tabItems": {
+        "recent": "Recent",
+        "all": "All",
+        "collections": "Collections",
+        "files": "Files",
+        "vocab": "Vocab"
+    },
+    "library": {
+        "title": "Library",
+        "signedInAs": "Signed in as {{name}}",
+        "searchPlaceholder": "Search your library",
+        "cancel": "Cancel",
+        "importToast": "Import from Files / Drive…",
+        "demoToast": "Demo — “{{name}}” opens the same reader",
+        "recent": {
+            "continueReading": "CONTINUE READING",
+            "pageOf": "Page {{page}} of {{total}} · Ch. {{chapter}}",
+            "earlierThisWeek": "Earlier this week"
+        },
+        "all": {
+            "coverPlaceholder": "cover"
+        },
+        "collections": {
+            "demoToast": "Demo — “{{name}}” collection",
+            "autoFilled": "Auto-filled for you",
+            "basedOn": "Based on your onboarding · {{label}}",
+            "filedIn": "Filed in {{collection}}",
+            "tapSuggestion": "Tap a suggestion to move it — nothing files without you seeing it."
+        },
+        "vocab": {
+            "savedWords": "Saved words",
+            "wordCount_one": "{{count}} word",
+            "wordCount_other": "{{count}} words",
+            "pageAbbrev": "P. {{page}}",
+            "translitLine": "· {{translit}} · {{lang}}",
+            "emptyState": "No saved words yet.\nTap & hold a word while reading, then “Save word”.",
+            "jumpedToast": "Jumped to page {{page}}"
+        },
+        "files": {
+            "onThisDevice": "On this device",
+            "demoToast": "Demo — folder browsing not wired"
+        },
+        "search": {
+            "emptyPrompt": "Search across Recent and All PDFs\nby title.",
+            "resultCount_one": "{{count}} document",
+            "resultCount_other": "{{count}} documents",
+            "noMatch": "No documents match “{{query}}”."
+        }
+    },
     "hero": {
         "badge": "A calmer PDF reader",
         "title": "Read deeper.\nRemember more.",

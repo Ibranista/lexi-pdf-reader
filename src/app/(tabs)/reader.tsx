@@ -1,10 +1,10 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box, Text } from '@/components/atoms';
-import { PText, Tap } from '@/components/proto';
+import { Box, Text } from "@/components/atoms";
+import { PText, Tap } from "@/components/lexi-components";
 import {
   BreakCard,
   ExplainSheet,
@@ -20,10 +20,10 @@ import {
   SummarizeSheet,
   TocDrawer,
   WordPopover,
-} from '@/components/reader';
-import { BOOK_PAGES, chapterOf, PARAGRAPHS } from '@/constants/library';
-import { LINE_SPACING, useAppStore, useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+} from "@/components/reader";
+import { BOOK_PAGES, chapterOf, PARAGRAPHS } from "@/constants/library";
+import { LINE_SPACING, useAppStore, useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
 export default function ReaderScreen() {
   const t = useProtoTheme();
@@ -35,26 +35,37 @@ export default function ReaderScreen() {
   const [controls, setControls] = useState(false);
   const [toc, setToc] = useState(false);
   const [search, setSearch] = useState(false);
-  const [summ, setSumm] = useState<'closed' | 'done' | 'loading'>('closed');
+  const [summ, setSumm] = useState<"closed" | "done" | "loading">("closed");
   const [popWord, setPopWord] = useState<string | null>(null);
   const [sel, setSel] = useState(false);
   const [expl, setExpl] = useState(false);
   const [lexiOpen, setLexiOpen] = useState(false);
-  const [smartReturn, setSmartReturn] = useState(params.resume === '1');
-  const [focusMode, setFocusMode] = useState(params.focus === '1');
+  const [smartReturn, setSmartReturn] = useState(params.resume === "1");
+  const [focusMode, setFocusMode] = useState(params.focus === "1");
   const [focusPara, setFocusPara] = useState(0);
   const [understood, setUnderstood] = useState<number[]>([]);
   const [sessionSec, setSessionSec] = useState(0);
   const [breakOn, setBreakOn] = useState(false);
   const breakDone = useRef(false);
   const suppressTap = useRef(false);
-  const summTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const summTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const scrollRef = useRef<ScrollView>(null);
 
   const ch = chapterOf(app.page);
   const isBookmarked = app.bookmarks.includes(app.page);
   const overlayOpen =
-    controls || toc || search || summ !== 'closed' || !!popWord || sel || expl || lexiOpen || smartReturn || breakOn;
+    controls ||
+    toc ||
+    search ||
+    summ !== "closed" ||
+    !!popWord ||
+    sel ||
+    expl ||
+    lexiOpen ||
+    smartReturn ||
+    breakOn;
 
   useEffect(() => {
     if (!focusMode || !app.fmTimer) return;
@@ -80,24 +91,26 @@ export default function ReaderScreen() {
     setBreakOn(false);
     breakDone.current = false;
     setControls(false);
-    showToast(on ? 'Focus mode — your paragraph stays bright' : 'Focus mode off');
+    showToast(
+      on ? "Focus mode — your paragraph stays bright" : "Focus mode off",
+    );
   };
 
   const openSummarize = () => {
     if (!app.aiOn) {
-      showToast('AI is off — enable it in Settings');
+      showToast("AI is off — enable it in Settings");
       return;
     }
     setControls(false);
-    setSumm('loading');
+    setSumm("loading");
     clearTimeout(summTimer.current);
-    summTimer.current = setTimeout(() => setSumm('done'), 1300);
+    summTimer.current = setTimeout(() => setSumm("done"), 1300);
   };
 
   const openWord = (word: string) => {
     suppressTap.current = true;
     if (!app.aiOn) {
-      showToast('AI is off — enable it in Settings');
+      showToast("AI is off — enable it in Settings");
       return;
     }
     setControls(false);
@@ -117,7 +130,9 @@ export default function ReaderScreen() {
   };
 
   const nextSection = () => {
-    const marked = understood.includes(focusPara) ? understood : [...understood, focusPara];
+    const marked = understood.includes(focusPara)
+      ? understood
+      : [...understood, focusPara];
     if (focusPara < PARAGRAPHS.length - 1) {
       setUnderstood(marked);
       setFocusPara(focusPara + 1);
@@ -131,11 +146,16 @@ export default function ReaderScreen() {
   };
 
   const segColor = (i: number) =>
-    understood.includes(i) ? t.calm : focusMode && i === focusPara ? t.accent : t.chip;
+    understood.includes(i)
+      ? t.calm
+      : focusMode && i === focusPara
+        ? t.accent
+        : t.chip;
 
   const lineHeight = app.textSize * (LINE_SPACING[app.lineSp] ?? 1.75);
-  const readerFamily = app.fontFam === 'serif' ? t.serif : undefined;
-  const contentPadX = app.readWidth === 'narrow' ? 44 : app.readWidth === 'full' ? 20 : 32;
+  const readerFamily = app.fontFam === "serif" ? t.serif : undefined;
+  const contentPadX =
+    app.readWidth === "narrow" ? 44 : app.readWidth === "full" ? 20 : 32;
 
   return (
     <Box bg={t.page} flex={1}>
@@ -143,7 +163,13 @@ export default function ReaderScreen() {
         direction="row"
         gap={5}
         pointerEvents="none"
-        style={{ position: 'absolute', top: insets.top + 3, left: 26, right: 26, zIndex: 25 }}
+        style={{
+          position: "absolute",
+          top: insets.top + 3,
+          left: 26,
+          right: 26,
+          zIndex: 25,
+        }}
       >
         {PARAGRAPHS.map((_, i) => (
           <Box bg={segColor(i)} flex={1} height={3} key={i} rounded={2} />
@@ -168,7 +194,14 @@ export default function ReaderScreen() {
             setControls((c) => !c);
           }}
         >
-          <PText color={t.faint} ls={1.1} size={11} style={{ marginBottom: 18 }} upper weight="600">
+          <PText
+            color={t.faint}
+            ls={1.1}
+            size={11}
+            style={{ marginBottom: 18 }}
+            upper
+            weight="600"
+          >
             Chapter {ch.n} · {ch.t}
           </PText>
 
@@ -185,7 +218,7 @@ export default function ReaderScreen() {
               }}
             >
               {para.map((seg, j) => {
-                if (seg.kind === 'word') {
+                if (seg.kind === "word") {
                   return (
                     <Text
                       key={j}
@@ -194,8 +227,8 @@ export default function ReaderScreen() {
                         fontSize: app.textSize,
                         lineHeight,
                         color: t.readerInk,
-                        textDecorationLine: 'underline',
-                        textDecorationStyle: 'dotted',
+                        textDecorationLine: "underline",
+                        textDecorationStyle: "dotted",
                         textDecorationColor: t.accent,
                         ...(readerFamily ? { fontFamily: readerFamily } : {}),
                       }}
@@ -204,7 +237,7 @@ export default function ReaderScreen() {
                     </Text>
                   );
                 }
-                if (seg.kind === 'select') {
+                if (seg.kind === "select") {
                   return (
                     <Text
                       key={j}
@@ -213,7 +246,7 @@ export default function ReaderScreen() {
                         fontSize: app.textSize,
                         lineHeight,
                         color: t.readerInk,
-                        backgroundColor: sel ? t.hl : 'transparent',
+                        backgroundColor: sel ? t.hl : "transparent",
                         ...(readerFamily ? { fontFamily: readerFamily } : {}),
                       }}
                     >
@@ -231,7 +264,14 @@ export default function ReaderScreen() {
       <Box
         align="center"
         pointerEvents="none"
-        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 20 + insets.bottom, paddingTop: 12 }}
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          paddingBottom: 20 + insets.bottom,
+          paddingTop: 12,
+        }}
       >
         <PText color={t.faint} size={12}>
           {app.page} of {BOOK_PAGES}
@@ -240,13 +280,35 @@ export default function ReaderScreen() {
 
       {!focusMode && !overlayOpen ? (
         <>
-          <Tap onPress={() => setToc(true)} style={{ position: 'absolute', left: 0, top: '46%', zIndex: 20 }}>
-            <Box align="center" bg={t.chip} height={64} justify="center" roundedBottomRight={10} roundedTopRight={10} width={18}>
+          <Tap
+            onPress={() => setToc(true)}
+            style={{ position: "absolute", left: 0, top: "46%", zIndex: 20 }}
+          >
+            <Box
+              align="center"
+              bg={t.chip}
+              height={64}
+              justify="center"
+              roundedBottomRight={10}
+              roundedTopRight={10}
+              width={18}
+            >
               <Box bg={t.faint} height={26} rounded={2} width={3} />
             </Box>
           </Tap>
-          <Tap onPress={() => setSearch(true)} style={{ position: 'absolute', right: 0, top: '46%', zIndex: 20 }}>
-            <Box align="center" bg={t.chip} height={64} justify="center" roundedBottomLeft={10} roundedTopLeft={10} width={18}>
+          <Tap
+            onPress={() => setSearch(true)}
+            style={{ position: "absolute", right: 0, top: "46%", zIndex: 20 }}
+          >
+            <Box
+              align="center"
+              bg={t.chip}
+              height={64}
+              justify="center"
+              roundedBottomLeft={10}
+              roundedTopLeft={10}
+              width={18}
+            >
               <Box bg={t.faint} height={26} rounded={2} width={3} />
             </Box>
           </Tap>
@@ -261,12 +323,16 @@ export default function ReaderScreen() {
             onBack={() => router.back()}
             onBookmark={() => {
               app.toggleBookmark(app.page);
-              showToast(isBookmarked ? 'Bookmark removed' : `Page ${app.page} bookmarked`);
+              showToast(
+                isBookmarked
+                  ? "Bookmark removed"
+                  : `Page ${app.page} bookmarked`,
+              );
             }}
             onFocus={toggleFocusMode}
             onNotes={() => {
               setControls(false);
-              router.push('/notes');
+              router.push("/notes");
             }}
             onSearch={() => {
               setControls(false);
@@ -283,9 +349,15 @@ export default function ReaderScreen() {
       ) : null}
 
       {focusMode ? (
-        <FocusPill onExit={() => setFocusMode(false)} sessionSec={sessionSec} timerOn={app.fmTimer} />
+        <FocusPill
+          onExit={() => setFocusMode(false)}
+          sessionSec={sessionSec}
+          timerOn={app.fmTimer}
+        />
       ) : null}
-      {focusMode && !controls ? <NextSectionPill onPress={nextSection} /> : null}
+      {focusMode && !controls ? (
+        <NextSectionPill onPress={nextSection} />
+      ) : null}
       {breakOn ? (
         <BreakCard
           onSkip={() => setBreakOn(false)}
@@ -300,7 +372,7 @@ export default function ReaderScreen() {
         <LexiBubble
           onPress={() => {
             if (!app.aiOn) {
-              showToast('AI is off — enable it in Settings');
+              showToast("AI is off — enable it in Settings");
               return;
             }
             setLexiOpen(true);
@@ -309,10 +381,21 @@ export default function ReaderScreen() {
       ) : null}
       {lexiOpen ? <LexiSheet onClose={() => setLexiOpen(false)} /> : null}
 
-      {toc ? <TocDrawer onClose={() => setToc(false)} onGoPage={goPage} /> : null}
-      {search ? <SearchPanel onClose={() => setSearch(false)} onGoPage={goPage} /> : null}
-      {summ !== 'closed' ? <SummarizeSheet loading={summ === 'loading'} onClose={() => setSumm('closed')} /> : null}
-      {popWord ? <WordPopover onClose={() => setPopWord(null)} word={popWord} /> : null}
+      {toc ? (
+        <TocDrawer onClose={() => setToc(false)} onGoPage={goPage} />
+      ) : null}
+      {search ? (
+        <SearchPanel onClose={() => setSearch(false)} onGoPage={goPage} />
+      ) : null}
+      {summ !== "closed" ? (
+        <SummarizeSheet
+          loading={summ === "loading"}
+          onClose={() => setSumm("closed")}
+        />
+      ) : null}
+      {popWord ? (
+        <WordPopover onClose={() => setPopWord(null)} word={popWord} />
+      ) : null}
       {sel ? (
         <SelectionMenu
           onAskAI={() => {
@@ -329,7 +412,7 @@ export default function ReaderScreen() {
           onFresh={() => {
             setSmartReturn(false);
             app.set({ page: 1 });
-            showToast('Starting from page 1');
+            showToast("Starting from page 1");
           }}
         />
       ) : null}

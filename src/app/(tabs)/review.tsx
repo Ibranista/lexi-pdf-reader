@@ -1,12 +1,20 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from "expo-router";
+import { useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from '@/components/atoms';
-import { Card, Divider, ProtoScreen, PText, ScreenHeader, SectionLabel, Tap } from '@/components/proto';
-import { REVIEW_CARDS } from '@/constants/library';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+import { Box } from "@/components/atoms";
+import {
+  Card,
+  Divider,
+  ProtoScreen,
+  PText,
+  ScreenHeader,
+  SectionLabel,
+  Tap,
+} from "@/components/lexi-components";
+import { REVIEW_CARDS } from "@/constants/library";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
 export default function ReviewScreen() {
   const t = useProtoTheme();
@@ -20,7 +28,7 @@ export default function ReviewScreen() {
   const next = (message?: string) => {
     if (message) showToast(message);
     if (idx >= REVIEW_CARDS.length - 1) {
-      showToast('Review done — see you tomorrow');
+      showToast("Review done — see you tomorrow");
       router.back();
     } else {
       setIdx(idx + 1);
@@ -34,7 +42,13 @@ export default function ReviewScreen() {
         right={
           <Box align="center" direction="row" gap={5}>
             {REVIEW_CARDS.map((_, i) => (
-              <Box bg={i <= idx ? t.accent : t.chip} height={5} key={i} rounded={3} width={16} />
+              <Box
+                bg={i <= idx ? t.accent : t.chip}
+                height={5}
+                key={i}
+                rounded={3}
+                width={16}
+              />
             ))}
           </Box>
         }
@@ -48,7 +62,7 @@ export default function ReviewScreen() {
           padding={28}
           rounded={22}
           style={{
-            shadowColor: '#201B15',
+            shadowColor: "#201B15",
             shadowOffset: { width: 0, height: 20 },
             shadowOpacity: 0.1,
             shadowRadius: 50,
@@ -66,16 +80,24 @@ export default function ReviewScreen() {
           <PText lh={26} serif size={16}>
             {card.a}
           </PText>
-          <Box align="center" bg={t.accentSoft} direction="row" gap={9} paddingX={13} paddingY={10} rounded={12}>
+          <Box
+            align="center"
+            bg={t.accentSoft}
+            direction="row"
+            gap={9}
+            paddingX={13}
+            paddingY={10}
+            rounded={12}
+          >
             <Box bg="#F2CE93" height={28} rounded={2} width={4} />
             <Box flex={1}>
               <PText color={t.sub} lh={17} size={11.5}>
-                From your highlight · The Age of Light · p. {card.p} ·{' '}
+                From your highlight · The Age of Light · p. {card.p} ·{" "}
                 <PText
                   color={t.accentText}
                   onPress={() => {
                     setPage(card.p);
-                    router.push('/reader');
+                    router.push("/reader");
                     showToast(`Jumped to page ${card.p}`);
                   }}
                   size={11.5}
@@ -89,15 +111,31 @@ export default function ReviewScreen() {
         </Card>
 
         <Box direction="row" gap={10}>
-          <Tap onPress={() => next("No rush — it'll come back")} scale={0.97} style={{ flex: 1 }}>
-            <Box align="center" bg={t.chip} height={52} justify="center" rounded={14}>
+          <Tap
+            onPress={() => next("No rush — it'll come back")}
+            scale={0.97}
+            style={{ flex: 1 }}
+          >
+            <Box
+              align="center"
+              bg={t.chip}
+              height={52}
+              justify="center"
+              rounded={14}
+            >
               <PText size={14} weight="600">
                 Show again later
               </PText>
             </Box>
           </Tap>
           <Tap onPress={() => next()} scale={0.97} style={{ flex: 1 }}>
-            <Box align="center" bg={t.accent} height={52} justify="center" rounded={14}>
+            <Box
+              align="center"
+              bg={t.accent}
+              height={52}
+              justify="center"
+              rounded={14}
+            >
               <PText color={t.onAccent} size={14} weight="600">
                 Got it
               </PText>
