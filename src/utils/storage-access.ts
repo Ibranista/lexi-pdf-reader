@@ -14,6 +14,20 @@ import { PermissionsAndroid, Platform } from 'react-native';
 
 export const DEVICE_STORAGE_ROOT = 'file:///storage/emulated/0';
 
+/**
+ * Standard shared-storage folders present on virtually every Android device.
+ * Used to sense whether files (not just the permission-less folder skeleton)
+ * are actually visible.
+ */
+const PROBE_SUBDIRS = [
+  'Download',
+  'Documents',
+  'DCIM',
+  'Pictures',
+  'Music',
+  'Movies',
+];
+
 export function storageAccessSupported(): boolean {
   return Platform.OS === 'android';
 }
@@ -21,18 +35,70 @@ export function storageAccessSupported(): boolean {
 /**
  * True when we can actually read shared storage right now.
  *
- * Note: without "All files access" on Android 11+, listing the storage root
- * does NOT throw — it just returns an empty array. So a successful, non-empty
- * listing is the real signal that the permission is held (every device root
- * has standard folders like Download/DCIM). This is the JS-only stand-in for
- * the native `Environment.isExternalStorageManager()` check.
+ * The check differs by Android version because the failure modes differ:
+ *
+ * - Android 11+ (API 30+): the shared-storage *directory skeleton* is
+ *   world-traversable even WITHOUT "All files access" — `list()` on the root
+ *   returns the standard folders (Download, DCIM, …) while the FUSE layer
+ *   hides every file inside them. So listing the root is a false signal.
+ *   The only thing gated on the real permission is *writing* to the root, so
+ *   we probe with a create-and-delete. This is the JS-only stand-in for the
+ *   native `Environment.isExternalStorageManager()` check (which would need a
+ *   custom native module + rebuild).
+ *
+ * - Android 10 and below: there is no scoped-storage file-hiding, so listing
+ *   the root genuinely reflects READ_EXTERNAL_STORAGE — a non-empty listing
+ *   (or any successful listing) means access is held.
  */
 export function hasStorageAccess(): boolean {
   if (!storageAccessSupported()) return false;
+
+  // Android 10 and below: no scoped-storage file-hiding, so a successful
+  // (non-empty) listing of the root reflects real READ_EXTERNAL_STORAGE.
+  if ((Platform.Version as number) < 30) {
+    try {
+      return new Directory(DEVICE_STORAGE_ROOT).list().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  // Android 11+: without "All files access" the OS exposes only the top-level
+  // folder *names* (a skeleton) and hides every file inside them. So:
+
+  // (a) Read signal — if any standard folder reveals a real FILE (not just a
+  //     sub-folder name), the files are no longer hidden → access is held.
+  //     The skeleton only ever exposes directories, never files, so this
+  //     cannot false-positive.
+  for (const name of PROBE_SUBDIRS) {
+    try {
+      const entries = new Directory(DEVICE_STORAGE_ROOT, name).list();
+      if (entries.some((e) => !e.uri.endsWith('/'))) return true;
+    } catch {
+      // folder missing or unreadable — try the next
+    }
+  }
+
+  // (b) Write signal — writing anywhere in shared storage requires the
+  //     permission. Probe a standard folder (created if missing) rather than
+  //     the storage root, since some OEMs block direct writes to the very
+  //     top-level directory even when access is granted.
   try {
-    return new Directory(DEVICE_STORAGE_ROOT).list().length > 0;
+    const probe = new Directory(
+      DEVICE_STORAGE_ROOT,
+      'Documents',
+      `.lexipdf-probe-${Date.now()}`,
+    );
+    probe.create({ intermediates: true });
+    const ok = probe.exists;
+    try {
+      probe.delete();
+    } catch {
+      // best-effort cleanup
+    }
+    return ok;
   } catch {
-    return false;
+    return false; // can't read files anywhere and can't write → not held
   }
 }
 
