@@ -48,6 +48,7 @@
     "expo-status-bar": "~57.0.0",
     "expo-symbols": "~57.0.0",
     "expo-system-ui": "~57.0.0",
+    "expo-updates": "~57.0.8",
     "expo-web-browser": "~57.0.0",
     "google-libphonenumber": "^3.2.40",
     "i18next": "^26.1.0",

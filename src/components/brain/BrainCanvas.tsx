@@ -4,6 +4,11 @@
  * a glass brain that fills with luminous fluid as books are finished,
  * neural paths that light up, and spark pulses travelling along them.
  *
+ * The scene graph (geometry, materials, textures) is built once and cached at
+ * module level — call `prewarmBrainAssets()` during app idle so opening the
+ * screen only creates a renderer for the already-built scene. Each visit
+ * restarts the fill animation; the model itself is never rebuilt.
+ *
  * Uses the prototype's procedural gyri/sulci fallback (the scanned
  * displacement-map variant needs DOM canvas sampling, which RN lacks).
  */
@@ -17,6 +22,11 @@ import { PanResponder } from 'react-native';
 import * as THREE from 'three';
 
 import { Box } from '@/components/atoms';
+
+// The prototype targets three r150: raw sRGB colors straight to the screen.
+// r152+ enables color management by default, which converts every authored
+// hex to linear and shifts the whole palette — disable it to match 1:1.
+THREE.ColorManagement.enabled = false;
 
 interface BrainCanvasProps {
   /** Books finished (drives the fill level). */
@@ -99,45 +109,44 @@ function makeDotTexture(): THREE.DataTexture {
   return tex;
 }
 
-/* ============ Scene ============ */
+/* ============ Cached scene assets ============ */
 
-function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
-  // The prototype targets three r150: raw sRGB colors straight to the screen.
-  // r152+ enables color management by default, which converts every authored
-  // hex to linear and shifts the whole palette — disable it to match 1:1.
-  THREE.ColorManagement.enabled = false;
+interface BrainPath {
+  pts: THREE.Vector3[];
+  mat: THREE.LineBasicMaterial;
+}
 
-  const W = gl.drawingBufferWidth;
-  const H = gl.drawingBufferHeight;
+interface Pulse {
+  segs: { s: THREE.Sprite; m: THREE.SpriteMaterial }[];
+  active: boolean;
+  path: number;
+  t: number;
+  sp: number;
+  boost: boolean;
+}
 
-  const canvasShim = {
-    width: W,
-    height: H,
-    clientWidth: W,
-    clientHeight: H,
-    style: {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    getContext: () => gl,
-  };
+interface BrainAssets {
+  scene: THREE.Scene;
+  group: THREE.Group;
+  fluidMat: THREE.ShaderMaterial;
+  pMat: THREE.ShaderMaterial;
+  pl: THREE.PointLight;
+  paths: BrainPath[];
+  sprites: Pulse[];
+}
 
-  const renderer = new THREE.WebGLRenderer({
-    // expo-gl supplies a WebGL2 context without a DOM canvas
-    canvas: canvasShim as unknown as HTMLCanvasElement,
-    context: gl as unknown as WebGL2RenderingContext,
-    antialias: true,
-    alpha: true,
-  });
-  renderer.setPixelRatio(1);
-  renderer.setSize(W, H, false);
-  renderer.setClearColor(0x000000, 0);
-  // r150-era output & lighting so the shade/point-light look matches the design
-  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-  renderer.useLegacyLights = true;
+let assets: BrainAssets | null = null;
+
+/**
+ * Build (or return) the cached three.js scene. Safe to call ahead of time —
+ * e.g. from a deferred effect at app start — so the Brain screen opens with
+ * the model already constructed. Scene objects are renderer-independent; only
+ * shader compilation and buffer upload happen per GL context.
+ */
+export function prewarmBrainAssets(): BrainAssets {
+  if (assets) return assets;
 
   const scene = new THREE.Scene();
-  const cam = new THREE.PerspectiveCamera(34, W / H, 0.1, 60);
-  cam.position.set(0, 0.15, 4.55);
   const group = new THREE.Group();
   scene.add(group);
 
@@ -264,12 +273,6 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
   scene.add(pl);
 
   // neural paths hugging the surface
-  interface BrainPath {
-    dirs: THREE.Vector3[];
-    pts: THREE.Vector3[];
-    line: THREE.Line;
-    mat: THREE.LineBasicMaterial;
-  }
   const paths: BrainPath[] = [];
   for (let i = 0; i < 26; i++) {
     const a = new THREE.Vector3().randomDirection();
@@ -298,19 +301,11 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
     line.renderOrder = 4;
     group.add(line);
-    paths.push({ dirs, pts, line, mat });
+    paths.push({ pts, mat });
   }
 
   // spark pulses (lead spark + fading trail)
   const dotTex = makeDotTexture();
-  interface Pulse {
-    segs: { s: THREE.Sprite; m: THREE.SpriteMaterial }[];
-    active: boolean;
-    path: number;
-    t: number;
-    sp: number;
-    boost: boolean;
-  }
   const sprites: Pulse[] = [];
   for (let i = 0; i < 14; i++) {
     const segs: Pulse['segs'] = [];
@@ -368,15 +363,73 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
   points.renderOrder = 2;
   group.add(points);
 
+  assets = { scene, group, fluidMat, pMat, pl, paths, sprites };
+  return assets;
+}
+
+/** Rewind the fill animation so each visit charges up from empty again. */
+function resetAnimation(a: BrainAssets) {
+  a.fluidMat.uniforms.uFill.value = -0.75;
+  a.fluidMat.uniforms.uGlow.value = 1;
+  a.pMat.uniforms.uFill.value = -0.75;
+  a.pMat.uniforms.uOp.value = 0;
+  a.pl.intensity = 0;
+  for (const pa of a.paths) pa.mat.opacity = 0;
+  for (const sp of a.sprites) {
+    sp.active = false;
+    for (const x of sp.segs) {
+      x.s.visible = false;
+      x.m.opacity = 0;
+    }
+  }
+}
+
+/* ============ Per-visit renderer ============ */
+
+function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
+  const a = prewarmBrainAssets();
+  resetAnimation(a);
+
+  const W = gl.drawingBufferWidth;
+  const H = gl.drawingBufferHeight;
+
+  const canvasShim = {
+    width: W,
+    height: H,
+    clientWidth: W,
+    clientHeight: H,
+    style: {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: () => gl,
+  };
+
+  const renderer = new THREE.WebGLRenderer({
+    // expo-gl supplies a WebGL2 context without a DOM canvas
+    canvas: canvasShim as unknown as HTMLCanvasElement,
+    context: gl as unknown as WebGL2RenderingContext,
+    antialias: true,
+    alpha: true,
+  });
+  renderer.setPixelRatio(1);
+  renderer.setSize(W, H, false);
+  renderer.setClearColor(0x000000, 0);
+  // r150-era output & lighting so the shade/point-light look matches the design
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+  renderer.useLegacyLights = true;
+
+  const cam = new THREE.PerspectiveCamera(34, W / H, 0.1, 60);
+  cam.position.set(0, 0.15, 4.55);
+
   /* ---- animation ---- */
 
   const B = { fill: 0, boost: 0, spT: 0, waveT: 0, armed: false };
 
   const spawnPulse = (boost: boolean) => {
-    const free = sprites.find((x) => !x.active);
+    const free = a.sprites.find((x) => !x.active);
     if (!free) return;
-    const lit = Math.max(1, Math.floor(B.fill * paths.length + 1));
-    free.path = Math.floor(Math.random() * Math.min(lit, paths.length));
+    const lit = Math.max(1, Math.floor(B.fill * a.paths.length + 1));
+    free.path = Math.floor(Math.random() * Math.min(lit, a.paths.length));
     free.t = 0;
     free.sp = 0.5 + Math.random() * 0.7;
     free.active = true;
@@ -412,16 +465,16 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
     const full = fill >= 0.999;
     const breathe = full ? 0.22 * (0.5 + 0.5 * Math.sin(t * 2.2)) : 0;
     const lvlY = fill <= 0.001 ? -1.2 : -0.5 + fill * 1.3; // fluid rises through the cerebrum
-    fluidMat.uniforms.uTime.value = t;
-    fluidMat.uniforms.uFill.value = lvlY;
-    fluidMat.uniforms.uGlow.value = 0.9 + 0.35 * fill + B.boost * 0.9 + breathe;
-    pMat.uniforms.uTime.value = t;
-    pMat.uniforms.uFill.value = lvlY;
-    pMat.uniforms.uOp.value = fill * 0.85 + B.boost * 0.3;
-    pl.position.set(0, lvlY + 0.1, 0.3);
-    pl.intensity = fill * 1.6 + B.boost * 2 + breathe;
-    paths.forEach((pa, i) => {
-      const thr = (i / paths.length) * 0.92;
+    a.fluidMat.uniforms.uTime.value = t;
+    a.fluidMat.uniforms.uFill.value = lvlY;
+    a.fluidMat.uniforms.uGlow.value = 0.9 + 0.35 * fill + B.boost * 0.9 + breathe;
+    a.pMat.uniforms.uTime.value = t;
+    a.pMat.uniforms.uFill.value = lvlY;
+    a.pMat.uniforms.uOp.value = fill * 0.85 + B.boost * 0.3;
+    a.pl.position.set(0, lvlY + 0.1, 0.3);
+    a.pl.intensity = fill * 1.6 + B.boost * 2 + breathe;
+    a.paths.forEach((pa, i) => {
+      const thr = (i / a.paths.length) * 0.92;
       let tgt = fill > thr ? Math.min(1, (fill - thr) * 5) * (0.2 + 0.4 * fill) : 0;
       if (full) tgt = 0.45 + 0.3 * Math.sin(t * 2.2 + i * 0.7);
       pa.mat.opacity += (tgt - pa.mat.opacity) * Math.min(1, dt * 2.5);
@@ -439,7 +492,7 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
         for (let i = 0; i < 4; i++) spawnPulse(true);
       }
     }
-    for (const sp of sprites) {
+    for (const sp of a.sprites) {
       if (!sp.active) continue;
       sp.t += sp.sp * dt;
       if (sp.t >= 1.14) {
@@ -450,7 +503,7 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
         }
         continue;
       }
-      const pts = paths[sp.path].pts;
+      const pts = a.paths[sp.path].pts;
       const n = pts.length;
       sp.segs.forEach((seg, k) => {
         const tt = sp.t - k * 0.035;
@@ -470,10 +523,10 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
       ctl.rotY += dt * 0.1 + ctl.velY;
       ctl.velY *= Math.exp(-dt * 2.5);
     }
-    group.rotation.y = ctl.rotY;
-    group.rotation.x = ctl.rotX + 0.03 * Math.sin(t * 0.9);
-    group.position.y = 0.03 * Math.sin(t * 1.3);
-    group.scale.setScalar(1 + 0.05 * B.boost);
+    a.group.rotation.y = ctl.rotY;
+    a.group.rotation.x = ctl.rotX + 0.03 * Math.sin(t * 0.9);
+    a.group.position.y = 0.03 * Math.sin(t * 1.3);
+    a.group.scale.setScalar(1 + 0.05 * B.boost);
   };
 
   let raf = 0;
@@ -484,23 +537,15 @@ function createScene(gl: ExpoWebGLRenderingContext, ctl: Ctl) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     tick(now / 1000, dt);
-    renderer.render(scene, cam);
+    renderer.render(a.scene, cam);
     gl.endFrameEXP();
   };
   raf = requestAnimationFrame(loop);
 
   ctl.dispose = () => {
     cancelAnimationFrame(raf);
-    scene.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (mesh.geometry) mesh.geometry.dispose();
-      const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-      for (const m of mats) {
-        const mapped = m as THREE.Material & { map?: THREE.Texture };
-        if (mapped.map) mapped.map.dispose();
-        m.dispose();
-      }
-    });
+    // free only this context's GL resources — the cached scene (geometry,
+    // materials, textures) stays alive for the next visit
     renderer.dispose();
   };
 }

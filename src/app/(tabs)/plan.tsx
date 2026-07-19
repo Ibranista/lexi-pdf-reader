@@ -1,12 +1,19 @@
-import { router } from 'expo-router';
-import { ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from "expo-router";
+import { ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from '@/components/atoms';
-import { Card, IconSpark, ProtoScreen, PText, ScreenHeader, Tap } from '@/components/proto';
-import { PRO_ROWS } from '@/constants/library';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+import { Box } from "@/components/atoms";
+import {
+  Card,
+  IconSpark,
+  ProtoScreen,
+  PText,
+  ScreenHeader,
+  Tap,
+} from "@/components/lexi-components";
+import { PRO_ROWS } from "@/constants/library";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
 export default function PlanScreen() {
   const t = useProtoTheme();
@@ -18,15 +25,20 @@ export default function PlanScreen() {
     <ProtoScreen>
       <ScreenHeader onBack={() => router.back()} title="Your plan" />
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 16 }} style={{ flex: 1 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingTop: 16 }}
+        style={{ flex: 1 }}
+      >
         <Card>
           <Box align="center" direction="row" gap={14}>
             <Box flex={1}>
               <PText size={15} weight="600">
-                {pro ? 'LexiPDF Pro (trial)' : 'LexiPDF Free'}
+                {pro ? "LexiPDF Pro (trial)" : "LexiPDF Free"}
               </PText>
               <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
-                {pro ? '7-day trial · then $4.99/mo billed annually' : 'Reading & annotation, forever free'}
+                {pro
+                  ? "7-day trial · then $4.99/mo billed annually"
+                  : "Reading & annotation, forever free"}
               </PText>
             </Box>
             <Box bg={t.chip} paddingX={12} paddingY={6} rounded={12}>
@@ -37,7 +49,14 @@ export default function PlanScreen() {
           </Box>
         </Card>
 
-        <Box bg={t.card} borderColor={t.line} borderWidth={1} marginTop={16} rounded={18} style={{ overflow: 'hidden' }}>
+        <Box
+          bg={t.card}
+          borderColor={t.line}
+          borderWidth={1}
+          marginTop={16}
+          rounded={18}
+          style={{ overflow: "hidden" }}
+        >
           <Box
             direction="row"
             paddingX={18}
@@ -64,14 +83,18 @@ export default function PlanScreen() {
               key={row.name}
               paddingX={18}
               paddingY={13}
-              style={i < PRO_ROWS.length - 1 ? { borderBottomWidth: 1, borderBottomColor: t.line } : undefined}
+              style={
+                i < PRO_ROWS.length - 1
+                  ? { borderBottomWidth: 1, borderBottomColor: t.line }
+                  : undefined
+              }
             >
               <Box align="center" direction="row" flex={1} gap={7}>
                 {row.ai ? <IconSpark color={t.accent} size={13} /> : null}
                 <PText size={13.5}>{row.name}</PText>
               </Box>
               <Box align="center" width={60}>
-                <PText color={row.free === '—' ? t.faint : t.ink} size={13}>
+                <PText color={row.free === "—" ? t.faint : t.ink} size={13}>
                   {row.free}
                 </PText>
               </Box>
@@ -84,7 +107,13 @@ export default function PlanScreen() {
           ))}
         </Box>
 
-        <PText align="center" color={t.sub} lh={17} size={11.5} style={{ marginTop: 12 }}>
+        <PText
+          align="center"
+          color={t.sub}
+          lh={17}
+          size={11.5}
+          style={{ marginTop: 12 }}
+        >
           Students save 40% with an academic email
         </PText>
       </ScrollView>
@@ -93,17 +122,25 @@ export default function PlanScreen() {
         <Tap
           onPress={() => {
             if (pro) {
-              showToast('Manage in App Store settings');
+              showToast("Manage in App Store settings");
               return;
             }
-            router.push('/paywall');
+            router.push("/paywall");
           }}
           scale={0.98}
         >
-          <Box align="center" bg={t.accent} direction="row" gap={8} height={54} justify="center" rounded={16}>
+          <Box
+            align="center"
+            bg={t.accent}
+            direction="row"
+            gap={8}
+            height={54}
+            justify="center"
+            rounded={16}
+          >
             <IconSpark color={t.onAccent} size={15} />
             <PText color={t.onAccent} size={15} weight="600">
-              {pro ? 'Manage subscription' : 'Try Pro free for 7 days'}
+              {pro ? "Manage subscription" : "Try Pro free for 7 days"}
             </PText>
           </Box>
         </Tap>

@@ -1,17 +1,31 @@
 /**
  * Reader side drawers — table of contents (left) and in-document search (right).
  */
-import { useMemo, useState } from 'react';
-import { ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMemo, useState } from "react";
+import { ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box, TextInput } from '@/components/atoms';
-import { Backdrop, IconBookmark, IconSearch, IconSpark, PText, SectionLabel, Tap } from '@/components/proto';
-import { BOOK_TITLE, CHAPTERS, chapterOf, CORPUS } from '@/constants/library';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+import { Box, TextInput } from "@/components/atoms";
+import {
+  Backdrop,
+  IconBookmark,
+  IconSearch,
+  IconSpark,
+  PText,
+  SectionLabel,
+  Tap,
+} from "@/components/lexi-components";
+import { BOOK_TITLE, chapterOf, CHAPTERS, CORPUS } from "@/constants/library";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
-export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage: (page: number) => void }) {
+export function TocDrawer({
+  onClose,
+  onGoPage,
+}: {
+  onClose: () => void;
+  onGoPage: (page: number) => void;
+}) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const page = useAppStore((s) => s.page);
@@ -26,13 +40,13 @@ export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage
         roundedBottomRight={20}
         roundedTopRight={20}
         style={{
-          position: 'absolute',
+          position: "absolute",
           top: 0,
           bottom: 0,
           left: 0,
           width: 302,
           zIndex: 39,
-          shadowColor: '#14100C',
+          shadowColor: "#14100C",
           shadowOffset: { width: 12, height: 0 },
           shadowOpacity: 0.3,
           shadowRadius: 40,
@@ -42,7 +56,11 @@ export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage
         <Box
           paddingBottom={16}
           paddingX={24}
-          style={{ paddingTop: insets.top + 14, borderBottomWidth: 1, borderBottomColor: t.line }}
+          style={{
+            paddingTop: insets.top + 14,
+            borderBottomWidth: 1,
+            borderBottomColor: t.line,
+          }}
         >
           <SectionLabel>Contents</SectionLabel>
           <PText serif size={18} style={{ marginTop: 6 }} weight="600">
@@ -50,14 +68,17 @@ export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage
           </PText>
         </Box>
 
-        <ScrollView contentContainerStyle={{ padding: 12, paddingTop: 8 }} style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={{ padding: 12, paddingTop: 8 }}
+          style={{ flex: 1 }}
+        >
           {CHAPTERS.map((c) => {
             const on = c.n === current.n;
             return (
               <Tap key={c.n} onPress={() => onGoPage(c.p)}>
                 <Box
                   align="center"
-                  bg={on ? t.accentSoft : 'transparent'}
+                  bg={on ? t.accentSoft : "transparent"}
                   direction="row"
                   gap={10}
                   paddingX={12}
@@ -65,11 +86,20 @@ export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage
                   rounded={12}
                 >
                   <Box flex={1}>
-                    <PText color={on ? t.accentText : t.ink} size={14} weight={on ? '600' : '500'}>
+                    <PText
+                      color={on ? t.accentText : t.ink}
+                      size={14}
+                      weight={on ? "600" : "500"}
+                    >
                       {c.n} · {c.t}
                     </PText>
                   </Box>
-                  <PText color={on ? t.accentText : t.faint} mono size={12} weight="500">
+                  <PText
+                    color={on ? t.accentText : t.faint}
+                    mono
+                    size={12}
+                    weight="500"
+                  >
                     {c.p}
                   </PText>
                 </Box>
@@ -84,7 +114,11 @@ export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage
           gap={8}
           paddingTop={16}
           paddingX={24}
-          style={{ paddingBottom: 26 + insets.bottom, borderTopWidth: 1, borderTopColor: t.line }}
+          style={{
+            paddingBottom: 26 + insets.bottom,
+            borderTopWidth: 1,
+            borderTopColor: t.line,
+          }}
         >
           <IconBookmark color={t.sub} size={14} />
           <PText color={t.sub} size={12}>
@@ -96,11 +130,17 @@ export function TocDrawer({ onClose, onGoPage }: { onClose: () => void; onGoPage
   );
 }
 
-export function SearchPanel({ onClose, onGoPage }: { onClose: () => void; onGoPage: (page: number) => void }) {
+export function SearchPanel({
+  onClose,
+  onGoPage,
+}: {
+  onClose: () => void;
+  onGoPage: (page: number) => void;
+}) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const showToast = useToastStore((s) => s.showToast);
-  const [query, setQuery] = useState('electric');
+  const [query, setQuery] = useState("electric");
 
   const q = query.trim().toLowerCase();
   const results = useMemo(() => {
@@ -126,13 +166,13 @@ export function SearchPanel({ onClose, onGoPage }: { onClose: () => void; onGoPa
         roundedBottomLeft={20}
         roundedTopLeft={20}
         style={{
-          position: 'absolute',
+          position: "absolute",
           top: 0,
           bottom: 0,
           right: 0,
           width: 326,
           zIndex: 39,
-          shadowColor: '#14100C',
+          shadowColor: "#14100C",
           shadowOffset: { width: -12, height: 0 },
           shadowOpacity: 0.3,
           shadowRadius: 40,
@@ -147,7 +187,15 @@ export function SearchPanel({ onClose, onGoPage }: { onClose: () => void; onGoPa
           paddingX={18}
           style={{ paddingTop: insets.top + 12 }}
         >
-          <Box align="center" bg={t.chip} direction="row" flex={1} gap={9} paddingX={14} rounded={12}>
+          <Box
+            align="center"
+            bg={t.chip}
+            direction="row"
+            flex={1}
+            gap={9}
+            paddingX={14}
+            rounded={12}
+          >
             <IconSearch color={t.sub} size={16} />
             <TextInput
               autoFocus
@@ -177,11 +225,14 @@ export function SearchPanel({ onClose, onGoPage }: { onClose: () => void; onGoPa
           <PText color={t.sub} size={12} weight="500">
             {results.length
               ? `${results.length} matches · ${pages.size} pages`
-              : 'Type to search this document'}
+              : "Type to search this document"}
           </PText>
         </Box>
 
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4 }} style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4 }}
+          style={{ flex: 1 }}
+        >
           {results.map((r, i) => (
             <Tap
               key={`${r.p}-${i}`}
@@ -191,19 +242,29 @@ export function SearchPanel({ onClose, onGoPage }: { onClose: () => void; onGoPa
               }}
             >
               <Box
-                bg={i === 0 ? t.accentSoft : 'transparent'}
-                borderColor={i === 0 ? t.accentMid : 'transparent'}
+                bg={i === 0 ? t.accentSoft : "transparent"}
+                borderColor={i === 0 ? t.accentMid : "transparent"}
                 borderWidth={1}
                 marginBottom={6}
                 padding={12}
                 rounded={12}
               >
-                <PText color={i === 0 ? t.accentText : t.faint} mono size={11} weight="600">
+                <PText
+                  color={i === 0 ? t.accentText : t.faint}
+                  mono
+                  size={11}
+                  weight="600"
+                >
                   PAGE {r.p}
                 </PText>
                 <PText lh={21} serif size={13} style={{ marginTop: 5 }}>
                   …{r.before}
-                  <PText lh={21} serif size={13} style={{ backgroundColor: t.hl }}>
+                  <PText
+                    lh={21}
+                    serif
+                    size={13}
+                    style={{ backgroundColor: t.hl }}
+                  >
                     {r.match}
                   </PText>
                   {r.after}…
@@ -220,14 +281,18 @@ export function SearchPanel({ onClose, onGoPage }: { onClose: () => void; onGoPa
           ) : null}
         </ScrollView>
 
-        <Tap onPress={() => showToast('AI Q&A — coming in v2')}>
+        <Tap onPress={() => showToast("AI Q&A — coming in v2")}>
           <Box
             align="center"
             direction="row"
             gap={8}
             paddingTop={14}
             paddingX={20}
-            style={{ paddingBottom: 28 + insets.bottom, borderTopWidth: 1, borderTopColor: t.line }}
+            style={{
+              paddingBottom: 28 + insets.bottom,
+              borderTopWidth: 1,
+              borderTopColor: t.line,
+            }}
           >
             <IconSpark color={t.accent} size={15} />
             <PText size={13} weight="500">

@@ -2,9 +2,9 @@
  * Reader overlays: page summary sheet, tap-to-translate popover, selection
  * action menu, "Explain this" sheet and the smart-return sheet.
  */
-import { useState } from 'react';
+import { useState } from "react";
 
-import { Box } from '@/components/atoms';
+import { Box } from "@/components/atoms";
 import {
   Backdrop,
   BottomSheet,
@@ -22,7 +22,7 @@ import {
   SectionLabel,
   Segmented,
   Tap,
-} from '@/components/proto';
+} from "@/components/lexi-components";
 import {
   BOOK_PAGES,
   BOOK_TITLE,
@@ -31,9 +31,9 @@ import {
   EXPLAIN_BODIES,
   LANG_NAMES,
   SUMMARY_POINTS,
-} from '@/constants/library';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+} from "@/constants/library";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
 /* ============ Summarize ============ */
 
@@ -48,14 +48,29 @@ export function SummarizeSheet({
   const showToast = useToastStore((s) => s.showToast);
   const app = useAppStore();
   const ch = chapterOf(app.page);
-  const summLang = { am: 'ወደ አማርኛ', ar: 'إلى العربية', en: 'Simplify' }[app.lang];
+  const summLang = { am: "ወደ አማርኛ", ar: "إلى العربية", en: "Simplify" }[
+    app.lang
+  ];
 
   return (
     <>
       <Backdrop onPress={onClose} opacity={0.38} />
       <BottomSheet paddingX={22}>
-        <Box align="center" direction="row" gap={10} marginBottom={14} marginTop={6}>
-          <Box align="center" bg={t.accentSoft} height={36} justify="center" rounded={11} width={36}>
+        <Box
+          align="center"
+          direction="row"
+          gap={10}
+          marginBottom={14}
+          marginTop={6}
+        >
+          <Box
+            align="center"
+            bg={t.accentSoft}
+            height={36}
+            justify="center"
+            rounded={11}
+            width={36}
+          >
             <IconSpark color={t.accent} size={18} />
           </Box>
           <Box flex={1}>
@@ -67,16 +82,35 @@ export function SummarizeSheet({
             </PText>
           </Box>
           <Tap onPress={onClose}>
-            <Box align="center" height={32} justify="center" rounded={10} width={32}>
+            <Box
+              align="center"
+              height={32}
+              justify="center"
+              rounded={10}
+              width={32}
+            >
               <IconClose color={t.sub} size={16} />
             </Box>
           </Tap>
         </Box>
 
         {loading ? (
-          <Box bg={t.bg} borderColor={t.line} borderWidth={1} gap={14} padding={18} rounded={16}>
-            {['92%', '78%', '85%'].map((w) => (
-              <Box bg={t.chip} height={13} key={w} rounded={7} style={{ width: w as `${number}%` }} />
+          <Box
+            bg={t.bg}
+            borderColor={t.line}
+            borderWidth={1}
+            gap={14}
+            padding={18}
+            rounded={16}
+          >
+            {["92%", "78%", "85%"].map((w) => (
+              <Box
+                bg={t.chip}
+                height={13}
+                key={w}
+                rounded={7}
+                style={{ width: w as `${number}%` }}
+              />
             ))}
             <PText color={t.sub} size={12}>
               Reading page {app.page}…
@@ -84,10 +118,21 @@ export function SummarizeSheet({
           </Box>
         ) : (
           <>
-            <Box bg={t.bg} borderColor={t.line} borderWidth={1} gap={12} padding={18} rounded={16}>
+            <Box
+              bg={t.bg}
+              borderColor={t.line}
+              borderWidth={1}
+              gap={12}
+              padding={18}
+              rounded={16}
+            >
               {SUMMARY_POINTS.map((point, i) => (
                 <Box direction="row" gap={10} key={i}>
-                  <Box bg={[t.accent, t.accentMid, t.accentSoft][i]} rounded={3} width={5} />
+                  <Box
+                    bg={[t.accent, t.accentMid, t.accentSoft][i]}
+                    rounded={3}
+                    width={5}
+                  />
                   <Box flex={1}>
                     <PText lh={22} size={14}>
                       {point}
@@ -97,7 +142,11 @@ export function SummarizeSheet({
               ))}
             </Box>
             <Box direction="row" gap={10} marginTop={14}>
-              <Tap onPress={() => showToast('Summary copied')} scale={0.96} style={{ flex: 1 }}>
+              <Tap
+                onPress={() => showToast("Summary copied")}
+                scale={0.96}
+                style={{ flex: 1 }}
+              >
                 <Box align="center" bg={t.chip} paddingY={12} rounded={12}>
                   <PText size={13} weight="600">
                     Copy
@@ -105,7 +154,9 @@ export function SummarizeSheet({
                 </Box>
               </Tap>
               <Tap
-                onPress={() => showToast(`Translating summary to ${LANG_NAMES[app.lang]}…`)}
+                onPress={() =>
+                  showToast(`Translating summary to ${LANG_NAMES[app.lang]}…`)
+                }
                 scale={0.96}
                 style={{ flex: 1 }}
               >
@@ -121,12 +172,12 @@ export function SummarizeSheet({
                     p: app.page,
                     ch: ch.n,
                     text: '"Edison ultimately sold reclaimed time, not light."',
-                    color: 'amber',
+                    color: "amber",
                     note: `Saved from AI summary of page ${app.page}.`,
-                    when: 'Today',
+                    when: "Today",
                   });
                   onClose();
-                  showToast('Saved to My Notes');
+                  showToast("Saved to My Notes");
                 }}
                 scale={0.96}
                 style={{ flex: 1 }}
@@ -147,7 +198,13 @@ export function SummarizeSheet({
 
 /* ============ Word popover ============ */
 
-export function WordPopover({ onClose, word }: { onClose: () => void; word: string }) {
+export function WordPopover({
+  onClose,
+  word,
+}: {
+  onClose: () => void;
+  word: string;
+}) {
   const t = useProtoTheme();
   const showToast = useToastStore((s) => s.showToast);
   const app = useAppStore();
@@ -159,7 +216,16 @@ export function WordPopover({ onClose, word }: { onClose: () => void; word: stri
   const ch = chapterOf(app.page);
 
   const saveWord = () =>
-    app.addVocab({ word, pos: d.pos, tr, translit, lang: app.lang, p: app.page, s1: d.s1, s2: d.s2 });
+    app.addVocab({
+      word,
+      pos: d.pos,
+      tr,
+      translit,
+      lang: app.lang,
+      p: app.page,
+      s1: d.s1,
+      s2: d.s2,
+    });
 
   return (
     <>
@@ -171,19 +237,24 @@ export function WordPopover({ onClose, word }: { onClose: () => void; word: stri
         padding={20}
         rounded={20}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: 22,
           right: 22,
-          top: '32%',
+          top: "32%",
           zIndex: 39,
-          shadowColor: '#14100C',
+          shadowColor: "#14100C",
           shadowOffset: { width: 0, height: 20 },
           shadowOpacity: 0.35,
           shadowRadius: 60,
           elevation: 24,
         }}
       >
-        <Box direction="row" justify="between" marginBottom={4} style={{ alignItems: 'baseline' }}>
+        <Box
+          direction="row"
+          justify="between"
+          marginBottom={4}
+          style={{ alignItems: "baseline" }}
+        >
           <PText serif size={20} weight="600">
             {word}
           </PText>
@@ -193,7 +264,13 @@ export function WordPopover({ onClose, word }: { onClose: () => void; word: stri
             </PText>
           </Box>
         </Box>
-        <Box align="center" direction="row" gap={8} marginBottom={14} wrap="wrap">
+        <Box
+          align="center"
+          direction="row"
+          gap={8}
+          marginBottom={14}
+          wrap="wrap"
+        >
           <PText color={t.accentText} size={22} weight="600">
             {tr}
           </PText>
@@ -251,12 +328,12 @@ export function WordPopover({ onClose, word }: { onClose: () => void; word: stri
                 p: app.page,
                 ch: ch.n,
                 text: `"…the ${word} city carried a cost…"`,
-                color: 'green',
+                color: "green",
                 note: `${tr} — ${translit}`,
-                when: 'Today',
+                when: "Today",
               });
               onClose();
-              showToast('Highlighted + saved to vocabulary');
+              showToast("Highlighted + saved to vocabulary");
             }}
             scale={0.95}
           >
@@ -275,13 +352,19 @@ export function WordPopover({ onClose, word }: { onClose: () => void; word: stri
 /* ============ Selection menu ============ */
 
 const SEL_COLORS = [
-  { name: 'Amber', bg: '#EFC57E' },
-  { name: 'Sage', bg: '#B4D4B4' },
-  { name: 'Sky', bg: '#AECBE8' },
-  { name: 'Rose', bg: '#E8B8B4' },
+  { name: "Amber", bg: "#EFC57E" },
+  { name: "Sage", bg: "#B4D4B4" },
+  { name: "Sky", bg: "#AECBE8" },
+  { name: "Rose", bg: "#E8B8B4" },
 ];
 
-export function SelectionMenu({ onAskAI, onClose }: { onAskAI: () => void; onClose: () => void }) {
+export function SelectionMenu({
+  onAskAI,
+  onClose,
+}: {
+  onAskAI: () => void;
+  onClose: () => void;
+}) {
   const t = useProtoTheme();
   const showToast = useToastStore((s) => s.showToast);
   const app = useAppStore();
@@ -294,14 +377,23 @@ export function SelectionMenu({ onAskAI, onClose }: { onAskAI: () => void; onClo
   return (
     <>
       <Backdrop onPress={onClose} opacity={0} />
-      <Box gap={10} style={{ position: 'absolute', left: 24, right: 24, top: '36%', zIndex: 39 }}>
+      <Box
+        gap={10}
+        style={{
+          position: "absolute",
+          left: 24,
+          right: 24,
+          top: "36%",
+          zIndex: 39,
+        }}
+      >
         <Box
           bg="#201B15"
           direction="row"
           padding={6}
           rounded={16}
           style={{
-            shadowColor: '#201B15',
+            shadowColor: "#201B15",
             shadowOffset: { width: 0, height: 16 },
             shadowOpacity: 0.4,
             shadowRadius: 44,
@@ -312,9 +404,13 @@ export function SelectionMenu({ onAskAI, onClose }: { onAskAI: () => void; onClo
             highlight
             icon={<IconHighlighter color="#E8B778" size={16} />}
             label="Highlight"
-            onPress={act('Highlighted ✓ — find it in My Notes')}
+            onPress={act("Highlighted ✓ — find it in My Notes")}
           />
-          <SelAction icon={<IconNoteDoc color="#F6F3EE" size={16} />} label="Note" onPress={act('Note added to this passage')} />
+          <SelAction
+            icon={<IconNoteDoc color="#F6F3EE" size={16} />}
+            label="Note"
+            onPress={act("Note added to this passage")}
+          />
           <SelAction
             icon={<IconBookmark color="#F6F3EE" size={16} />}
             label="Bookmark"
@@ -327,9 +423,13 @@ export function SelectionMenu({ onAskAI, onClose }: { onAskAI: () => void; onClo
           <SelAction
             icon={<IconGlobe color="#F6F3EE" size={16} />}
             label="Translate"
-            onPress={act('Translated inline — tap the passage to toggle')}
+            onPress={act("Translated inline — tap the passage to toggle")}
           />
-          <SelAction icon={<IconSpark color="#D98E4A" size={16} />} label="Ask AI" onPress={onAskAI} />
+          <SelAction
+            icon={<IconSpark color="#D98E4A" size={16} />}
+            label="Ask AI"
+            onPress={onAskAI}
+          />
         </Box>
 
         <Box
@@ -342,7 +442,7 @@ export function SelectionMenu({ onAskAI, onClose }: { onAskAI: () => void; onClo
           paddingY={14}
           rounded={16}
           style={{
-            shadowColor: '#201B15',
+            shadowColor: "#201B15",
             shadowOffset: { width: 0, height: 12 },
             shadowOpacity: 0.18,
             shadowRadius: 36,
@@ -350,13 +450,21 @@ export function SelectionMenu({ onAskAI, onClose }: { onAskAI: () => void; onClo
           }}
         >
           {SEL_COLORS.map((c, i) => (
-            <Tap key={c.name} onPress={act(`${c.name} highlight ✓`)} scale={0.93}>
+            <Tap
+              key={c.name}
+              onPress={act(`${c.name} highlight ✓`)}
+              scale={0.93}
+            >
               <Box align="center" gap={6}>
                 <Box
                   bg={c.bg}
                   height={34}
                   rounded={17}
-                  style={i === 0 ? { borderWidth: 2.5, borderColor: t.accent } : undefined}
+                  style={
+                    i === 0
+                      ? { borderWidth: 2.5, borderColor: t.accent }
+                      : undefined
+                  }
                   width={34}
                 />
                 <PText color={t.sub} size={10} weight="500">
@@ -384,7 +492,13 @@ function SelAction({
 }) {
   return (
     <Tap onPress={onPress} scale={0.94} style={{ flex: 1 }}>
-      <Box align="center" bg={highlight ? 'rgba(246,243,238,.1)' : 'transparent'} gap={5} paddingY={10} rounded={11}>
+      <Box
+        align="center"
+        bg={highlight ? "rgba(246,243,238,.1)" : "transparent"}
+        gap={5}
+        paddingY={10}
+        rounded={11}
+      >
         {icon}
         <PText color="#F6F3EE" size={10.5} weight="500">
           {label}
@@ -396,19 +510,19 @@ function SelAction({
 
 /* ============ Explain this ============ */
 
-type ExplainLevel = 'advanced' | 'beginner' | 'simply';
+type ExplainLevel = "advanced" | "beginner" | "simply";
 
 const EXPL_ITEMS: { key: ExplainLevel; label: string }[] = [
-  { key: 'simply', label: 'Simply' },
-  { key: 'beginner', label: 'Beginner' },
-  { key: 'advanced', label: 'Advanced' },
+  { key: "simply", label: "Simply" },
+  { key: "beginner", label: "Beginner" },
+  { key: "advanced", label: "Advanced" },
 ];
 
 export function ExplainSheet({ onClose }: { onClose: () => void }) {
   const t = useProtoTheme();
   const showToast = useToastStore((s) => s.showToast);
-  const [level, setLevel] = useState<ExplainLevel>('simply');
-  const [ask, setAsk] = useState<'connect' | 'example' | null>(null);
+  const [level, setLevel] = useState<ExplainLevel>("simply");
+  const [ask, setAsk] = useState<"connect" | "example" | null>(null);
 
   const body = ask ? EXPLAIN_BODIES[ask] : EXPLAIN_BODIES[level];
 
@@ -416,8 +530,21 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
     <>
       <Backdrop onPress={onClose} opacity={0.35} />
       <BottomSheet paddingX={24}>
-        <Box align="center" direction="row" gap={10} marginBottom={14} marginTop={8}>
-          <Box align="center" bg={t.accentSoft} height={36} justify="center" rounded={11} width={36}>
+        <Box
+          align="center"
+          direction="row"
+          gap={10}
+          marginBottom={14}
+          marginTop={8}
+        >
+          <Box
+            align="center"
+            bg={t.accentSoft}
+            height={36}
+            justify="center"
+            rounded={11}
+            width={36}
+          >
             <IconSpark color={t.accent} size={18} />
           </Box>
           <Box flex={1}>
@@ -435,9 +562,17 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
           </Tap>
         </Box>
 
-        <Box marginBottom={16} style={{ borderLeftWidth: 3, borderLeftColor: '#EFC57E', paddingLeft: 12 }}>
+        <Box
+          marginBottom={16}
+          style={{
+            borderLeftWidth: 3,
+            borderLeftColor: "#EFC57E",
+            paddingLeft: 12,
+          }}
+        >
           <PText color={t.sub} italic lh={20} serif size={13}>
-            “Gas companies collapsed within a decade, taking whole neighborhoods of lamplighters with them…”
+            “Gas companies collapsed within a decade, taking whole neighborhoods
+            of lamplighters with them…”
           </PText>
         </Box>
 
@@ -453,21 +588,28 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
           />
         </Box>
 
-        <Box bg={t.bg} borderColor={t.line} borderWidth={1} minHeight={96} padding={18} rounded={16}>
+        <Box
+          bg={t.bg}
+          borderColor={t.line}
+          borderWidth={1}
+          minHeight={96}
+          padding={18}
+          rounded={16}
+        >
           <PText lh={23} size={14}>
             {body}
           </PText>
         </Box>
 
         <Box align="center" direction="row" gap={8} marginTop={14}>
-          <Tap onPress={() => setAsk('example')} scale={0.96}>
+          <Tap onPress={() => setAsk("example")} scale={0.96}>
             <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
               <PText size={12} weight="600">
                 Give an example
               </PText>
             </Box>
           </Tap>
-          <Tap onPress={() => setAsk('connect')} scale={0.96}>
+          <Tap onPress={() => setAsk("connect")} scale={0.96}>
             <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
               <PText size={12} weight="600">
                 Connect to Ch. 2
@@ -478,7 +620,7 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
           <Tap
             onPress={() => {
               onClose();
-              showToast('Saved to My Notes ✓');
+              showToast("Saved to My Notes ✓");
             }}
             scale={0.96}
           >
@@ -496,7 +638,13 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
 
 /* ============ Smart return ============ */
 
-export function SmartReturnSheet({ onClose, onFresh }: { onClose: () => void; onFresh: () => void }) {
+export function SmartReturnSheet({
+  onClose,
+  onFresh,
+}: {
+  onClose: () => void;
+  onFresh: () => void;
+}) {
   const t = useProtoTheme();
   const page = useAppStore((s) => s.page);
   const ch = chapterOf(page);
@@ -523,7 +671,15 @@ export function SmartReturnSheet({ onClose, onFresh }: { onClose: () => void; on
           </Box>
         </Box>
 
-        <Box bg={t.accentSoft} direction="row" gap={10} marginTop={16} paddingX={16} paddingY={14} rounded={14}>
+        <Box
+          bg={t.accentSoft}
+          direction="row"
+          gap={10}
+          marginTop={16}
+          paddingX={16}
+          paddingY={14}
+          rounded={14}
+        >
           <Box paddingTop={2}>
             <IconPencil color={t.accentText} size={14} />
           </Box>
@@ -552,14 +708,29 @@ export function SmartReturnSheet({ onClose, onFresh }: { onClose: () => void; on
 
         <Box direction="row" gap={10} marginTop={20}>
           <Tap onPress={onFresh} scale={0.97}>
-            <Box align="center" bg={t.chip} justify="center" paddingX={20} rounded={14} style={{ height: 52 }}>
+            <Box
+              align="center"
+              bg={t.chip}
+              justify="center"
+              paddingX={20}
+              rounded={14}
+              style={{ height: 52 }}
+            >
               <PText size={14} weight="600">
                 Start fresh
               </PText>
             </Box>
           </Tap>
           <Tap onPress={onClose} scale={0.98} style={{ flex: 1 }}>
-            <Box align="center" bg={t.accent} direction="row" gap={8} height={52} justify="center" rounded={14}>
+            <Box
+              align="center"
+              bg={t.accent}
+              direction="row"
+              gap={8}
+              height={52}
+              justify="center"
+              rounded={14}
+            >
               <PText color={t.onAccent} size={15} weight="600">
                 Continue reading
               </PText>

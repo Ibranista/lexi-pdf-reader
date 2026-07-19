@@ -44,6 +44,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "be552dba-a99a-41a7-860a-f6a63c6680bb"
+      }
+    },
+    "owner": "ibranista"
   }
 }

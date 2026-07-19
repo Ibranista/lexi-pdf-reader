@@ -1,9 +1,10 @@
-import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from "expo-router";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box, TextInput } from '@/components/atoms';
+import { Box, TextInput } from "@/components/atoms";
 import {
   Card,
   Cover,
@@ -22,7 +23,7 @@ import {
   SectionLabel,
   Segmented,
   Tap,
-} from '@/components/proto';
+} from "@/components/lexi-components";
 import {
   ALL_DOC_NAMES,
   BOOK_PAGES,
@@ -33,47 +34,60 @@ import {
   LANG_NAMES,
   LIBRARY_INDEX,
   RECENT_DOCS,
-} from '@/constants/library';
-import { useAppStore, useToastStore } from '@/stores/app-store';
-import { useOnboardingStore } from '@/stores/onboarding-store';
-import { useProtoTheme } from '@/theme/proto';
+} from "@/constants/library";
+import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import { useProtoTheme } from "@/theme/proto";
 
-type LibTab = 'all' | 'coll' | 'files' | 'recent' | 'vocab';
-
-const TAB_ITEMS = [
-  { key: 'recent' as const, label: 'Recent' },
-  { key: 'all' as const, label: 'All' },
-  { key: 'coll' as const, label: 'Collections', flex: 1.4 },
-  { key: 'files' as const, label: 'Files' },
-  { key: 'vocab' as const, label: 'Vocab' },
-];
+type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
 
 export default function LibraryScreen() {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   const insets = useSafeAreaInsets();
   const showToast = useToastStore((s) => s.showToast);
-  const [tab, setTab] = useState<LibTab>('recent');
+  const [tab, setTab] = useState<LibTab>("recent");
   const [searching, setSearching] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
 
-  const openReader = () => router.push('/reader');
-  const openDemo = (name: string) => showToast(`Demo — “${name}” opens the same reader`);
+  const TAB_ITEMS = [
+    { key: "recent" as const, label: tr("tabItems.recent") },
+    { key: "all" as const, label: tr("tabItems.all") },
+    { key: "coll" as const, label: tr("tabItems.collections"), flex: 1.4 },
+    { key: "files" as const, label: tr("tabItems.files") },
+    { key: "vocab" as const, label: tr("tabItems.vocab") },
+  ];
+
+  const openReader = () => router.push("/reader");
+  const openDemo = (name: string) =>
+    showToast(tr("library.demoToast", { name }));
 
   return (
     <ProtoScreen>
       {/* top icon row */}
-      <Box align="center" direction="row" justify="between" paddingLeft={20} paddingRight={20} paddingTop={8}>
-        <HeaderButton onPress={() => router.push('/settings')}>
+      <Box
+        align="center"
+        direction="row"
+        justify="between"
+        paddingLeft={20}
+        paddingRight={20}
+        paddingTop={8}
+      >
+        <HeaderButton onPress={() => router.push("/settings")}>
           <IconSliders bg={t.bg} color={t.ink} size={20} />
         </HeaderButton>
         <Box direction="row" gap={10}>
-          <HeaderButton onPress={() => router.push('/today')}>
+          <HeaderButton onPress={() => router.push("/today")}>
             <IconSun color={t.ink} size={19} />
           </HeaderButton>
-          <HeaderButton onPress={() => router.push('/brain')}>
+          <HeaderButton onPress={() => router.push("/brain")}>
             <IconBrain color={t.ink} size={19} />
           </HeaderButton>
-          <HeaderButton bg={t.accentSoft} noBorder onPress={() => showToast('Signed in as Selam B.')}>
+          <HeaderButton
+            bg={t.accentSoft}
+            noBorder
+            onPress={() => showToast(tr("library.signedInAs", { name: "Selam B." }))}
+          >
             <PText color={t.accentText} size={14} weight="600">
               SB
             </PText>
@@ -82,7 +96,14 @@ export default function LibraryScreen() {
       </Box>
 
       {searching ? (
-        <Box align="center" direction="row" gap={10} paddingLeft={20} paddingRight={20} paddingTop={14}>
+        <Box
+          align="center"
+          direction="row"
+          gap={10}
+          paddingLeft={20}
+          paddingRight={20}
+          paddingTop={14}
+        >
           <Box
             align="center"
             bg={t.card}
@@ -102,7 +123,7 @@ export default function LibraryScreen() {
               borderWidth={0}
               fontSize={14.5}
               onChangeText={setQuery}
-              placeholder="Search your library"
+              placeholder={tr("library.searchPlaceholder")}
               placeholderTextColor={t.faint}
               pl={0}
               py={12}
@@ -115,20 +136,27 @@ export default function LibraryScreen() {
           <Tap
             onPress={() => {
               setSearching(false);
-              setQuery('');
+              setQuery("");
             }}
           >
             <PText color={t.accentText} size={14} weight="500">
-              Cancel
+              {tr("library.cancel")}
             </PText>
           </Tap>
         </Box>
       ) : (
         <>
           {/* title row */}
-          <Box align="center" direction="row" justify="between" paddingLeft={20} paddingRight={20} paddingTop={18}>
+          <Box
+            align="center"
+            direction="row"
+            justify="between"
+            paddingLeft={20}
+            paddingRight={20}
+            paddingTop={18}
+          >
             <PText ls={-0.3} serif size={30} weight="600">
-              Library
+              {tr("library.title")}
             </PText>
             <HeaderButton onPress={() => setSearching(true)}>
               <IconSearch color={t.ink} size={19} />
@@ -143,18 +171,26 @@ export default function LibraryScreen() {
       )}
 
       <ScrollView
-        contentContainerStyle={{ padding: 20, paddingTop: searching ? 16 : 18, paddingBottom: 90 + insets.bottom }}
+        contentContainerStyle={{
+          padding: 20,
+          paddingTop: searching ? 16 : 18,
+          paddingBottom: 90 + insets.bottom,
+        }}
         style={{ flex: 1 }}
       >
         {searching ? (
-          <SearchResults openDemo={openDemo} openReader={openReader} query={query} />
-        ) : tab === 'recent' ? (
+          <SearchResults
+            openDemo={openDemo}
+            openReader={openReader}
+            query={query}
+          />
+        ) : tab === "recent" ? (
           <RecentTab openDemo={openDemo} openReader={openReader} />
-        ) : tab === 'all' ? (
+        ) : tab === "all" ? (
           <AllTab openDemo={openDemo} openReader={openReader} />
-        ) : tab === 'coll' ? (
+        ) : tab === "coll" ? (
           <CollectionsTab openDemo={openDemo} openReader={openReader} />
-        ) : tab === 'vocab' ? (
+        ) : tab === "vocab" ? (
           <VocabTab />
         ) : (
           <FilesTab />
@@ -163,9 +199,9 @@ export default function LibraryScreen() {
 
       {/* import FAB */}
       <Tap
-        onPress={() => showToast('Import from Files / Drive…')}
+        onPress={() => showToast(tr("library.importToast"))}
         scale={0.92}
-        style={{ position: 'absolute', right: 20, bottom: 26 + insets.bottom }}
+        style={{ position: "absolute", right: 20, bottom: 26 + insets.bottom }}
       >
         <Box
           align="center"
@@ -174,7 +210,7 @@ export default function LibraryScreen() {
           justify="center"
           rounded={18}
           style={{
-            shadowColor: '#201B15',
+            shadowColor: "#201B15",
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.35,
             shadowRadius: 24,
@@ -191,8 +227,15 @@ export default function LibraryScreen() {
 
 /* ============ Recent ============ */
 
-function RecentTab({ openDemo, openReader }: { openDemo: (name: string) => void; openReader: () => void }) {
+function RecentTab({
+  openDemo,
+  openReader,
+}: {
+  openDemo: (name: string) => void;
+  openReader: () => void;
+}) {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   const page = useAppStore((s) => s.page);
   const ch = chapterOf(page);
 
@@ -201,16 +244,16 @@ function RecentTab({ openDemo, openReader }: { openDemo: (name: string) => void;
       <Tap onPress={openReader} scale={0.985}>
         <Card rounded={18}>
           <Box align="center" direction="row" gap={16}>
-            <Cover height={104} label="cover" rounded={8} width={76} />
+            <Cover height={104} label={tr("library.all.coverPlaceholder")} rounded={8} width={76} />
             <Box flex={1} gap={6}>
               <PText color={t.accentText} ls={0.44} size={11} weight="600">
-                CONTINUE READING
+                {tr("library.recent.continueReading")}
               </PText>
               <PText lh={20} serif size={16} weight="600">
                 {BOOK_TITLE}
               </PText>
               <PText color={t.sub} size={12}>
-                Page {page} of {BOOK_PAGES} · Ch. {ch.n}
+                {tr("library.recent.pageOf", { page, total: BOOK_PAGES, chapter: ch.n })}
               </PText>
               <Box marginTop={4}>
                 <ProgressBar pct={(page / BOOK_PAGES) * 100} />
@@ -222,7 +265,7 @@ function RecentTab({ openDemo, openReader }: { openDemo: (name: string) => void;
       </Tap>
 
       <Box paddingBottom={8} paddingTop={20}>
-        <SectionLabel>Earlier this week</SectionLabel>
+        <SectionLabel>{tr("library.recent.earlierThisWeek")}</SectionLabel>
       </Box>
 
       {RECENT_DOCS.map((doc) => (
@@ -243,8 +286,17 @@ function RecentTab({ openDemo, openReader }: { openDemo: (name: string) => void;
                 {doc.meta}
               </PText>
             </Box>
-            <Box bg={doc.hot ? t.accentSoft : t.chip} paddingX={10} paddingY={4} rounded={20}>
-              <PText color={doc.hot ? t.accentText : t.sub} size={11} weight="500">
+            <Box
+              bg={doc.hot ? t.accentSoft : t.chip}
+              paddingX={10}
+              paddingY={4}
+              rounded={20}
+            >
+              <PText
+                color={doc.hot ? t.accentText : t.sub}
+                size={11}
+                weight="500"
+              >
                 {doc.badge}
               </PText>
             </Box>
@@ -257,16 +309,26 @@ function RecentTab({ openDemo, openReader }: { openDemo: (name: string) => void;
 
 /* ============ All ============ */
 
-function AllTab({ openDemo, openReader }: { openDemo: (name: string) => void; openReader: () => void }) {
+function AllTab({
+  openDemo,
+  openReader,
+}: {
+  openDemo: (name: string) => void;
+  openReader: () => void;
+}) {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   return (
-    <Box direction="row" style={{ flexWrap: 'wrap', columnGap: 14, rowGap: 16 }}>
+    <Box
+      direction="row"
+      style={{ flexWrap: "wrap", columnGap: 14, rowGap: 16 }}
+    >
       {ALL_DOC_NAMES.map((name, i) => (
         <Tap
           key={name}
           onPress={i === 0 ? openReader : () => openDemo(name)}
           scale={0.96}
-          style={{ width: '30%', flexGrow: 1 }}
+          style={{ width: "30%", flexGrow: 1 }}
         >
           <Box gap={7}>
             <Box
@@ -279,7 +341,7 @@ function AllTab({ openDemo, openReader }: { openDemo: (name: string) => void; op
               style={{ aspectRatio: 3 / 4 }}
             >
               <PText color={t.sub} mono size={8}>
-                cover
+                {tr("library.all.coverPlaceholder")}
               </PText>
             </Box>
             <PText lh={15} numberOfLines={2} size={11.5} weight="500">
@@ -294,21 +356,28 @@ function AllTab({ openDemo, openReader }: { openDemo: (name: string) => void; op
 
 /* ============ Collections ============ */
 
-function CollectionsTab({ openDemo, openReader }: { openDemo: (name: string) => void; openReader: () => void }) {
+function CollectionsTab({
+  openDemo,
+  openReader,
+}: {
+  openDemo: (name: string) => void;
+  openReader: () => void;
+}) {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   const showToast = useToastStore((s) => s.showToast);
   const readerType = useOnboardingStore((s) => s.readerType);
   const cd = COLLECTIONS[readerType] ?? COLLECTIONS.student;
 
   return (
     <>
-      <Box direction="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+      <Box direction="row" style={{ flexWrap: "wrap", gap: 12 }}>
         {cd.colls.map(([emoji, name, meta]) => (
           <Tap
             key={name}
-            onPress={() => showToast(`Demo — “${name}” collection`)}
+            onPress={() => showToast(tr("library.collections.demoToast", { name }))}
             scale={0.97}
-            style={{ width: '47%', flexGrow: 1 }}
+            style={{ width: "47%", flexGrow: 1 }}
           >
             <Card gap={8}>
               <PText size={22}>{emoji}</PText>
@@ -323,16 +392,25 @@ function CollectionsTab({ openDemo, openReader }: { openDemo: (name: string) => 
         ))}
       </Box>
 
-      <Box align="center" direction="row" gap={8} paddingBottom={3} paddingTop={24}>
+      <Box
+        align="center"
+        direction="row"
+        gap={8}
+        paddingBottom={3}
+        paddingTop={24}
+      >
         <IconSpark color={t.accent} size={13} />
-        <SectionLabel>Auto-filled for you</SectionLabel>
+        <SectionLabel>{tr("library.collections.autoFilled")}</SectionLabel>
       </Box>
       <PText color={t.faint} size={12} style={{ paddingBottom: 4 }}>
-        Based on your onboarding · {cd.label}
+        {tr("library.collections.basedOn", { label: cd.label })}
       </PText>
 
       {cd.filed.map(([name, coll, kind]) => (
-        <Tap key={name} onPress={name === BOOK_TITLE ? openReader : () => openDemo(name)}>
+        <Tap
+          key={name}
+          onPress={name === BOOK_TITLE ? openReader : () => openDemo(name)}
+        >
           <Box
             align="center"
             direction="row"
@@ -346,7 +424,7 @@ function CollectionsTab({ openDemo, openReader }: { openDemo: (name: string) => 
                 {name}
               </PText>
               <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
-                Filed in {coll}
+                {tr("library.collections.filedIn", { collection: coll })}
               </PText>
             </Box>
             <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
@@ -359,7 +437,7 @@ function CollectionsTab({ openDemo, openReader }: { openDemo: (name: string) => 
       ))}
 
       <PText color={t.faint} size={12} style={{ paddingTop: 10 }}>
-        Tap a suggestion to move it — nothing files without you seeing it.
+        {tr("library.collections.tapSuggestion")}
       </PText>
     </>
   );
@@ -369,16 +447,22 @@ function CollectionsTab({ openDemo, openReader }: { openDemo: (name: string) => 
 
 function VocabTab() {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   const vocab = useAppStore((s) => s.vocab);
   const setPage = useAppStore((s) => s.setPage);
   const showToast = useToastStore((s) => s.showToast);
 
   return (
     <>
-      <Box direction="row" justify="between" paddingBottom={8} style={{ alignItems: 'baseline' }}>
-        <SectionLabel>Saved words</SectionLabel>
+      <Box
+        direction="row"
+        justify="between"
+        paddingBottom={8}
+        style={{ alignItems: "baseline" }}
+      >
+        <SectionLabel>{tr("library.vocab.savedWords")}</SectionLabel>
         <PText color={t.faint} size={12}>
-          {vocab.length} {vocab.length === 1 ? 'word' : 'words'}
+          {tr("library.vocab.wordCount", { count: vocab.length })}
         </PText>
       </Box>
 
@@ -388,13 +472,13 @@ function VocabTab() {
             key={v.word}
             onPress={() => {
               setPage(v.p);
-              router.push('/reader');
-              showToast(`Jumped to page ${v.p}`);
+              router.push("/reader");
+              showToast(tr("library.vocab.jumpedToast", { page: v.p }));
             }}
             scale={0.985}
           >
             <Card gap={10}>
-              <Box direction="row" gap={10} style={{ alignItems: 'baseline' }}>
+              <Box direction="row" gap={10} style={{ alignItems: "baseline" }}>
                 <PText serif size={18} weight="600">
                   {v.word}
                 </PText>
@@ -405,15 +489,23 @@ function VocabTab() {
                 </Box>
                 <Box flex={1} />
                 <PText color={t.faint} mono size={11} weight="600">
-                  P. {v.p}
+                  {tr("library.vocab.pageAbbrev", { page: v.p })}
                 </PText>
               </Box>
-              <Box direction="row" gap={8} wrap="wrap" style={{ alignItems: 'baseline' }}>
+              <Box
+                direction="row"
+                gap={8}
+                wrap="wrap"
+                style={{ alignItems: "baseline" }}
+              >
                 <PText color={t.accentText} size={17} weight="600">
                   {v.tr}
                 </PText>
                 <PText color={t.sub} size={12}>
-                  · {v.translit} · {LANG_NAMES[v.lang] ?? v.lang}
+                  {tr("library.vocab.translitLine", {
+                    translit: v.translit,
+                    lang: LANG_NAMES[v.lang] ?? v.lang,
+                  })}
                 </PText>
               </Box>
               <Box direction="row" gap={9}>
@@ -440,7 +532,7 @@ function VocabTab() {
           <Box align="center" gap={10} paddingX={24} paddingY={48}>
             <IconSpark color={t.faint} size={26} />
             <PText align="center" color={t.sub} lh={21} size={13}>
-              No saved words yet.{'\n'}Tap & hold a word while reading, then “Save word”.
+              {tr("library.vocab.emptyState")}
             </PText>
           </Box>
         ) : null}
@@ -453,14 +545,18 @@ function VocabTab() {
 
 function FilesTab() {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   const showToast = useToastStore((s) => s.showToast);
   return (
     <>
       <Box paddingBottom={8}>
-        <SectionLabel>On this device</SectionLabel>
+        <SectionLabel>{tr("library.files.onThisDevice")}</SectionLabel>
       </Box>
       {FOLDERS.map((f) => (
-        <Tap key={f.name} onPress={() => showToast('Demo — folder browsing not wired')}>
+        <Tap
+          key={f.name}
+          onPress={() => showToast(tr("library.files.demoToast"))}
+        >
           <Box
             align="center"
             direction="row"
@@ -468,7 +564,14 @@ function FilesTab() {
             paddingY={14}
             style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
           >
-            <Box align="center" bg={t.accentSoft} height={42} justify="center" rounded={11} width={42}>
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              height={42}
+              justify="center"
+              rounded={11}
+              width={42}
+            >
               <IconFolder color={t.accentText} size={19} />
             </Box>
             <Box flex={1}>
@@ -499,10 +602,12 @@ function SearchResults({
   query: string;
 }) {
   const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
   const q = query.trim().toLowerCase();
 
   const results = useMemo(
-    () => (q ? LIBRARY_INDEX.filter((d) => d.name.toLowerCase().includes(q)) : []),
+    () =>
+      q ? LIBRARY_INDEX.filter((d) => d.name.toLowerCase().includes(q)) : [],
     [q],
   );
 
@@ -511,7 +616,7 @@ function SearchResults({
       <Box align="center" gap={10} paddingX={24} paddingY={44}>
         <IconSearch color={t.faint} size={26} />
         <PText align="center" color={t.sub} lh={21} size={13}>
-          Search across Recent and All PDFs{'\n'}by title.
+          {tr("library.search.emptyPrompt")}
         </PText>
       </Box>
     );
@@ -521,11 +626,14 @@ function SearchResults({
     <>
       <Box paddingBottom={10}>
         <SectionLabel>
-          {results.length} {results.length === 1 ? 'document' : 'documents'}
+          {tr("library.search.resultCount", { count: results.length })}
         </SectionLabel>
       </Box>
       {results.map((doc) => (
-        <Tap key={doc.name} onPress={doc.isBook ? openReader : () => openDemo(doc.name)}>
+        <Tap
+          key={doc.name}
+          onPress={doc.isBook ? openReader : () => openDemo(doc.name)}
+        >
           <Box
             align="center"
             direction="row"
@@ -553,7 +661,7 @@ function SearchResults({
       {results.length === 0 ? (
         <Box paddingX={24} paddingY={48}>
           <PText align="center" color={t.sub} lh={21} size={13}>
-            No documents match “{query}”.
+            {tr("library.search.noMatch", { query })}
           </PText>
         </Box>
       ) : null}
