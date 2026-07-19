@@ -69,6 +69,7 @@
     "react-native-linear-gradient": "^2.8.3",
     "react-native-mmkv": "^4.3.1",
     "react-native-nitro-modules": "^0.35.7",
+    "react-native-pdf-page-image": "^0.2.1",
     "react-native-reanimated": "4.5.0",
     "react-native-reanimated-carousel": "^4.0.3",
     "react-native-safe-area-context": "~5.7.0",
@@ -90,7 +91,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "unrs-resolver"
-    ]
+    ],
+    "patchedDependencies": {
+      "react-native-pdf-page-image": "patches/react-native-pdf-page-image.patch"
+    }
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

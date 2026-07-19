@@ -63,7 +63,6 @@ async function scanTree(
   let visited = 0;
   while (stack.length > 0) {
     const { dir, depth } = stack.pop()!;
-    console.log("the stack-->", dir);
     if (++visited % YIELD_EVERY === 0) {
       await yieldFrame();
       onTick(docs.length);
@@ -78,28 +77,31 @@ async function scanTree(
 
     let count = 0;
     for (const entry of entries) {
-      const isDir =
-        entry instanceof Directory ||
-        typeof (entry as { list?: unknown }).list === "function";
+      const isDir = entry.uri.endsWith("/");
+
       if (isDir) {
         if (depth < MAX_DEPTH && !skippable(entry.name)) {
           stack.push({ dir: entry as Directory, depth: depth + 1 });
         }
         continue;
       }
-      const ext = entry.name.match(DOC_EXT_RE)?.[1];
+      const file = entry as File;
+      const ext = file.name.match(DOC_EXT_RE)?.[1];
+      if (__DEV__) {
+        console.log("file:", file.name, "| ext:", ext ?? "none");
+      }
       if (!ext) continue;
 
       count += 1;
       let size = 0;
       let modifiedAt: number | null = null;
       try {
-        size = entry.size;
-        modifiedAt = entry.modificationTime;
+        size = file.size ?? 0;
+        modifiedAt = file.lastModified;
       } catch {}
       docs.push({
-        uri: entry.uri,
-        name: entry.name.replace(DOC_EXT_RE, ""),
+        uri: file.uri,
+        name: file.name.replace(DOC_EXT_RE, ""),
         ext: ext.toUpperCase(),
         size,
         modifiedAt,

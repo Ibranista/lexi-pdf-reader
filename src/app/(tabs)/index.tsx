@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -36,10 +37,12 @@ import {
   RECENT_DOCS,
 } from "@/constants/library";
 import {
+  type DeviceDoc,
   formatSize,
   formatWhen,
   useDeviceLibrary,
 } from "@/hooks/use-device-library";
+import { usePdfThumbnail } from "@/hooks/use-pdf-thumbnail";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -357,6 +360,36 @@ function docMeta(size: number, modifiedAt: number | null): string {
   return [formatSize(size), formatWhen(modifiedAt)].filter(Boolean).join(" · ");
 }
 
+function DocCover({ doc }: { doc: DeviceDoc }) {
+  const t = useProtoTheme();
+  const thumb = usePdfThumbnail(doc.uri, doc.ext === "PDF");
+
+  return (
+    <Box
+      align="center"
+      bg={t.coverA}
+      borderColor={t.line}
+      borderWidth={1}
+      justify="center"
+      rounded={9}
+      style={{ aspectRatio: 3 / 4, overflow: "hidden" }}
+    >
+      {thumb ? (
+        <Image
+          contentFit="cover"
+          source={{ uri: thumb }}
+          style={{ width: "100%", height: "100%" }}
+          transition={160}
+        />
+      ) : (
+        <Text color={t.sub} mono size={8}>
+          {doc.ext}
+        </Text>
+      )}
+    </Box>
+  );
+}
+
 function AllTab({
   lib,
   openReader,
@@ -458,19 +491,7 @@ function AllTab({
             style={{ width: "30%", flexGrow: 1 }}
           >
             <Box gap={7}>
-              <Box
-                align="center"
-                bg={t.coverA}
-                borderColor={t.line}
-                borderWidth={1}
-                justify="center"
-                rounded={9}
-                style={{ aspectRatio: 3 / 4 }}
-              >
-                <Text color={t.sub} mono size={8}>
-                  {doc.ext}
-                </Text>
-              </Box>
+              <DocCover doc={doc} />
               <Box gap={2}>
                 <Text lh={15} numberOfLines={2} size={11.5} weight="500">
                   {doc.name}

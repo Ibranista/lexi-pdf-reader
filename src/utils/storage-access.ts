@@ -5,16 +5,51 @@ import { PermissionsAndroid, Platform } from 'react-native';
 
 export const DEVICE_STORAGE_ROOT = 'file:///storage/emulated/0';
 
+const PROBE_SUBDIRS = [
+  'Download',
+  'Documents',
+  'DCIM',
+  'Pictures',
+  'Music',
+  'Movies',
+];
+
 export function storageAccessSupported(): boolean {
   return Platform.OS === 'android';
 }
 
 export function hasStorageAccess(): boolean {
   if (!storageAccessSupported()) return false;
+
+  if ((Platform.Version as number) < 30) {
+    try {
+      return new Directory(DEVICE_STORAGE_ROOT).list().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  for (const name of PROBE_SUBDIRS) {
+    try {
+      const entries = new Directory(DEVICE_STORAGE_ROOT, name).list();
+      if (entries.some((e) => !e.uri.endsWith('/'))) return true;
+    } catch {}
+  }
+
   try {
-    return new Directory(DEVICE_STORAGE_ROOT).list().length > 0;
+    const probe = new Directory(
+      DEVICE_STORAGE_ROOT,
+      'Documents',
+      `.lexipdf-probe-${Date.now()}`,
+    );
+    probe.create({ intermediates: true });
+    const ok = probe.exists;
+    try {
+      probe.delete();
+    } catch {}
+    return ok;
   } catch {
-    return false;
+    return false; // can't read files anywhere and can't write → not held
   }
 }
 

@@ -1,0 +1,30 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 9719c815b73db70b545dd9d740320a2c9cbb5fec..0cac7e0c9af780670df90e74ac7d630610b8fd32 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -34,6 +34,7 @@ def getExtOrIntegerDefault(name) {
+ }
+ 
+ android {
++  namespace "com.reactnativepdfpageimage"
+   compileSdkVersion getExtOrIntegerDefault('compileSdkVersion')
+ 
+   defaultConfig {
+@@ -61,7 +62,6 @@ android {
+ repositories {
+   mavenCentral()
+   google()
+-  jcenter()  // Add this line to include JCenter repository
+ 
+   def found = false
+   def defaultDir = null
+diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
+index 2b689dc22802611d261dc4d23d628747ff561126..b21e9e6f157c2376f482741b39dae1227247ceed 100644
+--- a/android/src/main/AndroidManifest.xml
++++ b/android/src/main/AndroidManifest.xml
+@@ -1,4 +1,3 @@
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+-          package="com.reactnativepdfpageimage">
++<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ 
+ </manifest>
