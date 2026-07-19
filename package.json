@@ -2,6 +2,7 @@
   "name": "lexipdf-reader",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "packageManager": "pnpm@10.23.0",
   "dependencies": {
     "@expo/ui": "~57.0.4",
     "@expo/vector-icons": "^15.0.3",
@@ -53,10 +54,8 @@
     "google-libphonenumber": "^3.2.40",
     "i18next": "^26.1.0",
     "iconsax-react-nativejs": "^0.0.8",
-    "install": "^0.13.0",
     "liveface": "^1.2.0",
     "nativewind": "^4.1.23",
-    "npm": "^11.17.0",
     "react": "19.2.3",
     "react-circle-flags": "^0.0.23",
     "react-dom": "19.2.3",
@@ -86,6 +85,11 @@
     "toastify-react-native": "^7.2.3",
     "zod": "^3.24.0",
     "zustand": "^5.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "unrs-resolver"
+    ]
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
