@@ -8,7 +8,7 @@ import {
   Card,
   IconChevron,
   ProtoScreen,
-  PText,
+  Text,
   ScreenHeader,
   Tap,
 } from "@/components/lexi-components";
@@ -134,31 +134,31 @@ export default function GraphScreen() {
                 : {}),
             }}
           >
-            <PText
+            <Text
               color={n.accent ? t.onAccent : n.primary ? t.ink : t.sub}
               size={n.accent ? 13.5 : n.primary ? 13 : 12}
               weight={n.accent || n.primary ? "600" : "500"}
             >
               {n.label}
-            </PText>
+            </Text>
           </Box>
         ))}
       </Box>
 
       <Box marginX={20} style={{ marginBottom: 26 + insets.bottom }}>
         <Card gap={8}>
-          <PText size={13.5} weight="600">
+          <Text size={13.5} weight="600">
             Time reclaimed
-          </PText>
-          <PText color={t.sub} lh={18} size={12}>
+          </Text>
+          <Text color={t.sub} lh={18} size={12}>
             2 highlights · 1 note · 1 review card · linked to Gaslight Economy
             by your Ch. 2 highlight
-          </PText>
+          </Text>
           <Tap onPress={() => router.push("/notes")}>
             <Box align="center" direction="row" gap={6}>
-              <PText color={t.accentText} size={12.5} weight="600">
+              <Text color={t.accentText} size={12.5} weight="600">
                 Open highlights
-              </PText>
+              </Text>
               <IconChevron color={t.accent} size={13} strokeWidth={2} />
             </Box>
           </Tap>

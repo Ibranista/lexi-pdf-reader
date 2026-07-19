@@ -19,10 +19,10 @@ import {
   IconSun,
   ProgressBar,
   ProtoScreen,
-  PText,
   SectionLabel,
   Segmented,
   Tap,
+  Text,
 } from "@/components/lexi-components";
 import {
   ALL_DOC_NAMES,
@@ -86,11 +86,13 @@ export default function LibraryScreen() {
           <HeaderButton
             bg={t.accentSoft}
             noBorder
-            onPress={() => showToast(tr("library.signedInAs", { name: "Selam B." }))}
+            onPress={() =>
+              showToast(tr("library.signedInAs", { name: "Selam B." }))
+            }
           >
-            <PText color={t.accentText} size={14} weight="600">
+            <Text color={t.accentText} size={14} weight="600">
               SB
-            </PText>
+            </Text>
           </HeaderButton>
         </Box>
       </Box>
@@ -139,9 +141,9 @@ export default function LibraryScreen() {
               setQuery("");
             }}
           >
-            <PText color={t.accentText} size={14} weight="500">
+            <Text color={t.accentText} size={14} weight="500">
               {tr("library.cancel")}
-            </PText>
+            </Text>
           </Tap>
         </Box>
       ) : (
@@ -155,9 +157,9 @@ export default function LibraryScreen() {
             paddingRight={20}
             paddingTop={18}
           >
-            <PText ls={-0.3} serif size={30} weight="600">
+            <Text ls={-0.3} serif size={30} weight="600">
               {tr("library.title")}
-            </PText>
+            </Text>
             <HeaderButton onPress={() => setSearching(true)}>
               <IconSearch color={t.ink} size={19} />
             </HeaderButton>
@@ -244,17 +246,26 @@ function RecentTab({
       <Tap onPress={openReader} scale={0.985}>
         <Card rounded={18}>
           <Box align="center" direction="row" gap={16}>
-            <Cover height={104} label={tr("library.all.coverPlaceholder")} rounded={8} width={76} />
+            <Cover
+              height={104}
+              label={tr("library.all.coverPlaceholder")}
+              rounded={8}
+              width={76}
+            />
             <Box flex={1} gap={6}>
-              <PText color={t.accentText} ls={0.44} size={11} weight="600">
+              <Text color={t.accentText} ls={0.44} size={11} weight="600">
                 {tr("library.recent.continueReading")}
-              </PText>
-              <PText lh={20} serif size={16} weight="600">
+              </Text>
+              <Text lh={20} serif size={16} weight="600">
                 {BOOK_TITLE}
-              </PText>
-              <PText color={t.sub} size={12}>
-                {tr("library.recent.pageOf", { page, total: BOOK_PAGES, chapter: ch.n })}
-              </PText>
+              </Text>
+              <Text color={t.sub} size={12}>
+                {tr("library.recent.pageOf", {
+                  page,
+                  total: BOOK_PAGES,
+                  chapter: ch.n,
+                })}
+              </Text>
               <Box marginTop={4}>
                 <ProgressBar pct={(page / BOOK_PAGES) * 100} />
               </Box>
@@ -279,12 +290,12 @@ function RecentTab({
           >
             <Cover height={58} width={44} />
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {doc.name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {doc.meta}
-              </PText>
+              </Text>
             </Box>
             <Box
               bg={doc.hot ? t.accentSoft : t.chip}
@@ -292,13 +303,13 @@ function RecentTab({
               paddingY={4}
               rounded={20}
             >
-              <PText
+              <Text
                 color={doc.hot ? t.accentText : t.sub}
                 size={11}
                 weight="500"
               >
                 {doc.badge}
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Tap>
@@ -340,13 +351,13 @@ function AllTab({
               rounded={9}
               style={{ aspectRatio: 3 / 4 }}
             >
-              <PText color={t.sub} mono size={8}>
+              <Text color={t.sub} mono size={8}>
                 {tr("library.all.coverPlaceholder")}
-              </PText>
+              </Text>
             </Box>
-            <PText lh={15} numberOfLines={2} size={11.5} weight="500">
+            <Text lh={15} numberOfLines={2} size={11.5} weight="500">
               {name}
-            </PText>
+            </Text>
           </Box>
         </Tap>
       ))}
@@ -375,18 +386,20 @@ function CollectionsTab({
         {cd.colls.map(([emoji, name, meta]) => (
           <Tap
             key={name}
-            onPress={() => showToast(tr("library.collections.demoToast", { name }))}
+            onPress={() =>
+              showToast(tr("library.collections.demoToast", { name }))
+            }
             scale={0.97}
             style={{ width: "47%", flexGrow: 1 }}
           >
             <Card gap={8}>
-              <PText size={22}>{emoji}</PText>
-              <PText size={14} weight="600">
+              <Text size={22}>{emoji}</Text>
+              <Text size={14} weight="600">
                 {name}
-              </PText>
-              <PText color={t.sub} size={12}>
+              </Text>
+              <Text color={t.sub} size={12}>
                 {meta}
-              </PText>
+              </Text>
             </Card>
           </Tap>
         ))}
@@ -402,9 +415,9 @@ function CollectionsTab({
         <IconSpark color={t.accent} size={13} />
         <SectionLabel>{tr("library.collections.autoFilled")}</SectionLabel>
       </Box>
-      <PText color={t.faint} size={12} style={{ paddingBottom: 4 }}>
+      <Text color={t.faint} size={12} style={{ paddingBottom: 4 }}>
         {tr("library.collections.basedOn", { label: cd.label })}
-      </PText>
+      </Text>
 
       {cd.filed.map(([name, coll, kind]) => (
         <Tap
@@ -420,25 +433,25 @@ function CollectionsTab({
           >
             <Cover height={58} width={44} />
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {tr("library.collections.filedIn", { collection: coll })}
-              </PText>
+              </Text>
             </Box>
             <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
-              <PText color={t.accentText} size={11} weight="500">
+              <Text color={t.accentText} size={11} weight="500">
                 {kind}
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Tap>
       ))}
 
-      <PText color={t.faint} size={12} style={{ paddingTop: 10 }}>
+      <Text color={t.faint} size={12} style={{ paddingTop: 10 }}>
         {tr("library.collections.tapSuggestion")}
-      </PText>
+      </Text>
     </>
   );
 }
@@ -461,9 +474,9 @@ function VocabTab() {
         style={{ alignItems: "baseline" }}
       >
         <SectionLabel>{tr("library.vocab.savedWords")}</SectionLabel>
-        <PText color={t.faint} size={12}>
+        <Text color={t.faint} size={12}>
           {tr("library.vocab.wordCount", { count: vocab.length })}
-        </PText>
+        </Text>
       </Box>
 
       <Box gap={12}>
@@ -479,18 +492,18 @@ function VocabTab() {
           >
             <Card gap={10}>
               <Box direction="row" gap={10} style={{ alignItems: "baseline" }}>
-                <PText serif size={18} weight="600">
+                <Text serif size={18} weight="600">
                   {v.word}
-                </PText>
+                </Text>
                 <Box bg={t.chip} paddingX={8} paddingY={3} rounded={12}>
-                  <PText color={t.sub} size={10.5} weight="500">
+                  <Text color={t.sub} size={10.5} weight="500">
                     {v.pos}
-                  </PText>
+                  </Text>
                 </Box>
                 <Box flex={1} />
-                <PText color={t.faint} mono size={11} weight="600">
+                <Text color={t.faint} mono size={11} weight="600">
                   {tr("library.vocab.pageAbbrev", { page: v.p })}
-                </PText>
+                </Text>
               </Box>
               <Box
                 direction="row"
@@ -498,30 +511,30 @@ function VocabTab() {
                 wrap="wrap"
                 style={{ alignItems: "baseline" }}
               >
-                <PText color={t.accentText} size={17} weight="600">
+                <Text color={t.accentText} size={17} weight="600">
                   {v.tr}
-                </PText>
-                <PText color={t.sub} size={12}>
+                </Text>
+                <Text color={t.sub} size={12}>
                   {tr("library.vocab.translitLine", {
                     translit: v.translit,
                     lang: LANG_NAMES[v.lang] ?? v.lang,
                   })}
-                </PText>
+                </Text>
               </Box>
               <Box direction="row" gap={9}>
                 <Box bg={t.accent} rounded={2} width={4} />
                 <Box flex={1}>
-                  <PText color={t.readerInk} lh={20} size={13}>
+                  <Text color={t.readerInk} lh={20} size={13}>
                     {v.s1}
-                  </PText>
+                  </Text>
                 </Box>
               </Box>
               <Box direction="row" gap={9}>
                 <Box bg={t.accentSoft} rounded={2} width={4} />
                 <Box flex={1}>
-                  <PText color={t.sub} lh={20} size={13}>
+                  <Text color={t.sub} lh={20} size={13}>
                     {v.s2}
-                  </PText>
+                  </Text>
                 </Box>
               </Box>
             </Card>
@@ -531,9 +544,9 @@ function VocabTab() {
         {vocab.length === 0 ? (
           <Box align="center" gap={10} paddingX={24} paddingY={48}>
             <IconSpark color={t.faint} size={26} />
-            <PText align="center" color={t.sub} lh={21} size={13}>
+            <Text align="center" color={t.sub} lh={21} size={13}>
               {tr("library.vocab.emptyState")}
-            </PText>
+            </Text>
           </Box>
         ) : null}
       </Box>
@@ -575,12 +588,12 @@ function FilesTab() {
               <IconFolder color={t.accentText} size={19} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {f.name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {f.meta}
-              </PText>
+              </Text>
             </Box>
             <IconChevron color={t.faint} size={16} />
           </Box>
@@ -615,9 +628,9 @@ function SearchResults({
     return (
       <Box align="center" gap={10} paddingX={24} paddingY={44}>
         <IconSearch color={t.faint} size={26} />
-        <PText align="center" color={t.sub} lh={21} size={13}>
+        <Text align="center" color={t.sub} lh={21} size={13}>
           {tr("library.search.emptyPrompt")}
-        </PText>
+        </Text>
       </Box>
     );
   }
@@ -643,26 +656,26 @@ function SearchResults({
           >
             <Cover height={58} width={44} />
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {doc.name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {doc.meta}
-              </PText>
+              </Text>
             </Box>
             <Box bg={t.chip} paddingX={10} paddingY={4} rounded={20}>
-              <PText color={t.faint} size={10.5} weight="500">
+              <Text color={t.faint} size={10.5} weight="500">
                 {doc.where}
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Tap>
       ))}
       {results.length === 0 ? (
         <Box paddingX={24} paddingY={48}>
-          <PText align="center" color={t.sub} lh={21} size={13}>
+          <Text align="center" color={t.sub} lh={21} size={13}>
             {tr("library.search.noMatch", { query })}
-          </PText>
+          </Text>
         </Box>
       ) : null}
     </>

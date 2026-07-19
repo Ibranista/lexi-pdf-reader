@@ -15,7 +15,7 @@ import {
   IconSearch,
   IconSpark,
   ProtoSlider,
-  PText,
+  Text,
   SectionLabel,
   Segmented,
   Tap,
@@ -85,12 +85,12 @@ export function ReaderTopBar({
           <IconBack color={t.ink} size={19} />
         </TopIcon>
         <Box flex={1}>
-          <PText numberOfLines={1} size={14} weight="600">
+          <Text numberOfLines={1} size={14} weight="600">
             {BOOK_TITLE}
-          </PText>
-          <PText color={t.sub} numberOfLines={1} size={11}>
+          </Text>
+          <Text color={t.sub} numberOfLines={1} size={11}>
             {chapterLabel}
-          </PText>
+          </Text>
         </Box>
         <Box direction="row" gap={2}>
           <TopIcon onPress={onSummarize}>
@@ -160,12 +160,12 @@ export function ReaderControlsSheet({
           value={app.page}
         />
         <Box direction="row" justify="between">
-          <PText color={t.sub} size={11}>
+          <Text color={t.sub} size={11}>
             Page {app.page} of {BOOK_PAGES}
-          </PText>
-          <PText color={t.sub} size={11}>
+          </Text>
+          <Text color={t.sub} size={11}>
             {timeLeft}
-          </PText>
+          </Text>
         </Box>
       </Box>
 
@@ -196,15 +196,15 @@ export function ReaderControlsSheet({
             scale={0.9}
           >
             <Box align="center" paddingY={8} width={36}>
-              <PText size={15} weight="600">
+              <Text size={15} weight="600">
                 −
-              </PText>
+              </Text>
             </Box>
           </Tap>
           <Box align="center" width={30}>
-            <PText color={t.sub} size={12.5} weight="600">
+            <Text color={t.sub} size={12.5} weight="600">
               {app.textSize}
-            </PText>
+            </Text>
           </Box>
           <Tap
             onPress={() =>
@@ -213,9 +213,9 @@ export function ReaderControlsSheet({
             scale={0.9}
           >
             <Box align="center" paddingY={8} width={36}>
-              <PText size={15} weight="600">
+              <Text size={15} weight="600">
                 +
-              </PText>
+              </Text>
             </Box>
           </Tap>
         </Box>
@@ -226,12 +226,12 @@ export function ReaderControlsSheet({
       </Box>
       <Box align="center" direction="row" gap={12} paddingY={7}>
         <Box flex={1}>
-          <PText size={13.5} weight="600">
+          <Text size={13.5} weight="600">
             Focus reminder
-          </PText>
-          <PText color={t.sub} size={11.5} style={{ marginTop: 1 }}>
+          </Text>
+          <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
             Gentle nudges to keep your momentum
-          </PText>
+          </Text>
         </Box>
         <Toggle
           on={app.focusRem}
@@ -257,12 +257,12 @@ export function ReaderControlsSheet({
       <Divider />
       <Box align="center" direction="row" gap={12} paddingY={7}>
         <Box flex={1}>
-          <PText size={13.5} weight="600">
+          <Text size={13.5} weight="600">
             Flow reading
-          </PText>
-          <PText color={t.sub} size={11.5} style={{ marginTop: 1 }}>
+          </Text>
+          <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
             Offer a short summary when a section loops
-          </PText>
+          </Text>
         </Box>
         <Toggle
           on={app.flowRead}
@@ -272,12 +272,12 @@ export function ReaderControlsSheet({
       <Divider />
       <Box align="center" direction="row" gap={12} paddingTop={7}>
         <Box flex={1}>
-          <PText size={13.5} weight="600">
+          <Text size={13.5} weight="600">
             Focus mode
-          </PText>
-          <PText color={t.sub} size={11.5} style={{ marginTop: 1 }}>
+          </Text>
+          <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
             Spotlight the paragraph you’re reading
-          </PText>
+          </Text>
         </Box>
         <Toggle on={focusMode} onToggle={onToggleFocusMode} />
       </Box>
@@ -296,12 +296,12 @@ export function ReaderControlsSheet({
             width={3}
           />
           <Box flex={1}>
-            <PText size={13} weight="600">
+            <Text size={13} weight="600">
               Session timer
-            </PText>
-            <PText color={t.sub} size={11.5} style={{ marginTop: 1 }}>
+            </Text>
+            <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
               Keep time & suggest breaks — or focus without the clock
-            </PText>
+            </Text>
           </Box>
           <Toggle
             on={app.fmTimer}

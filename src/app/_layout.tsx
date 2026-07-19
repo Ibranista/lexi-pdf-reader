@@ -6,6 +6,7 @@ import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import "@/i18n";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { ThemeProvider as AppThemeProvider } from "@/theme";
+import { fontAssets } from "@/theme/app-fonts";
 import { useThemeModeStore } from "@/theme/proto";
 import { storage } from "@/utils/storage";
 import { useFonts } from "expo-font";
@@ -13,10 +14,7 @@ import { useFonts } from "expo-font";
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded] = useFonts({
-    Literata: require("../theme/assets/fonts/Literata/Literata-VariableFont_opsz,wght.ttf"),
-    "Literata-Italic": require("../theme/assets/fonts/Literata/Literata-Italic-VariableFont_opsz,wght.ttf"),
-  });
+  const [loaded] = useFonts(fontAssets);
 
   const colorScheme = useColorScheme();
   const mode = useThemeModeStore((s) => s.mode);

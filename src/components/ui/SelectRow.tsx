@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 
 import { colors } from '@/constants/colors';
 import { Checkbox } from './Checkbox';
-import { fonts, radius } from './tokens';
+import { sansFamily } from '@/theme/app-fonts';
+import { radius } from './tokens';
 
 // ============================================================================
 // SelectRow — selectable option card (onboarding, pricing, plan pickers)
@@ -90,13 +91,12 @@ const styles = StyleSheet.create({
   },
   text: { flex: 1 },
   title: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    fontFamily: sansFamily['600'],
     fontSize: 15,
     color: c.text,
   },
   subtitle: {
-    fontFamily: fonts.sans,
+    fontFamily: sansFamily['400'],
     fontSize: 12,
     color: c.textSecondary,
     marginTop: 2,

@@ -10,7 +10,7 @@ import {
   IconCheck,
   IconChevron,
   ProtoScreen,
-  PText,
+  Text,
   ScreenHeader,
   Tap,
 } from "@/components/lexi-components";
@@ -64,17 +64,17 @@ export default function TodayScreen() {
               <IconCheck color={t.onAccent} size={14} strokeWidth={2.4} />
             </Box>
             <Box flex={1}>
-              <PText
+              <Text
                 color={t.sub}
                 size={15}
                 style={{ textDecorationLine: "line-through" }}
                 weight="600"
               >
                 Read 10 pages
-              </PText>
-              <PText color={t.faint} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.faint} size={12} style={{ marginTop: 2 }}>
                 Done during your 18-min focus session
-              </PText>
+              </Text>
             </Box>
           </Box>
           <Divider />
@@ -88,31 +88,31 @@ export default function TodayScreen() {
               rounded={13}
               width={26}
             >
-              <PText color={t.sub} size={10} weight="600">
+              <Text color={t.sub} size={10} weight="600">
                 ⅔
-              </PText>
+              </Text>
             </Box>
             <Box flex={1}>
-              <PText size={15} weight="600">
+              <Text size={15} weight="600">
                 Review 3 notes
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 2 of 3 · about 2 minutes left
-              </PText>
+              </Text>
             </Box>
             <Tap onPress={() => router.push("/review")}>
-              <PText color={t.accentText} size={13} weight="600">
+              <Text color={t.accentText} size={13} weight="600">
                 Continue
-              </PText>
+              </Text>
             </Tap>
           </Box>
         </Card>
 
         <Box bg={t.accentSoft} paddingX={18} paddingY={16} rounded={16}>
-          <PText lh={21} size={13.5}>
+          <Text lh={21} size={13.5}>
             That’s the whole plan. No streaks, no leaderboards — missing a day
             changes nothing.
-          </PText>
+          </Text>
         </Box>
 
         <Tap
@@ -125,7 +125,7 @@ export default function TodayScreen() {
             <Box align="center" direction="row" gap={14}>
               <Cover height={58} width={44} />
               <Box flex={1}>
-                <PText
+                <Text
                   color={t.accentText}
                   ls={0.7}
                   size={11}
@@ -133,14 +133,14 @@ export default function TodayScreen() {
                   weight="600"
                 >
                   Pick up where you left off
-                </PText>
-                <PText serif size={15} style={{ marginTop: 4 }} weight="600">
+                </Text>
+                <Text serif size={15} style={{ marginTop: 4 }} weight="600">
                   {BOOK_TITLE}
-                </PText>
-                <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+                </Text>
+                <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                   Page {page} of {BOOK_PAGES} · “Reread the Pearl Street
                   section”
-                </PText>
+                </Text>
               </Box>
               <IconChevron color={t.faint} size={18} />
             </Box>
@@ -165,9 +165,9 @@ export default function TodayScreen() {
             rounded={16}
           >
             <Box bg={t.onAccent} height={7} rounded={4} width={7} />
-            <PText color={t.onAccent} size={15} weight="600">
+            <Text color={t.onAccent} size={15} weight="600">
               Start a focus session
-            </PText>
+            </Text>
           </Box>
         </Tap>
       </ScrollView>
