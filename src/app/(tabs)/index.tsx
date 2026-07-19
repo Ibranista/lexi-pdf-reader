@@ -1,7 +1,7 @@
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ScrollView } from "react-native";
+import { RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
@@ -9,6 +9,7 @@ import {
   Card,
   Cover,
   HeaderButton,
+  IconBack,
   IconBrain,
   IconChevron,
   IconFolder,
@@ -17,6 +18,7 @@ import {
   IconSliders,
   IconSpark,
   IconSun,
+  IndeterminateBar,
   ProgressBar,
   ProtoScreen,
   SectionLabel,
@@ -25,21 +27,26 @@ import {
   Text,
 } from "@/components/lexi-components";
 import {
-  ALL_DOC_NAMES,
   BOOK_PAGES,
   BOOK_TITLE,
   chapterOf,
   COLLECTIONS,
-  FOLDERS,
   LANG_NAMES,
   LIBRARY_INDEX,
   RECENT_DOCS,
 } from "@/constants/library";
+import {
+  formatSize,
+  formatWhen,
+  useDeviceLibrary,
+} from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
+
+type DeviceLibrary = ReturnType<typeof useDeviceLibrary>;
 
 export default function LibraryScreen() {
   const t = useProtoTheme();
@@ -49,6 +56,31 @@ export default function LibraryScreen() {
   const [tab, setTab] = useState<LibTab>("recent");
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
+  const lib = useDeviceLibrary();
+  const storageAsked = useAppStore((s) => s.storageAsked);
+  const { access, ensureAccess } = lib;
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    lib.refresh();
+  }, [lib]);
+
+  useEffect(() => {
+    if (!lib.scanning) setRefreshing(false);
+  }, [lib.scanning]);
+
+  useEffect(() => {
+    if (!storageAsked && access === "denied") {
+      useAppStore.getState().set({ storageAsked: true });
+      ensureAccess();
+    }
+  }, [storageAsked, access, ensureAccess]);
+
+  const importDocuments = async () => {
+    const count = await lib.importDocuments();
+    if (count !== null) showToast(tr("library.importedToast", { count }));
+  };
 
   const TAB_ITEMS = [
     { key: "recent" as const, label: tr("tabItems.recent") },
@@ -175,6 +207,15 @@ export default function LibraryScreen() {
           paddingTop: searching ? 16 : 18,
           paddingBottom: 90 + insets.bottom,
         }}
+        refreshControl={
+          <RefreshControl
+            colors={[t.accent]}
+            onRefresh={onRefresh}
+            progressBackgroundColor={t.card}
+            refreshing={refreshing}
+            tintColor={t.sub}
+          />
+        }
         style={{ flex: 1 }}
       >
         {searching ? (
@@ -186,18 +227,18 @@ export default function LibraryScreen() {
         ) : tab === "recent" ? (
           <RecentTab openDemo={openDemo} openReader={openReader} />
         ) : tab === "all" ? (
-          <AllTab openDemo={openDemo} openReader={openReader} />
+          <AllTab lib={lib} openReader={openReader} />
         ) : tab === "coll" ? (
           <CollectionsTab openDemo={openDemo} openReader={openReader} />
         ) : tab === "vocab" ? (
           <VocabTab />
         ) : (
-          <FilesTab />
+          <FilesTab lib={lib} openReader={openReader} />
         )}
       </ScrollView>
 
       <Tap
-        onPress={() => showToast(tr("library.importToast"))}
+        onPress={importDocuments}
         scale={0.92}
         style={{ position: "absolute", right: 20, bottom: 26 + insets.bottom }}
       >
@@ -312,48 +353,137 @@ function RecentTab({
   );
 }
 
+function docMeta(size: number, modifiedAt: number | null): string {
+  return [formatSize(size), formatWhen(modifiedAt)].filter(Boolean).join(" · ");
+}
+
 function AllTab({
-  openDemo,
+  lib,
   openReader,
 }: {
-  openDemo: (name: string) => void;
+  lib: DeviceLibrary;
   openReader: () => void;
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
-  return (
-    <Box
-      direction="row"
-      style={{ flexWrap: "wrap", columnGap: 14, rowGap: 16 }}
-    >
-      {ALL_DOC_NAMES.map((name, i) => (
-        <Tap
-          key={name}
-          onPress={i === 0 ? openReader : () => openDemo(name)}
-          scale={0.96}
-          style={{ width: "30%", flexGrow: 1 }}
-        >
-          <Box gap={7}>
-            <Box
-              align="center"
-              bg={t.coverA}
-              borderColor={t.line}
-              borderWidth={1}
-              justify="center"
-              rounded={9}
-              style={{ aspectRatio: 3 / 4 }}
-            >
-              <Text color={t.sub} mono size={8}>
-                {tr("library.all.coverPlaceholder")}
+  const { access, ensureAccess, docs, pickFolder, scanning, scanProgress } =
+    lib;
+
+  if (scanning && docs.length === 0) {
+    return (
+      <Box gap={14} paddingX={12} paddingY={48}>
+        <Box align="center" gap={6}>
+          <Text size={15} weight="600">
+            {tr("library.all.scanning")}
+          </Text>
+          <Text color={t.sub} size={13}>
+            {tr("library.all.scanningCount", { count: scanProgress })}
+          </Text>
+        </Box>
+        <IndeterminateBar />
+      </Box>
+    );
+  }
+
+  if (docs.length === 0) {
+    const needsAccess = access === "denied";
+    return (
+      <Box align="center" gap={10} paddingX={24} paddingY={44}>
+        <IconFolder color={t.faint} size={26} />
+        <Text size={15} weight="600">
+          {needsAccess
+            ? tr("library.all.allowTitle")
+            : tr("library.all.emptyTitle")}
+        </Text>
+        <Text align="center" color={t.sub} lh={21} size={13}>
+          {needsAccess
+            ? tr("library.all.allowBody")
+            : tr("library.all.emptyBody")}
+        </Text>
+        {access !== "granted" ? (
+          <Tap
+            onPress={access === "unavailable" ? pickFolder : ensureAccess}
+            scale={0.95}
+            style={{ marginTop: 8 }}
+          >
+            <Box bg={t.accent} paddingX={16} paddingY={11} rounded={12}>
+              <Text color={t.onAccent} size={13} weight="600">
+                {access === "unavailable"
+                  ? tr("library.all.chooseFolderBtn")
+                  : tr("library.all.allowBtn")}
               </Text>
             </Box>
-            <Text lh={15} numberOfLines={2} size={11.5} weight="500">
-              {name}
-            </Text>
+          </Tap>
+        ) : null}
+      </Box>
+    );
+  }
+
+  return (
+    <>
+      {access === "denied" ? (
+        <Tap onPress={ensureAccess}>
+          <Box
+            align="center"
+            bg={t.accentSoft}
+            direction="row"
+            gap={12}
+            marginBottom={16}
+            paddingX={14}
+            paddingY={12}
+            rounded={12}
+          >
+            <IconFolder color={t.accentText} size={17} />
+            <Box flex={1}>
+              <Text color={t.accentText} size={13} weight="600">
+                {tr("library.all.allowBtn")}
+              </Text>
+              <Text color={t.sub} size={11.5} style={{ marginTop: 2 }}>
+                {tr("library.all.allowBannerSub")}
+              </Text>
+            </Box>
+            <IconChevron color={t.accentText} size={15} />
           </Box>
         </Tap>
-      ))}
-    </Box>
+      ) : null}
+      <Box
+        direction="row"
+        style={{ flexWrap: "wrap", columnGap: 14, rowGap: 16 }}
+      >
+        {docs.map((doc) => (
+          <Tap
+            key={doc.uri}
+            onPress={openReader}
+            scale={0.96}
+            style={{ width: "30%", flexGrow: 1 }}
+          >
+            <Box gap={7}>
+              <Box
+                align="center"
+                bg={t.coverA}
+                borderColor={t.line}
+                borderWidth={1}
+                justify="center"
+                rounded={9}
+                style={{ aspectRatio: 3 / 4 }}
+              >
+                <Text color={t.sub} mono size={8}>
+                  {doc.ext}
+                </Text>
+              </Box>
+              <Box gap={2}>
+                <Text lh={15} numberOfLines={2} size={11.5} weight="500">
+                  {doc.name}
+                </Text>
+                <Text color={t.faint} size={10}>
+                  {docMeta(doc.size, doc.modifiedAt)}
+                </Text>
+              </Box>
+            </Box>
+          </Tap>
+        ))}
+      </Box>
+    </>
   );
 }
 
@@ -542,20 +672,86 @@ function VocabTab() {
   );
 }
 
-function FilesTab() {
+function FilesTab({
+  lib,
+  openReader,
+}: {
+  lib: DeviceLibrary;
+  openReader: () => void;
+}) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
-  const showToast = useToastStore((s) => s.showToast);
+  const libRootName = useAppStore((s) => s.libRootName);
+  const { access, ensureAccess, folders, docs, pickFolder, scanning } = lib;
+  const [openUri, setOpenUri] = useState<string | null>(null);
+
+  const folderLabel = (f: {
+    isAppStorage: boolean;
+    isDeviceRoot: boolean;
+    name: string;
+  }) =>
+    f.isAppStorage
+      ? tr("library.files.appStorage")
+      : f.isDeviceRoot
+        ? tr("library.files.internalStorage")
+        : f.name;
+
+  const openFolder = folders.find((f) => f.uri === openUri);
+
+  if (openFolder) {
+    const folderDocs = docs.filter((d) => d.folderUri === openFolder.uri);
+    return (
+      <>
+        <Tap onPress={() => setOpenUri(null)}>
+          <Box align="center" direction="row" gap={8} paddingBottom={14}>
+            <IconBack color={t.accentText} size={16} />
+            <Text color={t.accentText} size={13} weight="600">
+              {tr("library.files.allFolders")}
+            </Text>
+          </Box>
+        </Tap>
+        <Box paddingBottom={8}>
+          <SectionLabel>{folderLabel(openFolder)}</SectionLabel>
+        </Box>
+        {folderDocs.map((doc) => (
+          <Tap key={doc.uri} onPress={openReader}>
+            <Box
+              align="center"
+              direction="row"
+              gap={14}
+              paddingY={12}
+              style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+            >
+              <Cover height={58} width={44} />
+              <Box flex={1}>
+                <Text numberOfLines={1} size={14} weight="600">
+                  {doc.name}
+                </Text>
+                <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
+                  {docMeta(doc.size, doc.modifiedAt)}
+                </Text>
+              </Box>
+              <IconChevron color={t.faint} size={16} />
+            </Box>
+          </Tap>
+        ))}
+        {folderDocs.length === 0 ? (
+          <Text color={t.sub} size={13} style={{ paddingTop: 12 }}>
+            {tr("library.files.folderEmpty")}
+          </Text>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
       <Box paddingBottom={8}>
         <SectionLabel>{tr("library.files.onThisDevice")}</SectionLabel>
       </Box>
-      {FOLDERS.map((f) => (
-        <Tap
-          key={f.name}
-          onPress={() => showToast(tr("library.files.demoToast"))}
-        >
+
+      {access === "denied" ? (
+        <Tap onPress={ensureAccess}>
           <Box
             align="center"
             direction="row"
@@ -575,16 +771,91 @@ function FilesTab() {
             </Box>
             <Box flex={1}>
               <Text size={14} weight="600">
-                {f.name}
+                {tr("library.files.allowAccess")}
               </Text>
               <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
-                {f.meta}
+                {tr("library.files.allowAccessSub")}
+              </Text>
+            </Box>
+            <IconChevron color={t.faint} size={16} />
+          </Box>
+        </Tap>
+      ) : access === "unavailable" ? (
+        <Tap onPress={pickFolder}>
+          <Box
+            align="center"
+            direction="row"
+            gap={14}
+            paddingY={14}
+            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+          >
+            <Box
+              align="center"
+              bg={t.chip}
+              height={42}
+              justify="center"
+              rounded={11}
+              width={42}
+            >
+              <IconPlus color={t.ink} size={17} />
+            </Box>
+            <Box flex={1}>
+              <Text size={14} weight="600">
+                {libRootName
+                  ? tr("library.files.scanningFolder", { name: libRootName })
+                  : tr("library.files.chooseFolder")}
+              </Text>
+            </Box>
+            <IconChevron color={t.faint} size={16} />
+          </Box>
+        </Tap>
+      ) : null}
+
+      {folders.map((f) => (
+        <Tap key={f.uri} onPress={() => setOpenUri(f.uri)}>
+          <Box
+            align="center"
+            direction="row"
+            gap={14}
+            paddingY={14}
+            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+          >
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              height={42}
+              justify="center"
+              rounded={11}
+              width={42}
+            >
+              <IconFolder color={t.accentText} size={19} />
+            </Box>
+            <Box flex={1}>
+              <Text numberOfLines={1} size={14} weight="600">
+                {folderLabel(f)}
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
+                {tr("library.files.docCount", { count: f.docCount })}
               </Text>
             </Box>
             <IconChevron color={t.faint} size={16} />
           </Box>
         </Tap>
       ))}
+
+      {scanning ? (
+        <Box align="center" paddingY={28}>
+          <Text color={t.sub} size={13}>
+            {tr("library.all.scanning")}
+          </Text>
+        </Box>
+      ) : folders.length === 0 ? (
+        <Box align="center" paddingX={24} paddingY={28}>
+          <Text align="center" color={t.sub} lh={21} size={13}>
+            {tr("library.files.empty")}
+          </Text>
+        </Box>
+      ) : null}
     </>
   );
 }

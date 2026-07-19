@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import type { GestureResponderEvent, StyleProp, ViewStyle } from 'react-native';
 
-import { useState } from 'react';
-import { Pressable } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Box, Text } from '@/components/atoms';
@@ -284,6 +284,43 @@ export function ProgressBar({ pct }: { pct: number }) {
   return (
     <Box bg={t.chip} height={4} rounded={2}>
       <Box bg={t.accent} height={4} rounded={2} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+    </Box>
+  );
+}
+
+export function IndeterminateBar() {
+  const t = useProtoTheme();
+  const x = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(x, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [x]);
+
+  return (
+    <Box bg={t.chip} height={4} rounded={2} style={{ overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          width: '35%',
+          borderRadius: 2,
+          backgroundColor: t.accent,
+          left: x.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['-35%', '100%'],
+          }),
+        }}
+      />
     </Box>
   );
 }
