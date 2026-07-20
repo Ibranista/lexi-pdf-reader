@@ -9,10 +9,11 @@ const BREAK_AT_SEC = 25 * 60;
  * Ephemeral focus-session state (not persisted, like the toast store).
  *
  * The store owns the whole session lifecycle — screens only call `start` /
- * `exit` and render from state. The timer respects the persisted settings at
- * tick time: `fmTimer` off means focusing without the clock (no ticking, no
- * break), and the break card is only ever suggested once per session, and
- * only when `focusRem` is on.
+ * `exit` and render from state. `sessionSec` always ticks (it also paces the
+ * pill's come-and-go cadence); the persisted settings are read at tick time:
+ * `fmTimer` off means no visible clock and no break suggestions, and the
+ * break card is only ever suggested once per session, only when `focusRem`
+ * is on.
  */
 interface FocusState {
   active: boolean;
@@ -38,9 +39,13 @@ export const useFocusStore = create<FocusState>()((set, get) => ({
     clearInterval(tick);
     tick = setInterval(() => {
       const app = useAppStore.getState();
-      if (!app.fmTimer) return;
       const sessionSec = get().sessionSec + 1;
-      if (!breakShown && sessionSec >= BREAK_AT_SEC && app.focusRem) {
+      if (
+        !breakShown &&
+        sessionSec >= BREAK_AT_SEC &&
+        app.fmTimer &&
+        app.focusRem
+      ) {
         breakShown = true;
         set({ sessionSec, breakVisible: true });
       } else {

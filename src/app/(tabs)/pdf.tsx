@@ -30,9 +30,11 @@ import {
   FocusChrome,
   LexiBubble,
   LexiSheet,
+  PdfOutlineDrawer,
   PdfSearchPanel,
   SummarizeSheet,
 } from "@/components/reader";
+import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { useAppStore, useToastStore } from "@/stores/app-store";
@@ -81,11 +83,15 @@ export default function PdfViewerScreen() {
   const [pageDims, setPageDims] = useState<{ w: number; h: number } | null>(
     null,
   );
-  // The PDF's own outline (top-level entries), used like the prototype's
-  // chapter list: the header subtitle names the chapter the reader is in.
-  const [chapters, setChapters] = useState<{ title: string; page: number }[]>(
-    [],
-  );
+  // The PDF's own outline, used like the prototype's chapter list: it names
+  // the chapter in the header and fills the Contents drawer. The native
+  // viewer only reports an embedded outline, so the reflow extractor's
+  // version (which also parses a printed contents page) wins when richer.
+  const [nativeOutline, setNativeOutline] = useState<PdfOutlineEntry[]>([]);
+  const [reflowOutline, setReflowOutline] = useState<PdfOutlineEntry[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const outline =
+    reflowOutline.length > nativeOutline.length ? reflowOutline : nativeOutline;
   const [pageMarker, setPageMarker] = useState<{
     page: number;
     /** Word-accurate boxes; a single full-width entry when geometry is
@@ -190,6 +196,18 @@ export default function PdfViewerScreen() {
     setSearchResults([]);
   };
 
+  /** Plain page jump, in whichever view is active. */
+  const goToPage = (requestedPage: number) => {
+    const nextPage = clampPage(requestedPage);
+    setPage(nextPage);
+    setApp({ page: nextPage });
+    if (mode === "page") {
+      setPdfPage(nextPage);
+    } else {
+      setReflowGoto((current) => ({ page: nextPage, seq: current.seq + 1 }));
+    }
+  };
+
   // Jump to a result, staying in whichever view the reader is already in.
   // Reflow marks the exact word; page view flashes a locator band where the
   // matched paragraph sits on the page.
@@ -246,9 +264,9 @@ export default function PdfViewerScreen() {
   const smartScale = Math.max(1.25, zoom / 100);
 
   // The chapter the reader is in: the last outline entry starting at or
-  // before the current page (chapters is sorted by page).
-  let chapter: { title: string; page: number } | null = null;
-  for (const c of chapters) {
+  // before the current page (the outline is sorted by page).
+  let chapter: PdfOutlineEntry | null = null;
+  for (const c of outline) {
     if (c.page > page) break;
     chapter = c;
   }
@@ -278,6 +296,15 @@ export default function PdfViewerScreen() {
     .activeOffsetY([-20, 20])
     .onEnd((e) => {
       if (e.translationY < -30) setSettingsOpen(true);
+    });
+
+  // Swipe in from the left edge opens Contents, mirroring the search panel
+  // on the right. Only armed when the document actually has an outline.
+  const swipeFromLeftEdge = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX > 30) setOutlineOpen(true);
     });
 
   if (!uri) {
@@ -326,11 +353,12 @@ export default function PdfViewerScreen() {
                 if (size?.width && size?.height)
                   setPageDims({ w: size.width, h: size.height });
                 if (toc?.length) {
-                  setChapters(
+                  setNativeOutline(
                     toc
                       .map((c) => ({
                         title: (c.title ?? "").trim(),
                         page: (c.pageIdx ?? 0) + 1,
+                        level: 0,
                       }))
                       .filter((c) => c.title)
                       .sort((a, b) => a.page - b.page),
@@ -454,6 +482,7 @@ export default function PdfViewerScreen() {
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
+              onOutline={setReflowOutline}
               onSearchResults={setSearchResults}
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
@@ -589,6 +618,43 @@ export default function PdfViewerScreen() {
         </Tap>
       </Animated.View>
 
+      {/* Left-edge Contents affordance: a catcher for the swipe, plus the
+          example's handle tab so the gesture is discoverable. Both only
+          exist when the document has an outline to show. */}
+      {outline.length && !outlineOpen && !searchOpen ? (
+        <GestureDetector gesture={swipeFromLeftEdge}>
+          <Box
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              zIndex: 9,
+            }}
+          >
+            {!immersive ? (
+              <Tap
+                onPress={() => setOutlineOpen(true)}
+                style={{ position: "absolute", left: 0, top: "46%" }}
+              >
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  height={64}
+                  justify="center"
+                  roundedBottomRight={10}
+                  roundedTopRight={10}
+                  width={18}
+                >
+                  <Box bg={t.faint} height={26} rounded={2} width={3} />
+                </Box>
+              </Tap>
+            ) : null}
+          </Box>
+        </GestureDetector>
+      ) : null}
+
       {/* Always-on swipe-up catcher at the very bottom edge — works in
           distraction-free mode too, where the grabber is hidden. */}
       <GestureDetector gesture={swipeUpFromBottom}>
@@ -625,6 +691,18 @@ export default function PdfViewerScreen() {
             }
             setLexiOpen(true);
           }}
+        />
+      ) : null}
+      {outlineOpen ? (
+        <PdfOutlineDrawer
+          entries={outline}
+          onClose={() => setOutlineOpen(false)}
+          onGoPage={(target) => {
+            setOutlineOpen(false);
+            goToPage(target);
+          }}
+          page={page}
+          title={name ?? "Document"}
         />
       ) : null}
       {searchOpen ? (

@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box } from "@/components/atoms";
 import {
+  Divider,
   ProtoSlider,
   SectionLabel,
   Segmented,
@@ -82,6 +83,33 @@ function Row({
     <Box align="center" direction="row" gap={12} paddingY={8}>
       <Box flex={1}>
         <Text size={13.5} weight="600">
+          {title}
+        </Text>
+        <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
+          {sub}
+        </Text>
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+/** A Row nested under its parent setting, marked by a soft vertical rail. */
+function SubRow({
+  children,
+  sub,
+  title,
+}: {
+  children: React.ReactNode;
+  sub: string;
+  title: string;
+}) {
+  const t = useProtoTheme();
+  return (
+    <Box align="center" direction="row" gap={12} paddingLeft={14} paddingY={8}>
+      <Box bg={t.calmLine} rounded={2} style={{ alignSelf: "stretch" }} width={3} />
+      <Box flex={1}>
+        <Text size={13} weight="600">
           {title}
         </Text>
         <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
@@ -247,35 +275,6 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           <SectionLabel size={11}>Focus support</SectionLabel>
         </Box>
 
-        <Row
-          sub="Spotlight your paragraph and tuck the chrome away"
-          title="Focus mode"
-        >
-          <Toggle on={focusMode} onToggle={() => onToggleFocusMode?.()} />
-        </Row>
-
-        {focusMode ? (
-          <Row
-            sub="Keep time & suggest breaks — or focus without the clock"
-            title="Session timer"
-          >
-            <Toggle
-              on={app.fmTimer}
-              onToggle={() => app.set({ fmTimer: !app.fmTimer })}
-            />
-          </Row>
-        ) : null}
-
-        <Row
-          sub="Keep text wrapped to the screen while zooming"
-          title="Flow reading"
-        >
-          <Toggle
-            on={app.flowRead}
-            onToggle={() => app.set({ flowRead: !app.flowRead })}
-          />
-        </Row>
-
         <Row sub="Gentle nudges to keep your momentum" title="Focus reminder">
           <Toggle
             on={app.focusRem}
@@ -284,14 +283,46 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         </Row>
 
         {app.focusRem ? (
-          <Box paddingBottom={4} paddingTop={6}>
+          <Box paddingBottom={4} paddingTop={2}>
             <Segmented
               items={SENS_ITEMS}
               onChange={(key) => app.set({ focusSens: key })}
-              size={12.5}
+              size={12}
               value={app.focusSens}
             />
           </Box>
+        ) : null}
+
+        <Divider />
+
+        <Row
+          sub="Offer a short summary when a section loops"
+          title="Flow reading"
+        >
+          <Toggle
+            on={app.flowRead}
+            onToggle={() => app.set({ flowRead: !app.flowRead })}
+          />
+        </Row>
+
+        <Divider />
+
+        <Row sub="Spotlight the paragraph you're reading" title="Focus mode">
+          <Toggle on={focusMode} onToggle={() => onToggleFocusMode?.()} />
+        </Row>
+
+        {/* Session timer belongs to the focus session, so it nests under
+            Focus mode behind a rail rather than reading as a peer setting. */}
+        {focusMode ? (
+          <SubRow
+            sub="Keep time & suggest breaks — or focus without the clock"
+            title="Session timer"
+          >
+            <Toggle
+              on={app.fmTimer}
+              onToggle={() => app.set({ fmTimer: !app.fmTimer })}
+            />
+          </SubRow>
         ) : null}
 
         <Row
