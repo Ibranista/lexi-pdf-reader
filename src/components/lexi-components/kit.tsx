@@ -149,6 +149,7 @@ export interface SegmentItem<K extends string = string> {
   key: K;
   label: string;
   serif?: boolean;
+  font?: { active: string; inactive: string };
   flex?: number;
 }
 
@@ -189,7 +190,17 @@ export function Segmented<K extends string>({
                   : undefined
               }
             >
-              <Text color={on ? t.ink : t.sub} serif={item.serif} size={size} weight={on ? '600' : '500'}>
+              <Text
+                color={on ? t.ink : t.sub}
+                serif={item.serif}
+                size={size}
+                style={
+                  item.font
+                    ? { fontFamily: on ? item.font.active : item.font.inactive }
+                    : undefined
+                }
+                weight={on ? '600' : '500'}
+              >
                 {item.label}
               </Text>
             </Box>
