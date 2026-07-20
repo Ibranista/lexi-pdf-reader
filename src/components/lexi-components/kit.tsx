@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { GestureResponderEvent, StyleProp, ViewStyle } from 'react-native';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -290,7 +290,7 @@ export function ProgressBar({ pct }: { pct: number }) {
 
 export function IndeterminateBar() {
   const t = useProtoTheme();
-  const x = useRef(new Animated.Value(0)).current;
+  const [x] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const loop = Animated.loop(

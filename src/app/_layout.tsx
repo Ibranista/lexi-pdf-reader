@@ -1,6 +1,8 @@
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import "@/i18n";
@@ -27,18 +29,22 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <AppThemeProvider storage={storage}>
-      <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
-        <AnimatedSplashOverlay />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Protected guard={hasCompletedOnboarding}>
-            <Stack.Screen name="(tabs)" />
-          </Stack.Protected>
-          <Stack.Protected guard={!hasCompletedOnboarding}>
-            <Stack.Screen name="onboarding" />
-          </Stack.Protected>
-        </Stack>
-      </ThemeProvider>
-    </AppThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppThemeProvider storage={storage}>
+        <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
+          <BottomSheetModalProvider>
+            <AnimatedSplashOverlay />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Protected guard={hasCompletedOnboarding}>
+                <Stack.Screen name="(tabs)" />
+              </Stack.Protected>
+              <Stack.Protected guard={!hasCompletedOnboarding}>
+                <Stack.Screen name="onboarding" />
+              </Stack.Protected>
+            </Stack>
+          </BottomSheetModalProvider>
+        </ThemeProvider>
+      </AppThemeProvider>
+    </GestureHandlerRootView>
   );
 }

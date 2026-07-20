@@ -31,6 +31,7 @@ export default function TabLayout() {
         <Stack.Screen name="today" />
         <Stack.Screen name="brain" />
         <Stack.Screen name="reader" />
+        <Stack.Screen name="pdf" />
         <Stack.Screen name="notes" />
         <Stack.Screen name="review" />
         <Stack.Screen name="graph" />

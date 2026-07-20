@@ -32,6 +32,10 @@
         "importedToast_one": "Imported {{count}} document",
         "importedToast_other": "Imported {{count}} documents",
         "demoToast": "Demo — “{{name}}” opens the same reader",
+        "exitConfirm": "Press back again to exit",
+        "docViewer": {
+            "pdfOnly": "{{ext}} preview isn't supported yet — opening PDFs only for now"
+        },
         "recent": {
             "continueReading": "CONTINUE READING",
             "pageOf": "Page {{page}} of {{total}} · Ch. {{chapter}}",

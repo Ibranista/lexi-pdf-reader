@@ -1,8 +1,8 @@
 import { Image } from "expo-image";
-import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { RefreshControl, ScrollView } from "react-native";
+import { BackHandler, RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
@@ -62,16 +62,47 @@ export default function LibraryScreen() {
   const lib = useDeviceLibrary();
   const storageAsked = useAppStore((s) => s.storageAsked);
   const { access, ensureAccess } = lib;
-  const [refreshing, setRefreshing] = useState(false);
+  const [openFolderUri, setOpenFolderUri] = useState<string | null>(null);
 
+  const [pulled, setPulled] = useState(false);
+  const refreshing = pulled && lib.scanning;
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
+    setPulled(true);
     lib.refresh();
   }, [lib]);
 
-  useEffect(() => {
-    if (!lib.scanning) setRefreshing(false);
-  }, [lib.scanning]);
+  const exitArmed = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const onBack = () => {
+        if (searching) {
+          setSearching(false);
+          setQuery("");
+          return true;
+        }
+        if (tab === "files" && openFolderUri) {
+          setOpenFolderUri(null);
+          return true;
+        }
+        if (exitArmed.current) return false; // second press — let it exit
+        exitArmed.current = true;
+        showToast(tr("library.exitConfirm"));
+        timer = setTimeout(() => {
+          exitArmed.current = false;
+        }, 2000);
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBack);
+      return () => {
+        sub.remove();
+        clearTimeout(timer);
+        exitArmed.current = false;
+      };
+    }, [searching, tab, openFolderUri, showToast, tr]),
+  );
 
   useEffect(() => {
     if (!storageAsked && access === "denied") {
@@ -94,6 +125,13 @@ export default function LibraryScreen() {
   ];
 
   const openReader = () => router.push("/reader");
+  const openDoc = (doc: DeviceDoc) => {
+    if (doc.ext !== "PDF") {
+      showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
+      return;
+    }
+    router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
+  };
   const openDemo = (name: string) =>
     showToast(tr("library.demoToast", { name }));
 
@@ -230,13 +268,18 @@ export default function LibraryScreen() {
         ) : tab === "recent" ? (
           <RecentTab openDemo={openDemo} openReader={openReader} />
         ) : tab === "all" ? (
-          <AllTab lib={lib} openReader={openReader} />
+          <AllTab lib={lib} openDoc={openDoc} />
         ) : tab === "coll" ? (
           <CollectionsTab openDemo={openDemo} openReader={openReader} />
         ) : tab === "vocab" ? (
           <VocabTab />
         ) : (
-          <FilesTab lib={lib} openReader={openReader} />
+          <FilesTab
+            lib={lib}
+            openDoc={openDoc}
+            openUri={openFolderUri}
+            setOpenUri={setOpenFolderUri}
+          />
         )}
       </ScrollView>
 
@@ -392,10 +435,10 @@ function DocCover({ doc }: { doc: DeviceDoc }) {
 
 function AllTab({
   lib,
-  openReader,
+  openDoc,
 }: {
   lib: DeviceLibrary;
-  openReader: () => void;
+  openDoc: (doc: DeviceDoc) => void;
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
@@ -486,7 +529,7 @@ function AllTab({
         {docs.map((doc) => (
           <Tap
             key={doc.uri}
-            onPress={openReader}
+            onPress={() => openDoc(doc)}
             scale={0.96}
             style={{ width: "30%", flexGrow: 1 }}
           >
@@ -695,16 +738,19 @@ function VocabTab() {
 
 function FilesTab({
   lib,
-  openReader,
+  openDoc,
+  openUri,
+  setOpenUri,
 }: {
   lib: DeviceLibrary;
-  openReader: () => void;
+  openDoc: (doc: DeviceDoc) => void;
+  openUri: string | null;
+  setOpenUri: (uri: string | null) => void;
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
   const libRootName = useAppStore((s) => s.libRootName);
   const { access, ensureAccess, folders, docs, pickFolder, scanning } = lib;
-  const [openUri, setOpenUri] = useState<string | null>(null);
 
   const folderLabel = (f: {
     isAppStorage: boolean;
@@ -735,7 +781,7 @@ function FilesTab({
           <SectionLabel>{folderLabel(openFolder)}</SectionLabel>
         </Box>
         {folderDocs.map((doc) => (
-          <Tap key={doc.uri} onPress={openReader}>
+          <Tap key={doc.uri} onPress={() => openDoc(doc)}>
             <Box
               align="center"
               direction="row"

@@ -23,8 +23,10 @@ export type BottomSheetModalReference = {
 type Props = {
   readonly androidKeyboardInputMode?: "adjustPan" | "adjustResize";
   readonly backdropPressBehavior?: "close" | "none";
+  readonly backgroundStyle?: any;
   readonly children: React.ReactNode;
   readonly containerStyle?: any;
+  readonly handleIndicatorStyle?: any;
   readonly disableBackHandlerClose?: boolean;
   readonly enableContentPanningGesture?: boolean;
   readonly enableDynamicSizing?: boolean;
@@ -43,8 +45,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalReference, Props>(
     {
       androidKeyboardInputMode = "adjustResize",
       backdropPressBehavior = "close",
+      backgroundStyle,
       children,
       containerStyle,
+      handleIndicatorStyle,
       disableBackHandlerClose = false,
       enableContentPanningGesture = true,
       enableDynamicSizing = true,
@@ -112,12 +116,13 @@ export const BottomSheetModal = forwardRef<BottomSheetModalReference, Props>(
       <GorhomBottomSheetModal
         android_keyboardInputMode={androidKeyboardInputMode}
         backdropComponent={renderBackdrop}
+        backgroundStyle={backgroundStyle}
         enableContentPanningGesture={enableContentPanningGesture}
         enableDynamicSizing={enableDynamicSizing}
         enableBlurKeyboardOnGesture
         enableHandlePanningGesture={enableHandlePanningGesture}
         enablePanDownToClose={enablePanDownToClose}
-        handleIndicatorStyle={styles.handle}
+        handleIndicatorStyle={[styles.handle, handleIndicatorStyle]}
         index={0}
         keyboardBehavior={keyboardBehavior}
         keyboardBlurBehavior={keyboardBlurBehavior}
