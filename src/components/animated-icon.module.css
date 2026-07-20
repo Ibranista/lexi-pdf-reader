@@ -1,6 +1,105 @@
-.expoLogoBackground {
-  background-image: linear-gradient(180deg, #3c9ffe, #0274df);
-  border-radius: 40px;
+/* LexiPDF logo animation, ported from the original design (speed = 6s:
+   intro 2.1s one-shot, morph 3.9s looped after the intro). */
+
+.tile {
   width: 128px;
   height: 128px;
+  border-radius: 29px;
+  background: #201b15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* contents (not the tile) breathe in and hold */
+.contents {
+  transform-origin: 22px 22px;
+  animation: lxContents 2.1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes lxContents {
+  0% { opacity: 0; transform: scale(0.92); }
+  15%, 100% { opacity: 1; transform: scale(1); }
+}
+
+/* stem (the page) slides down into place */
+.stem {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: lxStem 2.1s ease forwards;
+}
+@keyframes lxStem {
+  0% { opacity: 0; transform: translateY(-5px); }
+  22%, 100% { opacity: 1; transform: translateY(0); }
+}
+
+/* foot unfolds from the stem, overshoots, then nudges as the dot squeezes out */
+.foot {
+  transform-box: fill-box;
+  transform-origin: 4.5px 4.5px;
+  animation: lxFoot 2.1s cubic-bezier(0.5, 0.05, 0.3, 1) forwards;
+}
+@keyframes lxFoot {
+  0%, 25% { transform: rotate(-90deg); }
+  45% { transform: rotate(8deg); }
+  58%, 100% { transform: rotate(0deg); }
+}
+
+/* intro: the dot squeezes out the instant the L settles, then loops circle <-> document */
+.dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    lxDotIntro 2.1s cubic-bezier(0.45, 0, 0.35, 1) forwards,
+    lxDotMorph 3.9s ease-in-out 2.1s infinite;
+}
+@keyframes lxDotIntro {
+  0%, 52% { opacity: 0; transform: translate(-18.5px, 21.5px) scale(0.75, 0.75); animation-timing-function: ease-in; }
+  55% { opacity: 1; transform: translate(-18.5px, 21.5px) scale(0.8, 0.8); animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  60% { transform: translate(-13px, 16px) scale(1.55, 0.32); animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35); }
+  65% { transform: translate(-8px, 9px) scale(0.55, 1.6); animation-timing-function: cubic-bezier(0.15, 0.55, 0.35, 1); }
+  75% { transform: translate(0.9px, -1.8px) scale(1.18, 0.82); animation-timing-function: ease-out; }
+  83% { transform: translate(-0.2px, 0.4px) scale(0.94, 1.08); animation-timing-function: ease-in-out; }
+  90%, 100% { opacity: 1; transform: translate(0px, 0px) scale(1, 1); }
+}
+@keyframes lxDotMorph {
+  0%, 8% { x: 29px; y: 8px; width: 8px; height: 8px; rx: 4px; }
+  18%, 68% { x: 27.5px; y: 5.5px; width: 11px; height: 13px; rx: 1.8px; }
+  78%, 100% { x: 29px; y: 8px; width: 8px; height: 8px; rx: 4px; }
+}
+
+/* folded corner appears while the shape is a document, hides before it melts back */
+.fold {
+  opacity: 0;
+  animation: lxFold 3.9s ease 2.1s infinite;
+}
+@keyframes lxFold {
+  0%, 14% { opacity: 0; }
+  22%, 62% { opacity: 1; }
+  70%, 100% { opacity: 0; }
+}
+
+/* text lines write onto the mini document, then clear before the morph back */
+.line1,
+.line2,
+.line3 {
+  opacity: 0;
+  stroke-dashoffset: 7;
+}
+.line1 { animation: lxDocLine1 3.9s ease 2.1s infinite; }
+.line2 { animation: lxDocLine2 3.9s ease 2.1s infinite; }
+.line3 { animation: lxDocLine3 3.9s ease 2.1s infinite; }
+@keyframes lxDocLine1 {
+  0%, 20% { stroke-dashoffset: 7; opacity: 0; }
+  28%, 58% { stroke-dashoffset: 0; opacity: 1; }
+  65%, 100% { stroke-dashoffset: 7; opacity: 0; }
+}
+@keyframes lxDocLine2 {
+  0%, 24% { stroke-dashoffset: 7; opacity: 0; }
+  32%, 58% { stroke-dashoffset: 0; opacity: 1; }
+  65%, 100% { stroke-dashoffset: 7; opacity: 0; }
+}
+@keyframes lxDocLine3 {
+  0%, 28% { stroke-dashoffset: 7; opacity: 0; }
+  36%, 58% { stroke-dashoffset: 0; opacity: 1; }
+  65%, 100% { stroke-dashoffset: 7; opacity: 0; }
 }

@@ -1,95 +1,129 @@
-import { TouchableOpacity, Text, ActivityIndicator } from "react-native";
-import { cn } from "@/utils/cn";
+import type { ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+
+import { colors } from '@/constants/colors';
+import { fonts, radius } from './tokens';
 
 // ============================================================================
-// Button Component
+// Button
 // ============================================================================
+// Presentational — pass an `onPress`; real behavior gets wired later.
 
-type Variant = "primary" | "secondary" | "destructive" | "ghost";
-type Size = "sm" | "md" | "lg";
+type Variant = 'primary' | 'accent' | 'secondary' | 'ghost';
+type Size = 'sm' | 'md' | 'lg';
 
 interface ButtonProps {
   label: string;
-  onPress: () => void;
+  onPress?: () => void;
   variant?: Variant;
   size?: Size;
+  /** Stretch to fill the container width (default true — the design uses full-width CTAs). */
+  fullWidth?: boolean;
+  /** Optional leading icon slot. */
+  icon?: ReactNode;
   disabled?: boolean;
   loading?: boolean;
-  className?: string;
+  style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
 }
 
-const variantClasses: Record<Variant, string> = {
-  primary: "bg-orange-500 active:bg-orange-600",
-  secondary: "bg-gray-200 dark:bg-gray-700 active:bg-gray-300",
-  destructive: "bg-red-500 active:bg-red-600",
-  ghost: "bg-transparent border border-gray-300 dark:border-gray-600",
+const c = colors.light;
+
+const containerVariant: Record<Variant, ViewStyle> = {
+  primary: { backgroundColor: c.inkButton },
+  accent: { backgroundColor: c.accent },
+  secondary: {
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  ghost: { backgroundColor: 'transparent' },
 };
 
-const textClasses: Record<Variant, string> = {
-  primary: "text-white",
-  secondary: "text-gray-800 dark:text-gray-100",
-  destructive: "text-white",
-  ghost: "text-gray-700 dark:text-gray-300",
+const labelColorVariant: Record<Variant, string> = {
+  primary: c.onInk,
+  accent: c.onAccent,
+  secondary: c.text,
+  ghost: c.accentText,
 };
 
-const sizeClasses: Record<Size, string> = {
-  sm: "py-2 px-4 rounded-lg",
-  md: "py-3 px-6 rounded-xl",
-  lg: "py-4 px-8 rounded-2xl",
+const sizeStyle: Record<Size, ViewStyle> = {
+  sm: { height: 40, paddingHorizontal: 16, borderRadius: radius.md },
+  md: { height: 48, paddingHorizontal: 20, borderRadius: radius.lg },
+  lg: { height: 54, paddingHorizontal: 24, borderRadius: radius.lg },
 };
 
-const textSizeClasses: Record<Size, string> = {
-  sm: "text-sm",
-  md: "text-base",
-  lg: "text-lg",
-};
+const labelSize: Record<Size, number> = { sm: 14, md: 15, lg: 15 };
 
 export function Button({
   label,
   onPress,
-  variant = "primary",
-  size = "md",
+  variant = 'primary',
+  size = 'lg',
+  fullWidth = true,
+  icon,
   disabled = false,
   loading = false,
-  className,
+  style,
   accessibilityLabel,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  const tint = labelColorVariant[variant];
 
   return (
-    <TouchableOpacity
-      className={cn(
-        "items-center justify-center flex-row",
-        variantClasses[variant],
-        sizeClasses[size],
-        isDisabled && "opacity-50",
-        className,
-      )}
+    <Pressable
       onPress={onPress}
       disabled={isDisabled}
-      accessible
-      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
+      style={({ pressed }) => [
+        styles.base,
+        sizeStyle[size],
+        containerVariant[variant],
+        fullWidth && styles.fullWidth,
+        pressed && styles.pressed,
+        isDisabled && styles.disabled,
+        style,
+      ]}
     >
-      {loading && (
-        <ActivityIndicator
-          size="small"
-          color={variant === "primary" || variant === "destructive" ? "#ffffff" : "#f4511e"}
-          className="mr-2"
-          aria-busy
-        />
+      {loading ? (
+        <ActivityIndicator size="small" color={tint} />
+      ) : (
+        <View style={styles.content}>
+          {icon != null && <View>{icon}</View>}
+          <Text style={[styles.label, { color: tint, fontSize: labelSize[size] }]}>
+            {label}
+          </Text>
+        </View>
       )}
-      <Text
-        className={cn(
-          "font-semibold",
-          textClasses[variant],
-          textSizeClasses[size],
-        )}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  base: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullWidth: { alignSelf: 'stretch' },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  label: {
+    fontFamily: fonts.sans,
+    fontWeight: '600',
+  },
+  pressed: { opacity: 0.85 },
+  disabled: { opacity: 0.45 },
+});
