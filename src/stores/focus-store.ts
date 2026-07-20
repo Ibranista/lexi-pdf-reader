@@ -28,9 +28,13 @@ export const useFocusStore = create<FocusState>()((set, get) => ({
     clearInterval(tick);
     tick = setInterval(() => {
       const app = useAppStore.getState();
-      if (!app.fmTimer) return;
       const sessionSec = get().sessionSec + 1;
-      if (!breakShown && sessionSec >= BREAK_AT_SEC && app.focusRem) {
+      if (
+        !breakShown &&
+        sessionSec >= BREAK_AT_SEC &&
+        app.fmTimer &&
+        app.focusRem
+      ) {
         breakShown = true;
         set({ sessionSec, breakVisible: true });
       } else {

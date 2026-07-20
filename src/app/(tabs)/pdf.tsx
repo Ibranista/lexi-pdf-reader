@@ -30,9 +30,11 @@ import {
   FocusChrome,
   LexiBubble,
   LexiSheet,
+  PdfOutlineDrawer,
   PdfSearchPanel,
   SummarizeSheet,
 } from "@/components/reader";
+import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { useAppStore, useToastStore } from "@/stores/app-store";
@@ -75,9 +77,11 @@ export default function PdfViewerScreen() {
   const [pageDims, setPageDims] = useState<{ w: number; h: number } | null>(
     null,
   );
-  const [chapters, setChapters] = useState<{ title: string; page: number }[]>(
-    [],
-  );
+  const [nativeOutline, setNativeOutline] = useState<PdfOutlineEntry[]>([]);
+  const [reflowOutline, setReflowOutline] = useState<PdfOutlineEntry[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const outline =
+    reflowOutline.length > nativeOutline.length ? reflowOutline : nativeOutline;
   const [pageMarker, setPageMarker] = useState<{
     page: number;
     boxes: { x0: number; y0: number; x1: number; y1: number }[];
@@ -167,6 +171,17 @@ export default function PdfViewerScreen() {
     setSearchResults([]);
   };
 
+  const goToPage = (requestedPage: number) => {
+    const nextPage = clampPage(requestedPage);
+    setPage(nextPage);
+    setApp({ page: nextPage });
+    if (mode === "page") {
+      setPdfPage(nextPage);
+    } else {
+      setReflowGoto((current) => ({ page: nextPage, seq: current.seq + 1 }));
+    }
+  };
+
   const goToSearchResult = (requestedPage: number, index: number) => {
     const query = searchQuery.trim();
     const nextPage = clampPage(requestedPage);
@@ -217,8 +232,8 @@ export default function PdfViewerScreen() {
 
   const smartScale = Math.max(1.25, zoom / 100);
 
-  let chapter: { title: string; page: number } | null = null;
-  for (const c of chapters) {
+  let chapter: PdfOutlineEntry | null = null;
+  for (const c of outline) {
     if (c.page > page) break;
     chapter = c;
   }
@@ -242,6 +257,13 @@ export default function PdfViewerScreen() {
     .activeOffsetY([-20, 20])
     .onEnd((e) => {
       if (e.translationY < -30) setSettingsOpen(true);
+    });
+
+  const swipeFromLeftEdge = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX > 30) setOutlineOpen(true);
     });
 
   if (!uri) {
@@ -288,11 +310,12 @@ export default function PdfViewerScreen() {
                 if (size?.width && size?.height)
                   setPageDims({ w: size.width, h: size.height });
                 if (toc?.length) {
-                  setChapters(
+                  setNativeOutline(
                     toc
                       .map((c) => ({
                         title: (c.title ?? "").trim(),
                         page: (c.pageIdx ?? 0) + 1,
+                        level: 0,
                       }))
                       .filter((c) => c.title)
                       .sort((a, b) => a.page - b.page),
@@ -405,6 +428,7 @@ export default function PdfViewerScreen() {
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
+              onOutline={setReflowOutline}
               onSearchResults={setSearchResults}
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
@@ -537,6 +561,40 @@ export default function PdfViewerScreen() {
         </Tap>
       </Animated.View>
 
+      {outline.length && !outlineOpen && !searchOpen ? (
+        <GestureDetector gesture={swipeFromLeftEdge}>
+          <Box
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              zIndex: 9,
+            }}
+          >
+            {!immersive ? (
+              <Tap
+                onPress={() => setOutlineOpen(true)}
+                style={{ position: "absolute", left: 0, top: "46%" }}
+              >
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  height={64}
+                  justify="center"
+                  roundedBottomRight={10}
+                  roundedTopRight={10}
+                  width={18}
+                >
+                  <Box bg={t.faint} height={26} rounded={2} width={3} />
+                </Box>
+              </Tap>
+            ) : null}
+          </Box>
+        </GestureDetector>
+      ) : null}
+
       <GestureDetector gesture={swipeUpFromBottom}>
         <Box
           style={{
@@ -570,6 +628,18 @@ export default function PdfViewerScreen() {
             }
             setLexiOpen(true);
           }}
+        />
+      ) : null}
+      {outlineOpen ? (
+        <PdfOutlineDrawer
+          entries={outline}
+          onClose={() => setOutlineOpen(false)}
+          onGoPage={(target) => {
+            setOutlineOpen(false);
+            goToPage(target);
+          }}
+          page={page}
+          title={name ?? "Document"}
         />
       ) : null}
       {searchOpen ? (

@@ -7,6 +7,12 @@ import { Box, Text } from "@/components/atoms";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
+export interface PdfOutlineEntry {
+  title: string;
+  page: number;
+  level: number;
+}
+
 export interface PdfSearchResult {
   page: number;
   before: string;
@@ -768,6 +774,107 @@ function buildHtml(
     page.cleanup();
   }
 
+  /* ---- outline ----
+     Preferred source is the PDF's embedded outline (real destinations, so
+     page numbers are exact). Failing that — most PDFs have none — look for a
+     printed "Contents" page among the opening pages and parse its rows. */
+  async function embeddedOutline(pdf){
+    var out = [];
+    var ol = await pdf.getOutline();
+    if (!ol || !ol.length) return out;
+    async function walk(items, level){
+      for (var i = 0; i < items.length; i++){
+        var it = items[i];
+        var title = (it.title || '').replace(/\\s+/g, ' ').trim();
+        var pageNo = null;
+        try {
+          var dest = it.dest;
+          if (typeof dest === 'string') dest = await pdf.getDestination(dest);
+          if (dest && dest[0]) pageNo = (await pdf.getPageIndex(dest[0])) + 1;
+        } catch (e) { /* unresolvable destination — skip the row */ }
+        if (title && pageNo) out.push({ title: title, page: pageNo, level: level });
+        // one level of nesting is plenty for a reading drawer
+        if (it.items && it.items.length && level < 1) await walk(it.items, level + 1);
+      }
+    }
+    await walk(ol, 0);
+    return out;
+  }
+
+  /* Rows look like "Chapter 1  Fire and Tallow ......... 3" — title, then a
+     leader of dots/spaces, then the printed page number. */
+  function parseContentsRows(texts, startIdx){
+    var rows = [];
+    for (var j = startIdx; j < texts.length; j++){
+      var line = texts[j];
+      if (!line || line.length > 120) continue;
+      var m = line.match(/^(.*?)[\\s.·—–-]{2,}(\\d{1,4})$/) ||
+              line.match(/^(.+?)\\s+(\\d{1,4})$/);
+      if (!m) continue;
+      var title = m[1].replace(/[.\\s·—–-]+$/, '').trim();
+      var num = parseInt(m[2], 10);
+      if (!title || title.length < 2 || !num) continue;
+      if (/^(page|contents)$/i.test(title)) continue;
+      rows.push({ title: title, page: num, level: 0 });
+    }
+    return rows;
+  }
+
+  /* Note: no page.cleanup() in here. This runs concurrently with the main
+     extraction loop, which holds the same page proxies — cleaning up under
+     it would discard a render it's still using. It cleans up its own pages. */
+  async function printedOutline(pdf){
+    var limit = Math.min(pdf.numPages, 12);
+    for (var p = 1; p <= limit; p++){
+      var pg = await pdf.getPage(p);
+      var tc = await pg.getTextContent();
+      var texts = toLines(tc.items).map(function(l){
+        return (l.text || '').replace(/\\s+/g, ' ').trim();
+      });
+      var headIdx = -1;
+      for (var i = 0; i < Math.min(texts.length, 8); i++){
+        if (/^(table of contents|contents)$/i.test(texts[i])) { headIdx = i; break; }
+      }
+      if (headIdx < 0) continue;
+
+      var rows = parseContentsRows(texts, headIdx + 1);
+      // a contents list can run onto the next page or two
+      for (var k = p + 1; k <= Math.min(pdf.numPages, p + 2); k++){
+        var pg2 = await pdf.getPage(k);
+        var tc2 = await pg2.getTextContent();
+        var texts2 = toLines(tc2.items).map(function(l){
+          return (l.text || '').replace(/\\s+/g, ' ').trim();
+        });
+        var more = parseContentsRows(texts2, 0);
+        if (more.length < 2) break;   // no longer a contents list
+        rows = rows.concat(more);
+      }
+      if (rows.length >= 2) return rows;
+    }
+    return [];
+  }
+
+  async function buildOutline(pdf){
+    var entries = [], source = 'embedded';
+    try { entries = await embeddedOutline(pdf); } catch (e) { entries = []; }
+    if (!entries.length) {
+      source = 'printed';
+      try { entries = await printedOutline(pdf); } catch (e) { entries = []; }
+      // Printed numbers are the book's own, which front matter can offset
+      // from the PDF's page order — drop anything out of range and keep the
+      // list monotonic so taps never jump backwards.
+      var clean = [], last = 0;
+      for (var i = 0; i < entries.length; i++){
+        var e = entries[i];
+        if (e.page < 1 || e.page > pdf.numPages || e.page < last) continue;
+        last = e.page;
+        clean.push(e);
+      }
+      entries = clean;
+    }
+    if (entries.length) post({ type: 'outline', entries: entries, source: source });
+  }
+
   function run(){
     if (typeof pdfjsLib === 'undefined') {
       document.getElementById('status').textContent = 'Reflow needs a connection the first time.';
@@ -786,6 +893,8 @@ function buildHtml(
           firstPaint = true;
           document.getElementById('status').className = 'hidden';
           post({ type: 'firstpaint' });
+          // not awaited — the outline arrives while pages keep extracting
+          buildOutline(pdf);
         }
         post({ type: 'progress', page: p, total: pdf.numPages });
         if (p === INITIAL_PAGE) window.scrollToPage(INITIAL_PAGE);
@@ -875,6 +984,7 @@ interface Props {
   onSearchResults?: (results: PdfSearchResult[]) => void;
   onSingleTap?: () => void;
   onIndexed?: () => void;
+  onOutline?: (entries: PdfOutlineEntry[]) => void;
 }
 
 export function PdfReflowView({
@@ -890,6 +1000,7 @@ export function PdfReflowView({
   onSearchResults,
   onSingleTap,
   onIndexed,
+  onOutline,
 }: Props) {
   const t = useProtoTheme();
   const textSize = useAppStore((s) => s.textSize);
@@ -1035,6 +1146,7 @@ export function PdfReflowView({
                 page?: number;
                 total?: number;
                 results?: PdfSearchResult[];
+                entries?: PdfOutlineEntry[];
               };
               if (msg.type === "firstpaint") setStatus("ready");
               else if (msg.type === "page" && msg.page)
@@ -1043,6 +1155,8 @@ export function PdfReflowView({
               else if (msg.type === "error") setStatus("error");
               else if (msg.type === "searchresults")
                 onSearchResults?.(msg.results ?? []);
+              else if (msg.type === "outline" && msg.entries?.length)
+                onOutline?.(msg.entries);
               else if (msg.type === "done") {
                 onIndexed?.();
                 if (queryRef.current) setIndexSeq((n) => n + 1);
