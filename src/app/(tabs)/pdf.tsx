@@ -39,9 +39,18 @@ import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useFocusStore } from "@/stores/focus-store";
+import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type ViewMode = "page" | "reflow";
+
+function savedPageFor(uri: string | undefined): number {
+  if (!uri) return 1;
+  const saved = useRecentsStore
+    .getState()
+    .recents.find((r) => r.uri === uri)?.page;
+  return saved && saved > 0 ? saved : 1;
+}
 
 export default function PdfViewerScreen() {
   const t = useProtoTheme();
@@ -59,7 +68,7 @@ export default function PdfViewerScreen() {
   const exitFocus = useFocusStore((s) => s.exit);
 
   const [mode, setMode] = useState<ViewMode>("page");
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => savedPageFor(uri));
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
@@ -116,8 +125,11 @@ export default function PdfViewerScreen() {
     undefined,
   );
 
-  const [pdfPage, setPdfPage] = useState(1);
-  const [reflowGoto, setReflowGoto] = useState({ page: 1, seq: 0 });
+  const [pdfPage, setPdfPage] = useState(() => savedPageFor(uri));
+  const [reflowGoto, setReflowGoto] = useState(() => ({
+    page: savedPageFor(uri),
+    seq: 0,
+  }));
   const [reflowMounted] = useState(true);
 
   const [bar] = useState(() => new Animated.Value(1));
@@ -151,6 +163,20 @@ export default function PdfViewerScreen() {
   };
 
   useEffect(() => () => useFocusStore.getState().exit(), []);
+
+  useEffect(() => {
+    if (!uri) return;
+    useRecentsStore
+      .getState()
+      .recordOpen({ uri, name: name ?? "Document", ext: "PDF" });
+  }, [uri, name]);
+
+  useEffect(() => {
+    if (!uri) return;
+    useRecentsStore
+      .getState()
+      .recordProgress(uri, page, pageCount || undefined);
+  }, [uri, page, pageCount]);
 
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
@@ -264,6 +290,13 @@ export default function PdfViewerScreen() {
     .activeOffsetX([-20, 20])
     .onEnd((e) => {
       if (e.translationX > 30) setOutlineOpen(true);
+    });
+
+  const swipeFromRightEdge = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX < -30) setSearchOpen(true);
     });
 
   if (!uri) {
@@ -424,6 +457,7 @@ export default function PdfViewerScreen() {
               initialPage={reflowGoto.page}
               key={uri}
               onPageChange={(nextPage) => {
+                if (mode !== "reflow") return;
                 setPage(nextPage);
                 setApp({ page: nextPage });
               }}
@@ -592,6 +626,21 @@ export default function PdfViewerScreen() {
               </Tap>
             ) : null}
           </Box>
+        </GestureDetector>
+      ) : null}
+
+      {!outlineOpen && !searchOpen ? (
+        <GestureDetector gesture={swipeFromRightEdge}>
+          <Box
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              zIndex: 9,
+            }}
+          />
         </GestureDetector>
       ) : null}
 
