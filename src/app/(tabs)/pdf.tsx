@@ -39,9 +39,25 @@ import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useFocusStore } from "@/stores/focus-store";
+import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type ViewMode = "page" | "reflow";
+
+/**
+ * Page this document was last left on, or 1 for a document never opened.
+ *
+ * Persistence is MMKV-backed and therefore synchronous, so this is already
+ * hydrated during the first render — which is what lets the reader open
+ * *at* the saved page instead of jumping there after a frame.
+ */
+function savedPageFor(uri: string | undefined): number {
+  if (!uri) return 1;
+  const saved = useRecentsStore
+    .getState()
+    .recents.find((r) => r.uri === uri)?.page;
+  return saved && saved > 0 ? saved : 1;
+}
 
 export default function PdfViewerScreen() {
   const t = useProtoTheme();
@@ -60,7 +76,10 @@ export default function PdfViewerScreen() {
   const exitFocus = useFocusStore((s) => s.exit);
 
   const [mode, setMode] = useState<ViewMode>("page");
-  const [page, setPage] = useState(1);
+  // Resume where this document was left off. Read as a lazy initializer, not
+  // in an effect — the progress recorder below would otherwise fire first
+  // with page 1 and overwrite the very position we're restoring.
+  const [page, setPage] = useState(() => savedPageFor(uri));
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
@@ -129,9 +148,13 @@ export default function PdfViewerScreen() {
     undefined,
   );
 
-  // Page view opens at whatever page reflow left off on, and vice versa.
-  const [pdfPage, setPdfPage] = useState(1);
-  const [reflowGoto, setReflowGoto] = useState({ page: 1, seq: 0 });
+  // Page view opens at whatever page reflow left off on, and vice versa —
+  // both start from the saved position so either view resumes correctly.
+  const [pdfPage, setPdfPage] = useState(() => savedPageFor(uri));
+  const [reflowGoto, setReflowGoto] = useState(() => ({
+    page: savedPageFor(uri),
+    seq: 0,
+  }));
   // Reflow is always mounted so text extraction runs in the background even
   // in Page view — this lets search work regardless of the active view mode.
   const [reflowMounted] = useState(true);
@@ -176,6 +199,22 @@ export default function PdfViewerScreen() {
 
   // never leave a session ticking after the reader unmounts
   useEffect(() => () => useFocusStore.getState().exit(), []);
+
+  // Recents are recorded here rather than at the library tap, so every way
+  // into the reader (library, files, a deep link) lands on the shelf.
+  useEffect(() => {
+    if (!uri) return;
+    useRecentsStore
+      .getState()
+      .recordOpen({ uri, name: name ?? "Document", ext: "PDF" });
+  }, [uri, name]);
+
+  useEffect(() => {
+    if (!uri) return;
+    useRecentsStore
+      .getState()
+      .recordProgress(uri, page, pageCount || undefined);
+  }, [uri, page, pageCount]);
 
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
@@ -305,6 +344,15 @@ export default function PdfViewerScreen() {
     .activeOffsetX([-20, 20])
     .onEnd((e) => {
       if (e.translationX > 30) setOutlineOpen(true);
+    });
+
+  // Mirror on the right: swipe in to search. No handle tab here — the
+  // toolbar's search button already advertises it.
+  const swipeFromRightEdge = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX < -30) setSearchOpen(true);
     });
 
   if (!uri) {
@@ -478,6 +526,10 @@ export default function PdfViewerScreen() {
               initialPage={reflowGoto.page}
               key={uri}
               onPageChange={(nextPage) => {
+                // While reflow is the hidden background view, its own
+                // scrolling (extraction, the initial jump) is not the
+                // reader's position — only the visible view sets that.
+                if (mode !== "reflow") return;
                 setPage(nextPage);
                 setApp({ page: nextPage });
               }}
@@ -652,6 +704,21 @@ export default function PdfViewerScreen() {
               </Tap>
             ) : null}
           </Box>
+        </GestureDetector>
+      ) : null}
+
+      {!outlineOpen && !searchOpen ? (
+        <GestureDetector gesture={swipeFromRightEdge}>
+          <Box
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              zIndex: 9,
+            }}
+          />
         </GestureDetector>
       ) : null}
 
