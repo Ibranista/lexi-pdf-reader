@@ -1,7 +1,8 @@
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { Image } from "expo-image";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ScrollView } from "react-native";
+import { BackHandler, RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
@@ -9,6 +10,7 @@ import {
   Card,
   Cover,
   HeaderButton,
+  IconBack,
   IconBrain,
   IconChevron,
   IconFolder,
@@ -17,29 +19,37 @@ import {
   IconSliders,
   IconSpark,
   IconSun,
+  IndeterminateBar,
   ProgressBar,
   ProtoScreen,
-  PText,
   SectionLabel,
   Segmented,
   Tap,
+  Text,
 } from "@/components/lexi-components";
 import {
-  ALL_DOC_NAMES,
   BOOK_PAGES,
   BOOK_TITLE,
   chapterOf,
   COLLECTIONS,
-  FOLDERS,
   LANG_NAMES,
   LIBRARY_INDEX,
   RECENT_DOCS,
 } from "@/constants/library";
+import {
+  type DeviceDoc,
+  formatSize,
+  formatWhen,
+  useDeviceLibrary,
+} from "@/hooks/use-device-library";
+import { usePdfThumbnail } from "@/hooks/use-pdf-thumbnail";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
+
+type DeviceLibrary = ReturnType<typeof useDeviceLibrary>;
 
 export default function LibraryScreen() {
   const t = useProtoTheme();
@@ -49,6 +59,72 @@ export default function LibraryScreen() {
   const [tab, setTab] = useState<LibTab>("recent");
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
+  const lib = useDeviceLibrary();
+  const storageAsked = useAppStore((s) => s.storageAsked);
+  const { access, ensureAccess } = lib;
+  // lifted out of FilesTab so the hardware back button can unwind it
+  const [openFolderUri, setOpenFolderUri] = useState<string | null>(null);
+
+  // pull-to-refresh: re-scan the device for documents. `refreshing` is
+  // derived rather than stored, so the spinner clears itself when the scan
+  // ends — no effect writing state back on every scan transition.
+  const [pulled, setPulled] = useState(false);
+  const refreshing = pulled && lib.scanning;
+  const onRefresh = useCallback(() => {
+    setPulled(true);
+    lib.refresh();
+  }, [lib]);
+
+  /**
+   * Android hardware back: unwind in-screen state before leaving the app —
+   * search, then an open folder. Only when there's nothing left to undo does
+   * back exit, and then it asks for a confirming second press.
+   */
+  const exitArmed = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const onBack = () => {
+        if (searching) {
+          setSearching(false);
+          setQuery("");
+          return true;
+        }
+        if (tab === "files" && openFolderUri) {
+          setOpenFolderUri(null);
+          return true;
+        }
+        if (exitArmed.current) return false; // second press — let it exit
+        exitArmed.current = true;
+        showToast(tr("library.exitConfirm"));
+        timer = setTimeout(() => {
+          exitArmed.current = false;
+        }, 2000);
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBack);
+      return () => {
+        sub.remove();
+        clearTimeout(timer);
+        exitArmed.current = false;
+      };
+    }, [searching, tab, openFolderUri, showToast, tr]),
+  );
+
+  // ask for device-wide storage access once, on first open of the library
+  useEffect(() => {
+    if (!storageAsked && access === "denied") {
+      useAppStore.getState().set({ storageAsked: true });
+      ensureAccess();
+    }
+  }, [storageAsked, access, ensureAccess]);
+
+  const importDocuments = async () => {
+    const count = await lib.importDocuments();
+    if (count !== null) showToast(tr("library.importedToast", { count }));
+  };
 
   const TAB_ITEMS = [
     { key: "recent" as const, label: tr("tabItems.recent") },
@@ -59,6 +135,14 @@ export default function LibraryScreen() {
   ];
 
   const openReader = () => router.push("/reader");
+  // open a real on-device document — PDFs render in the native viewer
+  const openDoc = (doc: DeviceDoc) => {
+    if (doc.ext !== "PDF") {
+      showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
+      return;
+    }
+    router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
+  };
   const openDemo = (name: string) =>
     showToast(tr("library.demoToast", { name }));
 
@@ -86,11 +170,13 @@ export default function LibraryScreen() {
           <HeaderButton
             bg={t.accentSoft}
             noBorder
-            onPress={() => showToast(tr("library.signedInAs", { name: "Selam B." }))}
+            onPress={() =>
+              showToast(tr("library.signedInAs", { name: "Selam B." }))
+            }
           >
-            <PText color={t.accentText} size={14} weight="600">
+            <Text color={t.accentText} size={14} weight="600">
               SB
-            </PText>
+            </Text>
           </HeaderButton>
         </Box>
       </Box>
@@ -139,9 +225,9 @@ export default function LibraryScreen() {
               setQuery("");
             }}
           >
-            <PText color={t.accentText} size={14} weight="500">
+            <Text color={t.accentText} size={14} weight="500">
               {tr("library.cancel")}
-            </PText>
+            </Text>
           </Tap>
         </Box>
       ) : (
@@ -155,9 +241,9 @@ export default function LibraryScreen() {
             paddingRight={20}
             paddingTop={18}
           >
-            <PText ls={-0.3} serif size={30} weight="600">
+            <Text ls={-0.3} serif size={30} weight="600">
               {tr("library.title")}
-            </PText>
+            </Text>
             <HeaderButton onPress={() => setSearching(true)}>
               <IconSearch color={t.ink} size={19} />
             </HeaderButton>
@@ -176,6 +262,15 @@ export default function LibraryScreen() {
           paddingTop: searching ? 16 : 18,
           paddingBottom: 90 + insets.bottom,
         }}
+        refreshControl={
+          <RefreshControl
+            colors={[t.accent]}
+            onRefresh={onRefresh}
+            progressBackgroundColor={t.card}
+            refreshing={refreshing}
+            tintColor={t.sub}
+          />
+        }
         style={{ flex: 1 }}
       >
         {searching ? (
@@ -187,19 +282,24 @@ export default function LibraryScreen() {
         ) : tab === "recent" ? (
           <RecentTab openDemo={openDemo} openReader={openReader} />
         ) : tab === "all" ? (
-          <AllTab openDemo={openDemo} openReader={openReader} />
+          <AllTab lib={lib} openDoc={openDoc} />
         ) : tab === "coll" ? (
           <CollectionsTab openDemo={openDemo} openReader={openReader} />
         ) : tab === "vocab" ? (
           <VocabTab />
         ) : (
-          <FilesTab />
+          <FilesTab
+            lib={lib}
+            openDoc={openDoc}
+            openUri={openFolderUri}
+            setOpenUri={setOpenFolderUri}
+          />
         )}
       </ScrollView>
 
       {/* import FAB */}
       <Tap
-        onPress={() => showToast(tr("library.importToast"))}
+        onPress={importDocuments}
         scale={0.92}
         style={{ position: "absolute", right: 20, bottom: 26 + insets.bottom }}
       >
@@ -244,17 +344,26 @@ function RecentTab({
       <Tap onPress={openReader} scale={0.985}>
         <Card rounded={18}>
           <Box align="center" direction="row" gap={16}>
-            <Cover height={104} label={tr("library.all.coverPlaceholder")} rounded={8} width={76} />
+            <Cover
+              height={104}
+              label={tr("library.all.coverPlaceholder")}
+              rounded={8}
+              width={76}
+            />
             <Box flex={1} gap={6}>
-              <PText color={t.accentText} ls={0.44} size={11} weight="600">
+              <Text color={t.accentText} ls={0.44} size={11} weight="600">
                 {tr("library.recent.continueReading")}
-              </PText>
-              <PText lh={20} serif size={16} weight="600">
+              </Text>
+              <Text lh={20} serif size={16} weight="600">
                 {BOOK_TITLE}
-              </PText>
-              <PText color={t.sub} size={12}>
-                {tr("library.recent.pageOf", { page, total: BOOK_PAGES, chapter: ch.n })}
-              </PText>
+              </Text>
+              <Text color={t.sub} size={12}>
+                {tr("library.recent.pageOf", {
+                  page,
+                  total: BOOK_PAGES,
+                  chapter: ch.n,
+                })}
+              </Text>
               <Box marginTop={4}>
                 <ProgressBar pct={(page / BOOK_PAGES) * 100} />
               </Box>
@@ -279,12 +388,12 @@ function RecentTab({
           >
             <Cover height={58} width={44} />
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {doc.name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {doc.meta}
-              </PText>
+              </Text>
             </Box>
             <Box
               bg={doc.hot ? t.accentSoft : t.chip}
@@ -292,13 +401,13 @@ function RecentTab({
               paddingY={4}
               rounded={20}
             >
-              <PText
+              <Text
                 color={doc.hot ? t.accentText : t.sub}
                 size={11}
                 weight="500"
               >
                 {doc.badge}
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Tap>
@@ -309,48 +418,159 @@ function RecentTab({
 
 /* ============ All ============ */
 
+function docMeta(size: number, modifiedAt: number | null): string {
+  return [formatSize(size), formatWhen(modifiedAt)].filter(Boolean).join(" · ");
+}
+
+/** Cover tile: first-page PDF preview, falling back to a format badge. */
+function DocCover({ doc }: { doc: DeviceDoc }) {
+  const t = useProtoTheme();
+  const thumb = usePdfThumbnail(doc.uri, doc.ext === "PDF");
+
+  return (
+    <Box
+      align="center"
+      bg={t.coverA}
+      borderColor={t.line}
+      borderWidth={1}
+      justify="center"
+      rounded={9}
+      style={{ aspectRatio: 3 / 4, overflow: "hidden" }}
+    >
+      {thumb ? (
+        <Image
+          contentFit="cover"
+          source={{ uri: thumb }}
+          style={{ width: "100%", height: "100%" }}
+          transition={160}
+        />
+      ) : (
+        <Text color={t.sub} mono size={8}>
+          {doc.ext}
+        </Text>
+      )}
+    </Box>
+  );
+}
+
 function AllTab({
-  openDemo,
-  openReader,
+  lib,
+  openDoc,
 }: {
-  openDemo: (name: string) => void;
-  openReader: () => void;
+  lib: DeviceLibrary;
+  openDoc: (doc: DeviceDoc) => void;
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
-  return (
-    <Box
-      direction="row"
-      style={{ flexWrap: "wrap", columnGap: 14, rowGap: 16 }}
-    >
-      {ALL_DOC_NAMES.map((name, i) => (
-        <Tap
-          key={name}
-          onPress={i === 0 ? openReader : () => openDemo(name)}
-          scale={0.96}
-          style={{ width: "30%", flexGrow: 1 }}
-        >
-          <Box gap={7}>
-            <Box
-              align="center"
-              bg={t.coverA}
-              borderColor={t.line}
-              borderWidth={1}
-              justify="center"
-              rounded={9}
-              style={{ aspectRatio: 3 / 4 }}
-            >
-              <PText color={t.sub} mono size={8}>
-                {tr("library.all.coverPlaceholder")}
-              </PText>
+  const { access, ensureAccess, docs, pickFolder, scanning, scanProgress } =
+    lib;
+
+  // full-screen scan UI only for the very first scan (nothing to show yet);
+  // a pull-to-refresh rescan keeps the existing grid + its own spinner
+  if (scanning && docs.length === 0) {
+    return (
+      <Box gap={14} paddingX={12} paddingY={48}>
+        <Box align="center" gap={6}>
+          <Text size={15} weight="600">
+            {tr("library.all.scanning")}
+          </Text>
+          <Text color={t.sub} size={13}>
+            {tr("library.all.scanningCount", { count: scanProgress })}
+          </Text>
+        </Box>
+        <IndeterminateBar />
+      </Box>
+    );
+  }
+
+  if (docs.length === 0) {
+    const needsAccess = access === "denied";
+    return (
+      <Box align="center" gap={10} paddingX={24} paddingY={44}>
+        <IconFolder color={t.faint} size={26} />
+        <Text size={15} weight="600">
+          {needsAccess
+            ? tr("library.all.allowTitle")
+            : tr("library.all.emptyTitle")}
+        </Text>
+        <Text align="center" color={t.sub} lh={21} size={13}>
+          {needsAccess
+            ? tr("library.all.allowBody")
+            : tr("library.all.emptyBody")}
+        </Text>
+        {access !== "granted" ? (
+          <Tap
+            onPress={access === "unavailable" ? pickFolder : ensureAccess}
+            scale={0.95}
+            style={{ marginTop: 8 }}
+          >
+            <Box bg={t.accent} paddingX={16} paddingY={11} rounded={12}>
+              <Text color={t.onAccent} size={13} weight="600">
+                {access === "unavailable"
+                  ? tr("library.all.chooseFolderBtn")
+                  : tr("library.all.allowBtn")}
+              </Text>
             </Box>
-            <PText lh={15} numberOfLines={2} size={11.5} weight="500">
-              {name}
-            </PText>
+          </Tap>
+        ) : null}
+      </Box>
+    );
+  }
+
+  return (
+    <>
+      {access === "denied" ? (
+        // documents from app storage only — offer device-wide access
+        <Tap onPress={ensureAccess}>
+          <Box
+            align="center"
+            bg={t.accentSoft}
+            direction="row"
+            gap={12}
+            marginBottom={16}
+            paddingX={14}
+            paddingY={12}
+            rounded={12}
+          >
+            <IconFolder color={t.accentText} size={17} />
+            <Box flex={1}>
+              <Text color={t.accentText} size={13} weight="600">
+                {tr("library.all.allowBtn")}
+              </Text>
+              <Text color={t.sub} size={11.5} style={{ marginTop: 2 }}>
+                {tr("library.all.allowBannerSub")}
+              </Text>
+            </Box>
+            <IconChevron color={t.accentText} size={15} />
           </Box>
         </Tap>
-      ))}
-    </Box>
+      ) : null}
+      <Box
+        direction="row"
+        style={{ flexWrap: "wrap", columnGap: 14, rowGap: 16 }}
+      >
+        {docs.map((doc) => (
+          <Tap
+            key={doc.uri}
+            onPress={() => openDoc(doc)}
+            scale={0.96}
+            style={{ width: "30%", flexGrow: 1 }}
+          >
+            <Box gap={7}>
+              <DocCover doc={doc} />
+              <Box gap={2}>
+                <Text lh={15} numberOfLines={2} size={11.5} weight="500">
+                  {doc.name}
+                </Text>
+                <Text color={t.faint} size={10}>
+                  {docMeta(doc.size, doc.modifiedAt)}
+                </Text>
+              </Box>
+            </Box>
+          </Tap>
+        ))}
+      </Box>
+    </>
   );
 }
 
@@ -375,18 +595,20 @@ function CollectionsTab({
         {cd.colls.map(([emoji, name, meta]) => (
           <Tap
             key={name}
-            onPress={() => showToast(tr("library.collections.demoToast", { name }))}
+            onPress={() =>
+              showToast(tr("library.collections.demoToast", { name }))
+            }
             scale={0.97}
             style={{ width: "47%", flexGrow: 1 }}
           >
             <Card gap={8}>
-              <PText size={22}>{emoji}</PText>
-              <PText size={14} weight="600">
+              <Text size={22}>{emoji}</Text>
+              <Text size={14} weight="600">
                 {name}
-              </PText>
-              <PText color={t.sub} size={12}>
+              </Text>
+              <Text color={t.sub} size={12}>
                 {meta}
-              </PText>
+              </Text>
             </Card>
           </Tap>
         ))}
@@ -402,9 +624,9 @@ function CollectionsTab({
         <IconSpark color={t.accent} size={13} />
         <SectionLabel>{tr("library.collections.autoFilled")}</SectionLabel>
       </Box>
-      <PText color={t.faint} size={12} style={{ paddingBottom: 4 }}>
+      <Text color={t.faint} size={12} style={{ paddingBottom: 4 }}>
         {tr("library.collections.basedOn", { label: cd.label })}
-      </PText>
+      </Text>
 
       {cd.filed.map(([name, coll, kind]) => (
         <Tap
@@ -420,25 +642,25 @@ function CollectionsTab({
           >
             <Cover height={58} width={44} />
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {tr("library.collections.filedIn", { collection: coll })}
-              </PText>
+              </Text>
             </Box>
             <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
-              <PText color={t.accentText} size={11} weight="500">
+              <Text color={t.accentText} size={11} weight="500">
                 {kind}
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Tap>
       ))}
 
-      <PText color={t.faint} size={12} style={{ paddingTop: 10 }}>
+      <Text color={t.faint} size={12} style={{ paddingTop: 10 }}>
         {tr("library.collections.tapSuggestion")}
-      </PText>
+      </Text>
     </>
   );
 }
@@ -461,9 +683,9 @@ function VocabTab() {
         style={{ alignItems: "baseline" }}
       >
         <SectionLabel>{tr("library.vocab.savedWords")}</SectionLabel>
-        <PText color={t.faint} size={12}>
+        <Text color={t.faint} size={12}>
           {tr("library.vocab.wordCount", { count: vocab.length })}
-        </PText>
+        </Text>
       </Box>
 
       <Box gap={12}>
@@ -479,18 +701,18 @@ function VocabTab() {
           >
             <Card gap={10}>
               <Box direction="row" gap={10} style={{ alignItems: "baseline" }}>
-                <PText serif size={18} weight="600">
+                <Text serif size={18} weight="600">
                   {v.word}
-                </PText>
+                </Text>
                 <Box bg={t.chip} paddingX={8} paddingY={3} rounded={12}>
-                  <PText color={t.sub} size={10.5} weight="500">
+                  <Text color={t.sub} size={10.5} weight="500">
                     {v.pos}
-                  </PText>
+                  </Text>
                 </Box>
                 <Box flex={1} />
-                <PText color={t.faint} mono size={11} weight="600">
+                <Text color={t.faint} mono size={11} weight="600">
                   {tr("library.vocab.pageAbbrev", { page: v.p })}
-                </PText>
+                </Text>
               </Box>
               <Box
                 direction="row"
@@ -498,30 +720,30 @@ function VocabTab() {
                 wrap="wrap"
                 style={{ alignItems: "baseline" }}
               >
-                <PText color={t.accentText} size={17} weight="600">
+                <Text color={t.accentText} size={17} weight="600">
                   {v.tr}
-                </PText>
-                <PText color={t.sub} size={12}>
+                </Text>
+                <Text color={t.sub} size={12}>
                   {tr("library.vocab.translitLine", {
                     translit: v.translit,
                     lang: LANG_NAMES[v.lang] ?? v.lang,
                   })}
-                </PText>
+                </Text>
               </Box>
               <Box direction="row" gap={9}>
                 <Box bg={t.accent} rounded={2} width={4} />
                 <Box flex={1}>
-                  <PText color={t.readerInk} lh={20} size={13}>
+                  <Text color={t.readerInk} lh={20} size={13}>
                     {v.s1}
-                  </PText>
+                  </Text>
                 </Box>
               </Box>
               <Box direction="row" gap={9}>
                 <Box bg={t.accentSoft} rounded={2} width={4} />
                 <Box flex={1}>
-                  <PText color={t.sub} lh={20} size={13}>
+                  <Text color={t.sub} lh={20} size={13}>
                     {v.s2}
-                  </PText>
+                  </Text>
                 </Box>
               </Box>
             </Card>
@@ -531,9 +753,9 @@ function VocabTab() {
         {vocab.length === 0 ? (
           <Box align="center" gap={10} paddingX={24} paddingY={48}>
             <IconSpark color={t.faint} size={26} />
-            <PText align="center" color={t.sub} lh={21} size={13}>
+            <Text align="center" color={t.sub} lh={21} size={13}>
               {tr("library.vocab.emptyState")}
-            </PText>
+            </Text>
           </Box>
         ) : null}
       </Box>
@@ -543,20 +765,90 @@ function VocabTab() {
 
 /* ============ Files ============ */
 
-function FilesTab() {
+function FilesTab({
+  lib,
+  openDoc,
+  openUri,
+  setOpenUri,
+}: {
+  lib: DeviceLibrary;
+  openDoc: (doc: DeviceDoc) => void;
+  openUri: string | null;
+  setOpenUri: (uri: string | null) => void;
+}) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
-  const showToast = useToastStore((s) => s.showToast);
+  const libRootName = useAppStore((s) => s.libRootName);
+  const { access, ensureAccess, folders, docs, pickFolder, scanning } = lib;
+
+  const folderLabel = (f: {
+    isAppStorage: boolean;
+    isDeviceRoot: boolean;
+    name: string;
+  }) =>
+    f.isAppStorage
+      ? tr("library.files.appStorage")
+      : f.isDeviceRoot
+        ? tr("library.files.internalStorage")
+        : f.name;
+
+  const openFolder = folders.find((f) => f.uri === openUri);
+
+  if (openFolder) {
+    const folderDocs = docs.filter((d) => d.folderUri === openFolder.uri);
+    return (
+      <>
+        <Tap onPress={() => setOpenUri(null)}>
+          <Box align="center" direction="row" gap={8} paddingBottom={14}>
+            <IconBack color={t.accentText} size={16} />
+            <Text color={t.accentText} size={13} weight="600">
+              {tr("library.files.allFolders")}
+            </Text>
+          </Box>
+        </Tap>
+        <Box paddingBottom={8}>
+          <SectionLabel>{folderLabel(openFolder)}</SectionLabel>
+        </Box>
+        {folderDocs.map((doc) => (
+          <Tap key={doc.uri} onPress={() => openDoc(doc)}>
+            <Box
+              align="center"
+              direction="row"
+              gap={14}
+              paddingY={12}
+              style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+            >
+              <Cover height={58} width={44} />
+              <Box flex={1}>
+                <Text numberOfLines={1} size={14} weight="600">
+                  {doc.name}
+                </Text>
+                <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
+                  {docMeta(doc.size, doc.modifiedAt)}
+                </Text>
+              </Box>
+              <IconChevron color={t.faint} size={16} />
+            </Box>
+          </Tap>
+        ))}
+        {folderDocs.length === 0 ? (
+          <Text color={t.sub} size={13} style={{ paddingTop: 12 }}>
+            {tr("library.files.folderEmpty")}
+          </Text>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
       <Box paddingBottom={8}>
         <SectionLabel>{tr("library.files.onThisDevice")}</SectionLabel>
       </Box>
-      {FOLDERS.map((f) => (
-        <Tap
-          key={f.name}
-          onPress={() => showToast(tr("library.files.demoToast"))}
-        >
+
+      {access === "denied" ? (
+        // Android without "All files access" — one tap re-opens the request
+        <Tap onPress={ensureAccess}>
           <Box
             align="center"
             direction="row"
@@ -575,17 +867,93 @@ function FilesTab() {
               <IconFolder color={t.accentText} size={19} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
-                {f.name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
-                {f.meta}
-              </PText>
+              <Text size={14} weight="600">
+                {tr("library.files.allowAccess")}
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
+                {tr("library.files.allowAccessSub")}
+              </Text>
+            </Box>
+            <IconChevron color={t.faint} size={16} />
+          </Box>
+        </Tap>
+      ) : access === "unavailable" ? (
+        // iOS / web — folder picking is the only way in
+        <Tap onPress={pickFolder}>
+          <Box
+            align="center"
+            direction="row"
+            gap={14}
+            paddingY={14}
+            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+          >
+            <Box
+              align="center"
+              bg={t.chip}
+              height={42}
+              justify="center"
+              rounded={11}
+              width={42}
+            >
+              <IconPlus color={t.ink} size={17} />
+            </Box>
+            <Box flex={1}>
+              <Text size={14} weight="600">
+                {libRootName
+                  ? tr("library.files.scanningFolder", { name: libRootName })
+                  : tr("library.files.chooseFolder")}
+              </Text>
+            </Box>
+            <IconChevron color={t.faint} size={16} />
+          </Box>
+        </Tap>
+      ) : null}
+
+      {folders.map((f) => (
+        <Tap key={f.uri} onPress={() => setOpenUri(f.uri)}>
+          <Box
+            align="center"
+            direction="row"
+            gap={14}
+            paddingY={14}
+            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+          >
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              height={42}
+              justify="center"
+              rounded={11}
+              width={42}
+            >
+              <IconFolder color={t.accentText} size={19} />
+            </Box>
+            <Box flex={1}>
+              <Text numberOfLines={1} size={14} weight="600">
+                {folderLabel(f)}
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
+                {tr("library.files.docCount", { count: f.docCount })}
+              </Text>
             </Box>
             <IconChevron color={t.faint} size={16} />
           </Box>
         </Tap>
       ))}
+
+      {scanning ? (
+        <Box align="center" paddingY={28}>
+          <Text color={t.sub} size={13}>
+            {tr("library.all.scanning")}
+          </Text>
+        </Box>
+      ) : folders.length === 0 ? (
+        <Box align="center" paddingX={24} paddingY={28}>
+          <Text align="center" color={t.sub} lh={21} size={13}>
+            {tr("library.files.empty")}
+          </Text>
+        </Box>
+      ) : null}
     </>
   );
 }
@@ -615,9 +983,9 @@ function SearchResults({
     return (
       <Box align="center" gap={10} paddingX={24} paddingY={44}>
         <IconSearch color={t.faint} size={26} />
-        <PText align="center" color={t.sub} lh={21} size={13}>
+        <Text align="center" color={t.sub} lh={21} size={13}>
           {tr("library.search.emptyPrompt")}
-        </PText>
+        </Text>
       </Box>
     );
   }
@@ -643,26 +1011,26 @@ function SearchResults({
           >
             <Cover height={58} width={44} />
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {doc.name}
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 3 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
                 {doc.meta}
-              </PText>
+              </Text>
             </Box>
             <Box bg={t.chip} paddingX={10} paddingY={4} rounded={20}>
-              <PText color={t.faint} size={10.5} weight="500">
+              <Text color={t.faint} size={10.5} weight="500">
                 {doc.where}
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Tap>
       ))}
       {results.length === 0 ? (
         <Box paddingX={24} paddingY={48}>
-          <PText align="center" color={t.sub} lh={21} size={13}>
+          <Text align="center" color={t.sub} lh={21} size={13}>
             {tr("library.search.noMatch", { query })}
-          </PText>
+          </Text>
         </Box>
       ) : null}
     </>

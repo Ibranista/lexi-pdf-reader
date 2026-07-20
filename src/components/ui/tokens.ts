@@ -1,23 +1,7 @@
-import { Platform } from 'react-native';
-
 /**
  * Non-color design tokens shared across the LexiPDF base components.
- * Colors live in `@/constants/colors`.
+ * Colors live in `@/constants/colors`; fonts in `@/theme/app-fonts`.
  */
-
-/** Font families used in the design. Registered fonts must match these names. */
-export const fonts = Platform.select({
-  web: {
-    sans: "'Hanken Grotesk', system-ui, sans-serif",
-    serif: "'Literata', Georgia, serif",
-    legible: "'Atkinson Hyperlegible', system-ui, sans-serif",
-  },
-  default: {
-    sans: 'Hanken Grotesk',
-    serif: 'Literata',
-    legible: 'Atkinson Hyperlegible',
-  },
-})!;
 
 export const radius = {
   sm: 8,

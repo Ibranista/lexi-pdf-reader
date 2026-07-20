@@ -18,7 +18,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ibranista.lexipdfreader"
+      "package": "com.ibranista.lexipdfreader",
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.MANAGE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
@@ -51,6 +55,12 @@
         "projectId": "be552dba-a99a-41a7-860a-f6a63c6680bb"
       }
     },
-    "owner": "ibranista"
+    "owner": "ibranista",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/be552dba-a99a-41a7-860a-f6a63c6680bb"
+    }
   }
 }

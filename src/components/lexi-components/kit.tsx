@@ -3,10 +3,10 @@
  * `Box` / `Text` atoms (no raw `View`).
  */
 import type { ReactNode } from 'react';
-import type { GestureResponderEvent, StyleProp, TextStyle, ViewStyle } from 'react-native';
+import type { GestureResponderEvent, StyleProp, ViewStyle } from 'react-native';
 
-import { useState } from 'react';
-import { Pressable } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Easing, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Box, Text } from '@/components/atoms';
@@ -42,76 +42,13 @@ export function Tap({ children, disabled, onPress, scale = 0.96, style }: TapPro
   );
 }
 
-/* =========================
-   PText — prototype typography on top of the custom Text atom
-========================= */
-
-interface PTextProps {
-  readonly align?: 'center' | 'left' | 'right';
-  readonly children?: ReactNode;
-  readonly color?: string;
-  readonly italic?: boolean;
-  readonly lh?: number;
-  readonly ls?: number;
-  readonly mono?: boolean;
-  readonly numberOfLines?: number;
-  readonly onPress?: () => void;
-  readonly serif?: boolean;
-  readonly size?: number;
-  readonly style?: StyleProp<TextStyle>;
-  readonly upper?: boolean;
-  readonly weight?: '300' | '400' | '500' | '600' | '700';
-}
-
-export function PText({
-  align,
-  children,
-  color,
-  italic,
-  lh,
-  ls,
-  mono,
-  numberOfLines,
-  onPress,
-  serif,
-  size = 14,
-  style,
-  upper,
-  weight = '400',
-}: PTextProps) {
-  const t = useProtoTheme();
-  const family = serif ? t.serif : mono ? t.mono : undefined;
-  return (
-    <Text
-      color={color ?? t.ink}
-      numberOfLines={numberOfLines}
-      onPress={onPress}
-      style={[
-        {
-          fontSize: size,
-          fontWeight: weight,
-          ...(family ? { fontFamily: family } : {}),
-          ...(lh ? { lineHeight: lh } : {}),
-          ...(ls === undefined ? {} : { letterSpacing: ls }),
-          ...(align ? { textAlign: align } : {}),
-          ...(upper ? { textTransform: 'uppercase' as const } : {}),
-          ...(italic ? { fontStyle: 'italic' as const } : {}),
-        },
-        style,
-      ]}
-    >
-      {children}
-    </Text>
-  );
-}
-
 /** Uppercase section label ("EARLIER THIS WEEK", "APPEARANCE", …). */
 export function SectionLabel({ children, color, size = 12 }: { children: ReactNode; color?: string; size?: number }) {
   const t = useProtoTheme();
   return (
-    <PText color={color ?? t.sub} ls={0.8} size={size} upper weight="600">
+    <Text color={color ?? t.sub} ls={0.8} size={size} upper weight="600">
       {children}
-    </PText>
+    </Text>
   );
 }
 
@@ -183,13 +120,13 @@ export function ScreenHeader({
         </HeaderButton>
       ) : null}
       <Box flex={1}>
-        <PText serif size={titleSize} weight="600">
+        <Text serif size={titleSize} weight="600">
           {title}
-        </PText>
+        </Text>
         {subtitle ? (
-          <PText color={t.sub} size={12}>
+          <Text color={t.sub} size={12}>
             {subtitle}
-          </PText>
+          </Text>
         ) : null}
       </Box>
       {right}
@@ -232,6 +169,9 @@ export interface SegmentItem<K extends string = string> {
   key: K;
   label: string;
   serif?: boolean;
+  /** Render the label in a specific registered family (active/inactive
+   *  variants), e.g. the reader's typeface chips previewing themselves. */
+  font?: { active: string; inactive: string };
   flex?: number;
 }
 
@@ -272,9 +212,19 @@ export function Segmented<K extends string>({
                   : undefined
               }
             >
-              <PText color={on ? t.ink : t.sub} serif={item.serif} size={size} weight={on ? '600' : '500'}>
+              <Text
+                color={on ? t.ink : t.sub}
+                serif={item.serif}
+                size={size}
+                style={
+                  item.font
+                    ? { fontFamily: on ? item.font.active : item.font.inactive }
+                    : undefined
+                }
+                weight={on ? '600' : '500'}
+              >
                 {item.label}
-              </PText>
+              </Text>
             </Box>
           </Tap>
         );
@@ -362,9 +312,9 @@ export function Cover({
     >
       {stripes}
       {label ? (
-        <PText color={t.sub} mono size={8}>
+        <Text color={t.sub} mono size={8}>
           {label}
-        </PText>
+        </Text>
       ) : null}
     </Box>
   );
@@ -379,6 +329,47 @@ export function ProgressBar({ pct }: { pct: number }) {
   return (
     <Box bg={t.chip} height={4} rounded={2}>
       <Box bg={t.accent} height={4} rounded={2} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+    </Box>
+  );
+}
+
+/**
+ * Continuously animating bar for work of unknown length (e.g. scanning the
+ * device for documents — we can't know the total up front).
+ */
+export function IndeterminateBar() {
+  const t = useProtoTheme();
+  const [x] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(x, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [x]);
+
+  return (
+    <Box bg={t.chip} height={4} rounded={2} style={{ overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          width: '35%',
+          borderRadius: 2,
+          backgroundColor: t.accent,
+          left: x.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['-35%', '100%'],
+          }),
+        }}
+      />
     </Box>
   );
 }
@@ -459,9 +450,9 @@ export function Toast() {
       style={{ position: 'absolute', bottom: 104, left: 0, right: 0, zIndex: 80 }}
     >
       <Box bg="rgba(24,20,15,.92)" paddingX={20} paddingY={11} rounded={22}>
-        <PText color="#F6F3EE" size={13} weight="500">
+        <Text color="#F6F3EE" size={13} weight="500">
           {toast}
-        </PText>
+        </Text>
       </Box>
     </Box>
   );

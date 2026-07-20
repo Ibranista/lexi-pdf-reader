@@ -4,7 +4,7 @@ import { Pressable, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, Text } from "@/components/atoms";
-import { PText, Tap } from "@/components/lexi-components";
+import { Tap } from "@/components/lexi-components";
 import {
   BreakCard,
   ExplainSheet,
@@ -23,6 +23,7 @@ import {
 } from "@/components/reader";
 import { BOOK_PAGES, chapterOf, PARAGRAPHS } from "@/constants/library";
 import { LINE_SPACING, useAppStore, useToastStore } from "@/stores/app-store";
+import { serifFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
 
 export default function ReaderScreen() {
@@ -154,7 +155,7 @@ export default function ReaderScreen() {
         : t.chip;
 
   const lineHeight = app.textSize * (LINE_SPACING[app.lineSp] ?? 1.75);
-  const readerFamily = app.fontFam === "serif" ? t.serif : undefined;
+  const readerFamily = app.fontFam === "serif" ? serifFamily : undefined;
   const contentPadX =
     app.readWidth === "narrow" ? 44 : app.readWidth === "full" ? 20 : 32;
 
@@ -197,7 +198,7 @@ export default function ReaderScreen() {
             setControls((c) => !c);
           }}
         >
-          <PText
+          <Text
             color={t.faint}
             ls={1.1}
             size={11}
@@ -206,7 +207,7 @@ export default function ReaderScreen() {
             weight="600"
           >
             Chapter {ch.n} · {ch.t}
-          </PText>
+          </Text>
 
           {PARAGRAPHS.map((para, i) => (
             <Text
@@ -277,9 +278,9 @@ export default function ReaderScreen() {
           paddingTop: 12,
         }}
       >
-        <PText color={t.faint} size={12}>
+        <Text color={t.faint} size={12}>
           {app.page} of {BOOK_PAGES}
-        </PText>
+        </Text>
       </Box>
 
       {/* edge handles */}

@@ -7,7 +7,7 @@ import {
   Card,
   Divider,
   ProtoScreen,
-  PText,
+  Text,
   ScreenHeader,
   SectionLabel,
   Segmented,
@@ -51,9 +51,9 @@ export default function AiFocusScreen() {
             size={13}
             value={app.explStyle}
           />
-          <PText color={t.sub} size={12}>
+          <Text color={t.sub} size={12}>
             Default level for “Explain this” — you can still switch per answer.
-          </PText>
+          </Text>
         </Card>
 
         <Card gap={4}>
@@ -62,12 +62,12 @@ export default function AiFocusScreen() {
           </Box>
           <Box align="center" direction="row" gap={12} paddingY={8}>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Ask for a thought when ending
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 Powers “you were reading” on return
-              </PText>
+              </Text>
             </Box>
             <Toggle
               on={app.thoughtOn}
@@ -77,12 +77,12 @@ export default function AiFocusScreen() {
           <Divider />
           <Box align="center" direction="row" gap={12} paddingY={8}>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Gentle session reminders
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 One quiet nudge, never repeated
-              </PText>
+              </Text>
             </Box>
             <Toggle
               on={app.focusRem}
@@ -99,12 +99,12 @@ export default function AiFocusScreen() {
           <Divider />
           <Box align="center" direction="row" gap={12} paddingY={8}>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Review cards per day
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 From your highlights · never expires
-              </PText>
+              </Text>
             </Box>
             <Box
               align="center"
@@ -120,31 +120,31 @@ export default function AiFocusScreen() {
                   app.set({ cardsPerDay: Math.max(1, app.cardsPerDay - 1) })
                 }
               >
-                <PText
+                <Text
                   color={t.sub}
                   size={16}
                   style={{ paddingHorizontal: 4 }}
                   weight="600"
                 >
                   −
-                </PText>
+                </Text>
               </Tap>
-              <PText size={15} weight="600">
+              <Text size={15} weight="600">
                 {app.cardsPerDay}
-              </PText>
+              </Text>
               <Tap
                 onPress={() =>
                   app.set({ cardsPerDay: Math.min(10, app.cardsPerDay + 1) })
                 }
               >
-                <PText
+                <Text
                   color={t.sub}
                   size={16}
                   style={{ paddingHorizontal: 4 }}
                   weight="600"
                 >
                   +
-                </PText>
+                </Text>
               </Tap>
             </Box>
           </Box>
@@ -155,9 +155,9 @@ export default function AiFocusScreen() {
             <SectionLabel>Sync across devices</SectionLabel>
           </Box>
           <Box align="center" direction="row" justify="between" paddingY={8}>
-            <PText size={14} weight="600">
+            <Text size={14} weight="600">
               Reading position
-            </PText>
+            </Text>
             <Toggle
               on={app.syncPos}
               onToggle={() => app.set({ syncPos: !app.syncPos })}
@@ -165,9 +165,9 @@ export default function AiFocusScreen() {
           </Box>
           <Divider />
           <Box align="center" direction="row" justify="between" paddingY={8}>
-            <PText size={14} weight="600">
+            <Text size={14} weight="600">
               Notes & highlights
-            </PText>
+            </Text>
             <Toggle
               on={app.syncNt}
               onToggle={() => app.set({ syncNt: !app.syncNt })}
@@ -175,9 +175,9 @@ export default function AiFocusScreen() {
           </Box>
           <Divider />
           <Box align="center" direction="row" justify="between" paddingY={8}>
-            <PText size={14} weight="600">
+            <Text size={14} weight="600">
               Review progress
-            </PText>
+            </Text>
             <Toggle
               on={app.syncRv}
               onToggle={() => app.set({ syncRv: !app.syncRv })}

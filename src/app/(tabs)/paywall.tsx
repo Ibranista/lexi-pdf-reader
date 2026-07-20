@@ -7,7 +7,7 @@ import {
   IconClose,
   IconSpark,
   ProtoScreen,
-  PText,
+  Text,
   Tap,
 } from "@/components/lexi-components";
 import { PW_FEATURES } from "@/constants/library";
@@ -51,7 +51,7 @@ export default function PaywallScreen() {
         >
           <IconSpark color={t.accent} size={24} />
         </Box>
-        <PText
+        <Text
           lh={34}
           ls={-0.3}
           serif
@@ -60,10 +60,10 @@ export default function PaywallScreen() {
           weight="600"
         >
           Meet your AI reading companion
-        </PText>
-        <PText color={t.sub} lh={21} size={14} style={{ marginTop: 8 }}>
+        </Text>
+        <Text color={t.sub} lh={21} size={14} style={{ marginTop: 8 }}>
           Reading stays free forever. Pro adds understanding.
-        </PText>
+        </Text>
       </Box>
 
       <Box gap={15} paddingTop={22} paddingX={28}>
@@ -73,12 +73,12 @@ export default function PaywallScreen() {
               <IconSpark color={t.accent} size={16} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 {f.name}
-              </PText>
-              <PText color={t.sub} lh={18} size={12.5} style={{ marginTop: 1 }}>
+              </Text>
+              <Text color={t.sub} lh={18} size={12.5} style={{ marginTop: 1 }}>
                 {f.sub}
-              </PText>
+              </Text>
             </Box>
           </Box>
         ))}
@@ -106,25 +106,25 @@ export default function PaywallScreen() {
               rounded={9}
               style={{ position: "absolute", top: -9, right: 14 }}
             >
-              <PText color={t.onAccent} ls={0.5} size={10} weight="700">
+              <Text color={t.onAccent} ls={0.5} size={10} weight="700">
                 SAVE 29%
-              </PText>
+              </Text>
             </Box>
             <Box flex={1}>
-              <PText size={15} weight="600">
+              <Text size={15} weight="600">
                 Annual
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 $59.88 / year
-              </PText>
+              </Text>
             </Box>
-            <PText size={15} weight="600">
+            <Text size={15} weight="600">
               $4.99
-              <PText color={t.sub} size={12}>
+              <Text color={t.sub} size={12}>
                 {" "}
                 / mo
-              </PText>
-            </PText>
+              </Text>
+            </Text>
             <Box
               align="center"
               bg={annual ? t.accent : "transparent"}
@@ -155,17 +155,17 @@ export default function PaywallScreen() {
             rounded={16}
           >
             <Box flex={1}>
-              <PText size={15} weight="600">
+              <Text size={15} weight="600">
                 Monthly
-              </PText>
+              </Text>
             </Box>
-            <PText size={15} weight="600">
+            <Text size={15} weight="600">
               $6.99
-              <PText color={t.sub} size={12}>
+              <Text color={t.sub} size={12}>
                 {" "}
                 / mo
-              </PText>
-            </PText>
+              </Text>
+            </Text>
             <Box
               align="center"
               bg={annual ? "transparent" : t.accent}
@@ -200,9 +200,9 @@ export default function PaywallScreen() {
             justify="center"
             rounded={16}
           >
-            <PText color={t.onAccent} size={15} weight="600">
+            <Text color={t.onAccent} size={15} weight="600">
               Start 7-day free trial
-            </PText>
+            </Text>
           </Box>
         </Tap>
       </Box>
@@ -215,33 +215,33 @@ export default function PaywallScreen() {
         paddingX={20}
         style={{ paddingBottom: 30 + insets.bottom }}
       >
-        <PText
+        <Text
           color={t.sub}
           onPress={() => showToast("Cancel anytime from your account")}
           size={11.5}
         >
           Cancel anytime
-        </PText>
-        <PText color={t.sub} size={11.5}>
+        </Text>
+        <Text color={t.sub} size={11.5}>
           ·
-        </PText>
-        <PText
+        </Text>
+        <Text
           color={t.sub}
           onPress={() => showToast("No previous purchase found")}
           size={11.5}
         >
           Restore purchase
-        </PText>
-        <PText color={t.sub} size={11.5}>
+        </Text>
+        <Text color={t.sub} size={11.5}>
           ·
-        </PText>
-        <PText
+        </Text>
+        <Text
           color={t.sub}
           onPress={() => showToast("lexipdf.app/terms")}
           size={11.5}
         >
           Terms
-        </PText>
+        </Text>
       </Box>
     </ProtoScreen>
   );

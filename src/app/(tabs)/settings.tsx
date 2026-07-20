@@ -16,7 +16,7 @@ import {
   IconType,
   ProtoScreen,
   ProtoSlider,
-  PText,
+  Text,
   ScreenHeader,
   SectionLabel,
   Segmented,
@@ -93,12 +93,12 @@ export default function SettingsScreen() {
               <IconGradCap color={t.accentText} size={17} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Reader profile
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 {readerLabel} · shapes your collections
-              </PText>
+              </Text>
             </Box>
             <Tap
               onPress={() =>
@@ -107,9 +107,9 @@ export default function SettingsScreen() {
               scale={0.95}
             >
               <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-                <PText size={12} weight="600">
+                <Text size={12} weight="600">
                   Redo
-                </PText>
+                </Text>
               </Box>
             </Tap>
           </Box>
@@ -166,12 +166,12 @@ export default function SettingsScreen() {
               <IconSpark color={t.accent} size={17} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 AI assistance
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 Summaries, translation & context
-              </PText>
+              </Text>
             </Box>
             <Toggle
               on={app.aiOn}
@@ -200,12 +200,12 @@ export default function SettingsScreen() {
               <IconGlobe color={t.ink} size={17} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Translation language
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 Used for tap-and-hold translate
-              </PText>
+              </Text>
             </Box>
           </Box>
           <Box paddingLeft={46}>
@@ -222,13 +222,13 @@ export default function SettingsScreen() {
                       : undefined
                   }
                 >
-                  <PText
+                  <Text
                     color={app.lang === l.key ? t.ink : t.sub}
                     size={14}
                     weight="500"
                   >
                     {l.label}
-                  </PText>
+                  </Text>
                   {app.lang === l.key ? (
                     <IconCheck color={t.accent} size={16} />
                   ) : null}
@@ -252,12 +252,12 @@ export default function SettingsScreen() {
               <IconLeaf color={t.calm} size={17} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Reading style & focus
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 Tap the page while reading — everything lives in one sheet
-              </PText>
+              </Text>
             </Box>
           </Box>
         </Card>
@@ -270,9 +270,9 @@ export default function SettingsScreen() {
             style={{ alignItems: "baseline" }}
           >
             <SectionLabel>Smart zoom level</SectionLabel>
-            <PText color={t.accentText} size={15} weight="600">
+            <Text color={t.accentText} size={15} weight="600">
               {app.zoom}%
-            </PText>
+            </Text>
           </Box>
           <ProtoSlider
             max={200}
@@ -282,16 +282,16 @@ export default function SettingsScreen() {
             value={app.zoom}
           />
           <Box direction="row" justify="between">
-            <PText color={t.faint} size={11}>
+            <Text color={t.faint} size={11}>
               100%
-            </PText>
-            <PText color={t.faint} size={11}>
+            </Text>
+            <Text color={t.faint} size={11}>
               200%
-            </PText>
+            </Text>
           </Box>
-          <PText color={t.sub} size={12}>
+          <Text color={t.sub} size={12}>
             Applied when you double-tap a page.
-          </PText>
+          </Text>
         </Card>
 
         {/* Sync */}
@@ -308,12 +308,12 @@ export default function SettingsScreen() {
               <IconSync color={t.ink} size={17} />
             </Box>
             <Box flex={1}>
-              <PText size={14} weight="600">
+              <Text size={14} weight="600">
                 Sync reading position
-              </PText>
-              <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 Resume across devices
-              </PText>
+              </Text>
             </Box>
             <Toggle
               on={app.syncPos}
@@ -357,12 +357,12 @@ function SettingsLink({
           {icon}
         </Box>
         <Box flex={1}>
-          <PText size={14} weight="600">
+          <Text size={14} weight="600">
             {title}
-          </PText>
-          <PText color={t.sub} size={12} style={{ marginTop: 2 }}>
+          </Text>
+          <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
             {sub}
-          </PText>
+          </Text>
         </Box>
         <IconChevron color={t.faint} size={16} />
       </Box>

@@ -4,7 +4,7 @@
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box } from "@/components/atoms";
-import { IconCheck, IconClose, PText, Tap } from "@/components/lexi-components";
+import { IconCheck, IconClose, Text, Tap } from "@/components/lexi-components";
 import { useProtoTheme } from "@/theme/proto";
 
 export function FocusPill({
@@ -46,14 +46,14 @@ export function FocusPill({
         rounded={22}
       >
         <Box bg={t.calm} height={7} rounded={4} width={7} />
-        <PText size={12.5} weight="600">
+        <Text size={12.5} weight="600">
           Focus
-        </PText>
+        </Text>
         {timerOn ? (
-          <PText color={t.sub} mono size={12.5} weight="500">
+          <Text color={t.sub} mono size={12.5} weight="500">
             {mm}:{ss < 10 ? "0" : ""}
             {ss}
-          </PText>
+          </Text>
         ) : null}
         <Tap onPress={onExit} scale={0.9}>
           <Box
@@ -105,9 +105,9 @@ export function NextSectionPill({ onPress }: { onPress: () => void }) {
           }}
         >
           <IconCheck color={t.accent} size={15} />
-          <PText color={t.pillText} size={14} weight="600">
+          <Text color={t.pillText} size={14} weight="600">
             Got it — next section
-          </PText>
+          </Text>
         </Box>
       </Tap>
     </Box>
@@ -146,22 +146,22 @@ export function BreakCard({
         rounded={18}
       >
         <Box flex={1}>
-          <PText lh={19} size={13}>
+          <Text lh={19} size={13}>
             You’ve read 25 min — how about a 3-min break?
-          </PText>
+          </Text>
         </Box>
         <Tap onPress={onTake} scale={0.95}>
           <Box bg={t.calmSoft} paddingX={13} paddingY={9} rounded={12}>
-            <PText color={t.calm} size={12.5} weight="600">
+            <Text color={t.calm} size={12.5} weight="600">
               Take it
-            </PText>
+            </Text>
           </Box>
         </Tap>
         <Tap onPress={onSkip} scale={0.95}>
           <Box bg={t.chip} paddingX={13} paddingY={9} rounded={12}>
-            <PText size={12.5} weight="600">
+            <Text size={12.5} weight="600">
               Keep going
-            </PText>
+            </Text>
           </Box>
         </Tap>
       </Box>

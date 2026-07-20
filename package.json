@@ -40,6 +40,7 @@
     "expo-image": "~57.0.0",
     "expo-image-manipulator": "^57.0.4",
     "expo-image-picker": "~57.0.4",
+    "expo-intent-launcher": "~57.0.1",
     "expo-linking": "~57.0.2",
     "expo-modules-autolinking": "^57.0.7",
     "expo-navigation-bar": "~57.0.2",
@@ -62,12 +63,15 @@
     "react-error-boundary": "^6.1.1",
     "react-i18next": "^15.4.1",
     "react-native": "0.86.0",
+    "react-native-blob-util": "^0.24.10",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-heroicons": "^4.0.0",
     "react-native-keyboard-controller": "1.21.9",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-mmkv": "^4.3.1",
     "react-native-nitro-modules": "^0.35.7",
+    "react-native-pdf": "^7.0.4",
+    "react-native-pdf-page-image": "^0.2.1",
     "react-native-reanimated": "4.5.0",
     "react-native-reanimated-carousel": "^4.0.3",
     "react-native-safe-area-context": "~5.7.0",
@@ -89,7 +93,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "unrs-resolver"
-    ]
+    ],
+    "patchedDependencies": {
+      "react-native-pdf-page-image": "patches/react-native-pdf-page-image.patch"
+    }
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

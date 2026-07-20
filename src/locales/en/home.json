@@ -29,14 +29,30 @@
         "searchPlaceholder": "Search your library",
         "cancel": "Cancel",
         "importToast": "Import from Files / Drive…",
+        "importedToast_one": "Imported {{count}} document",
+        "importedToast_other": "Imported {{count}} documents",
         "demoToast": "Demo — “{{name}}” opens the same reader",
+        "exitConfirm": "Press back again to exit",
+        "docViewer": {
+            "pdfOnly": "{{ext}} preview isn't supported yet — opening PDFs only for now"
+        },
         "recent": {
             "continueReading": "CONTINUE READING",
             "pageOf": "Page {{page}} of {{total}} · Ch. {{chapter}}",
             "earlierThisWeek": "Earlier this week"
         },
         "all": {
-            "coverPlaceholder": "cover"
+            "coverPlaceholder": "cover",
+            "scanning": "Scanning your device…",
+            "scanningCount_one": "{{count}} document found",
+            "scanningCount_other": "{{count}} documents found",
+            "emptyTitle": "No documents on this device yet",
+            "emptyBody": "Readable documents — PDF, EPUB, Word and more — will show up here.",
+            "allowTitle": "Allow access to your files",
+            "allowBody": "LexiPDF needs file access to find the documents on your phone — PDF, DOCX, EPUB and more.",
+            "allowBannerSub": "See every document on your phone, not just imports",
+            "chooseFolderBtn": "Scan a folder",
+            "allowBtn": "Allow file access"
         },
         "collections": {
             "demoToast": "Demo — “{{name}}” collection",
@@ -56,10 +72,20 @@
         },
         "files": {
             "onThisDevice": "On this device",
-            "demoToast": "Demo — folder browsing not wired"
+            "appStorage": "LexiPDF storage",
+            "internalStorage": "Internal storage",
+            "allowAccess": "Allow access to your files",
+            "allowAccessSub": "Needed to find documents across your phone",
+            "docCount_one": "{{count}} document",
+            "docCount_other": "{{count}} documents",
+            "chooseFolder": "Choose a folder to scan",
+            "scanningFolder": "Scanning “{{name}}” — tap to change",
+            "empty": "No folders with documents yet.",
+            "allFolders": "All folders",
+            "folderEmpty": "No documents in this folder."
         },
         "search": {
-            "emptyPrompt": "Search across Recent and All PDFs\nby title.",
+            "emptyPrompt": "Search across Recent and All documents\nby title.",
             "resultCount_one": "{{count}} document",
             "resultCount_other": "{{count}} documents",
             "noMatch": "No documents match “{{query}}”."

@@ -187,6 +187,22 @@ export function IconType({ size, color = '#000', strokeWidth = 1.6 }: IconProps)
   );
 }
 
+/** Text lines with a wrap arrow — toggles the reflow reader. */
+export function IconReflow({ size, color = '#000', strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Frame size={size}>
+      <Path d="M3 5h14M3 9h14M3 13.5h6M3 17.5h14" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+      <Path
+        d="M17 11v1a1.5 1.5 0 0 1-1.5 1.5H12m1.6-1.6L12 13.5l1.6 1.6"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={strokeWidth}
+      />
+    </Frame>
+  );
+}
+
 export function IconChat({ size, color = '#000', strokeWidth = 1.6 }: IconProps) {
   return (
     <Frame size={size}>
