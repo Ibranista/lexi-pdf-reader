@@ -21,6 +21,12 @@ export const fontAssets = {
   'Manrope-ExtraBold': require('./assets/fonts/manrope/Manrope-ExtraBold.ttf'),
   Literata: require('./assets/fonts/Literata/Literata-VariableFont_opsz,wght.ttf'),
   'Literata-Italic': require('./assets/fonts/Literata/Literata-Italic-VariableFont_opsz,wght.ttf'),
+  // Reader typeface options (mirrors the prototype's famMap): Hanken Grotesk
+  // for "Sans", Atkinson Hyperlegible for "Dyslexic" — Literata is "Serif".
+  'HankenGrotesk-Medium': require('./assets/fonts/hanken-grotesk/HankenGrotesk-Medium.ttf'),
+  'HankenGrotesk-SemiBold': require('./assets/fonts/hanken-grotesk/HankenGrotesk-SemiBold.ttf'),
+  'AtkinsonHyperlegible-Regular': require('./assets/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-Regular.ttf'),
+  'AtkinsonHyperlegible-Bold': require('./assets/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-Bold.ttf'),
 };
 
 export type FontWeight = '200' | '300' | '400' | '500' | '600' | '700' | '800';
@@ -37,6 +43,18 @@ export const sansFamily: Record<FontWeight, string> = {
 
 export const serifFamily = 'Literata';
 export const serifItalicFamily = 'Literata-Italic';
+
+/** Reader "Sans" (Hanken Grotesk) — active/inactive chip weights. */
+export const hankenFamily = {
+  active: 'HankenGrotesk-SemiBold',
+  inactive: 'HankenGrotesk-Medium',
+};
+
+/** Reader "Dyslexic" (Atkinson Hyperlegible) — ships only 400/700. */
+export const dysFamily = {
+  active: 'AtkinsonHyperlegible-Bold',
+  inactive: 'AtkinsonHyperlegible-Regular',
+};
 
 export const monoFamily = Platform.select({
   ios: 'Menlo',

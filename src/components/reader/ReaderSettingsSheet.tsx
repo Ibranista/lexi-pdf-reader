@@ -28,9 +28,11 @@ import type {
   LineSpacing,
 } from "@/stores/app-store";
 import { useAppStore } from "@/stores/app-store";
+import { dysFamily, hankenFamily } from "@/theme/app-fonts";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 
 type ThemeMode = "auto" | "dark" | "light";
+type ViewMode = "page" | "reflow";
 
 const MIN_TEXT = 13;
 const MAX_TEXT = 23;
@@ -41,10 +43,17 @@ const THEME_ITEMS: SegmentItem<ThemeMode>[] = [
   { key: "auto", label: "Auto" },
 ];
 
+const VIEW_MODE_ITEMS: SegmentItem<ViewMode>[] = [
+  { key: "page", label: "Page" },
+  { key: "reflow", label: "Reflow" },
+];
+
+// Prototype order, each chip typeset in the family it selects:
+// Sans (Hanken Grotesk) · Serif (Literata) · Dyslexic (Atkinson Hyperlegible)
 const FAM_ITEMS: SegmentItem<FontFam>[] = [
+  { key: "sans", label: "Sans", font: hankenFamily },
   { key: "serif", label: "Serif", serif: true },
-  { key: "sans", label: "Sans" },
-  { key: "dys", label: "Dyslexic", flex: 1.3 },
+  { key: "dys", label: "Dyslexic", font: dysFamily, flex: 1.3 },
 ];
 
 const SPACING_ITEMS: SegmentItem<LineSpacing>[] = [
@@ -89,10 +98,21 @@ interface Props {
   focusMode?: boolean;
   onClose?: () => void;
   onToggleFocusMode?: () => void;
+  onViewModeChange?: (mode: ViewMode) => void;
+  viewMode?: ViewMode;
 }
 
 export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
-  ({ focusMode = false, onClose, onToggleFocusMode }, ref) => {
+  (
+    {
+      focusMode = false,
+      onClose,
+      onToggleFocusMode,
+      onViewModeChange,
+      viewMode = "page",
+    },
+    ref,
+  ) => {
     const t = useProtoTheme();
     const insets = useSafeAreaInsets();
     const app = useAppStore();
@@ -124,6 +144,15 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         </Box>
 
         <Box paddingBottom={8} paddingTop={10}>
+          <SectionLabel size={11}>View</SectionLabel>
+        </Box>
+        <Segmented
+          items={VIEW_MODE_ITEMS}
+          onChange={(next) => onViewModeChange?.(next)}
+          value={viewMode}
+        />
+
+        <Box paddingBottom={8} paddingTop={10}>
           <SectionLabel size={11}>Theme</SectionLabel>
         </Box>
         <Segmented
@@ -133,7 +162,10 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         />
 
         <Box paddingBottom={8} paddingTop={18}>
-          <SectionLabel size={11}>Reading style</SectionLabel>
+          <SectionLabel size={11}>Reflow text</SectionLabel>
+          <Text color={t.sub} size={11.5} style={{ marginTop: 3 }}>
+            Applies only in Reflow view, not the original PDF page view.
+          </Text>
         </Box>
         <Box align="center" direction="row" gap={10}>
           <Box flex={1}>
@@ -183,7 +215,7 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         </Box>
 
         <Box paddingBottom={8} paddingTop={18}>
-          <SectionLabel size={11}>Line spacing</SectionLabel>
+          <SectionLabel size={11}>Line spacing · Reflow only</SectionLabel>
         </Box>
         <Segmented
           items={SPACING_ITEMS}
@@ -219,7 +251,10 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           <Toggle on={focusMode} onToggle={() => onToggleFocusMode?.()} />
         </Row>
 
-        <Row sub="Keep text wrapped to the screen while zooming" title="Flow reading">
+        <Row
+          sub="Keep text wrapped to the screen while zooming"
+          title="Flow reading"
+        >
           <Toggle
             on={app.flowRead}
             onToggle={() => app.set({ flowRead: !app.flowRead })}
@@ -244,11 +279,11 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           </Box>
         ) : null}
 
-        <Row sub="Explain, summarize and define as you read" title="AI companion">
-          <Toggle
-            on={app.aiOn}
-            onToggle={() => app.set({ aiOn: !app.aiOn })}
-          />
+        <Row
+          sub="Explain, summarize and define as you read"
+          title="AI companion"
+        >
+          <Toggle on={app.aiOn} onToggle={() => app.set({ aiOn: !app.aiOn })} />
         </Row>
       </BottomSheetModal>
     );
