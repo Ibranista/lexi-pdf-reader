@@ -237,9 +237,24 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           <SectionLabel size={11}>Focus support</SectionLabel>
         </Box>
 
-        <Row sub="Hide the toolbars and read full-screen" title="Focus mode">
+        <Row
+          sub="Spotlight your paragraph and tuck the chrome away"
+          title="Focus mode"
+        >
           <Toggle on={focusMode} onToggle={() => onToggleFocusMode?.()} />
         </Row>
+
+        {focusMode ? (
+          <Row
+            sub="Keep time & suggest breaks — or focus without the clock"
+            title="Session timer"
+          >
+            <Toggle
+              on={app.fmTimer}
+              onToggle={() => app.set({ fmTimer: !app.fmTimer })}
+            />
+          </Row>
+        ) : null}
 
         <Row
           sub="Keep text wrapped to the screen while zooming"

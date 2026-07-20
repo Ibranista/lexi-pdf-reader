@@ -108,6 +108,11 @@ function buildHtml(
     margin: 1.2em auto;
     border-radius: 4px;
   }
+  /* focus mode: scroll-driven spotlight — the block under the reading line
+     stays bright, everything else recedes */
+  #content p, #content img { transition: opacity 320ms ease; }
+  #content.focus p, #content.focus img { opacity: 0.27; }
+  #content.focus .f-lit { opacity: 1; }
   /* the tapped search hit — flashes, holds long enough to be spotted, then
      fades out (same lifecycle as Page view's locator) */
   mark.lexi-hit {
@@ -318,6 +323,45 @@ function buildHtml(
 
   window.clearHighlight = function(){ cancelHitTimers(); clearMarks(); };
 
+  /* ---- focus mode: scroll-driven spotlight ----
+     The block whose box crosses the reading line (45% down the screen — a
+     bit above center, where eyes actually rest) is lit; the rest stay dim.
+     Recomputed from the same scroll rAF that reports the page. */
+  var focusOn = false;
+  var litEl = null;
+  function updateSpotlight(){
+    if (!focusOn) return;
+    var blocks = document.querySelectorAll('#content p, #content img');
+    if (!blocks.length) return;
+    var beam = window.innerHeight * 0.45;
+    var best = null, bestD = Infinity;
+    for (var i = 0; i < blocks.length; i++){
+      var r = blocks[i].getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) continue;  // off-screen
+      var d = (r.top <= beam && r.bottom >= beam)
+        ? 0
+        : Math.min(Math.abs(r.top - beam), Math.abs(r.bottom - beam));
+      if (d < bestD) { bestD = d; best = blocks[i]; }
+    }
+    if (!best || best === litEl) return;
+    if (litEl) litEl.classList.remove('f-lit');
+    litEl = best;
+    litEl.classList.add('f-lit');
+  }
+
+  window.setFocusMode = function(on){
+    focusOn = !!on;
+    var content = document.getElementById('content');
+    if (!content) return;
+    if (focusOn) {
+      content.classList.add('focus');
+      updateSpotlight();
+    } else {
+      content.classList.remove('focus');
+      if (litEl) { litEl.classList.remove('f-lit'); litEl = null; }
+    }
+  };
+
   /* ---- gestures ----
      single tap = immersive · double tap = smart zoom · pinch = live zoom.
      A touch only counts as a tap if the finger barely moved and lifted
@@ -436,6 +480,7 @@ function buildHtml(
         else break;
       }
       if (best) post({ type: 'page', page: parseInt(best.getAttribute('data-page'), 10) });
+      updateSpotlight();
     });
   }, { passive: true });
 
@@ -825,6 +870,7 @@ interface Props {
   chromeOffset?: number;
   searchQuery?: string;
   highlight?: { query: string; index: number; seq: number };
+  focusMode?: boolean;
   onPageChange?: (page: number) => void;
   onSearchResults?: (results: PdfSearchResult[]) => void;
   onSingleTap?: () => void;
@@ -839,6 +885,7 @@ export function PdfReflowView({
   chromeOffset = 0,
   searchQuery,
   highlight,
+  focusMode = false,
   onPageChange,
   onSearchResults,
   onSingleTap,
@@ -938,6 +985,13 @@ export function PdfReflowView({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, status, indexSeq]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    webRef.current?.injectJavaScript(
+      `window.setFocusMode && window.setFocusMode(${focusMode ? "true" : "false"}); true;`,
+    );
+  }, [focusMode, status]);
 
   useEffect(() => {
     if (status !== "ready" || !highlight?.query) return;

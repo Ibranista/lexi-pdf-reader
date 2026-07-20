@@ -18,6 +18,7 @@ import {
   HeaderButton,
   IconBack,
   IconBookmark,
+  IconFocus,
   IconPencil,
   IconReflow,
   IconSearch,
@@ -26,6 +27,7 @@ import {
 } from "@/components/lexi-components";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import {
+  FocusChrome,
   LexiBubble,
   LexiSheet,
   PdfSearchPanel,
@@ -34,6 +36,7 @@ import {
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useFocusStore } from "@/stores/focus-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type ViewMode = "page" | "reflow";
@@ -48,6 +51,10 @@ export default function PdfViewerScreen() {
   const setApp = useAppStore((s) => s.set);
   const toggleBookmark = useAppStore((s) => s.toggleBookmark);
   const showToast = useToastStore((s) => s.showToast);
+
+  const focusOn = useFocusStore((s) => s.active);
+  const startFocus = useFocusStore((s) => s.start);
+  const exitFocus = useFocusStore((s) => s.exit);
 
   const [mode, setMode] = useState<ViewMode>("page");
   const [page, setPage] = useState(1);
@@ -126,6 +133,20 @@ export default function PdfViewerScreen() {
       NavigationBar.setVisibilityAsync("visible");
     };
   }, [immersive]);
+
+  const toggleFocus = () => {
+    if (focusOn) {
+      exitFocus();
+      setImmersive(false);
+      showToast("Focus mode off");
+    } else {
+      startFocus();
+      setImmersive(true);
+      showToast("Focus mode — your paragraph stays bright");
+    }
+  };
+
+  useEffect(() => () => useFocusStore.getState().exit(), []);
 
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
@@ -374,6 +395,7 @@ export default function PdfViewerScreen() {
           >
             <PdfReflowView
               chromeOffset={immersive ? 0 : barH}
+              focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
               initialPage={reflowGoto.page}
@@ -457,6 +479,9 @@ export default function PdfViewerScreen() {
             <HeaderButton onPress={openSummary}>
               <IconSpark color={t.accent} size={18} />
             </HeaderButton>
+            <HeaderButton onPress={toggleFocus}>
+              <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
+            </HeaderButton>
             <HeaderButton onPress={() => setSearchOpen(true)}>
               <IconSearch color={t.ink} size={18} />
             </HeaderButton>
@@ -526,15 +551,17 @@ export default function PdfViewerScreen() {
       </GestureDetector>
 
       <ReaderSettingsSheet
-        focusMode={immersive}
+        focusMode={focusOn}
         onClose={() => setSettingsOpen(false)}
-        onToggleFocusMode={() => setImmersive((v) => !v)}
+        onToggleFocusMode={toggleFocus}
         onViewModeChange={switchTo}
         ref={sheetRef}
         viewMode={mode}
       />
 
-      {!immersive && !searchOpen && summary === "closed" && !lexiOpen ? (
+      <FocusChrome onExit={toggleFocus} pillVisible={immersive} />
+
+      {!immersive && !focusOn && !searchOpen && summary === "closed" && !lexiOpen ? (
         <LexiBubble
           onPress={() => {
             if (!aiOn) {
