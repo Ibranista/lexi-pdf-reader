@@ -119,11 +119,18 @@ export default function LibraryScreen() {
 
   const openReader = () => router.push("/reader");
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
-    if (doc.ext !== "PDF") {
-      showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
+    if (doc.ext === "PDF") {
+      router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
       return;
     }
-    router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
+    if (doc.ext === "TXT" || doc.ext === "MD") {
+      router.push({
+        pathname: "/text",
+        params: { uri: doc.uri, name: doc.name, ext: doc.ext },
+      });
+      return;
+    }
+    showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
   };
   const openDemo = (name: string) =>
     showToast(tr("library.demoToast", { name }));
