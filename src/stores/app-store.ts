@@ -18,6 +18,13 @@ export type Contrast = 'soft' | 'std';
 export type ExplainStyle = 'advanced' | 'balanced' | 'simple';
 export type FocusSensitivity = 'balanced' | 'frequent' | 'relaxed';
 export type PaywallPlan = 'annual' | 'monthly';
+/** What the library's sort control orders by, and in which direction. */
+export type SortKey = 'date' | 'name' | 'size';
+export type SortDir = 'asc' | 'desc';
+export interface LibrarySort {
+  key: SortKey;
+  dir: SortDir;
+}
 
 export interface VocabEntry {
   word: string;
@@ -116,6 +123,8 @@ interface AppState {
   libRootName: string | null;
   /** Whether we already auto-asked for device storage access on first open. */
   storageAsked: boolean;
+  /** How the All and Files tabs order documents and folders. */
+  librarySort: LibrarySort;
 
   setPage: (page: number) => void;
   toggleBookmark: (page: number) => void;
@@ -161,6 +170,8 @@ export const useAppStore = create<AppState>()(
       libRootUri: null,
       libRootName: null,
       storageAsked: false,
+      // newest first — matches how the scan already presents documents
+      librarySort: { key: 'date', dir: 'desc' },
 
       setPage: (page) => set({ page }),
 

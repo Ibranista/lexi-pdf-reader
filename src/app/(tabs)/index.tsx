@@ -1,7 +1,10 @@
+import { FlashList } from "@shopify/flash-list";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
+import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { RefreshControlProps } from "react-native";
 import { BackHandler, RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -37,10 +40,11 @@ import {
   type DeviceDoc,
   formatSize,
   formatWhen,
+  sortByLibrarySort,
   useDeviceLibrary,
 } from "@/hooks/use-device-library";
 import { usePdfThumbnail } from "@/hooks/use-pdf-thumbnail";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import { type SortKey, useAppStore, useToastStore } from "@/stores/app-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import {
   progressPct,
@@ -52,6 +56,18 @@ import { useProtoTheme } from "@/theme/proto";
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
 
 type DeviceLibrary = ReturnType<typeof useDeviceLibrary>;
+
+/** Columns in the All tab's cover grid. */
+const GRID_COLUMNS = 3;
+
+/**
+ * Handed to the tabs that own their scroller, so a FlashList inside one is
+ * padded and pull-to-refreshes exactly like the shared ScrollView does.
+ */
+interface ScrollerProps {
+  contentPad: { padding: number; paddingTop: number; paddingBottom: number };
+  refreshControl: ReactElement<RefreshControlProps>;
+}
 
 export default function LibraryScreen() {
   const t = useProtoTheme();
@@ -148,6 +164,24 @@ export default function LibraryScreen() {
   };
   const openDemo = (name: string) =>
     showToast(tr("library.demoToast", { name }));
+
+  // Shared by every tab's scroller, whichever component owns it. The refresh
+  // control is built per render rather than held in a variable — only one
+  // branch mounts at a time, but each needs its own element.
+  const contentPad = {
+    padding: 20,
+    paddingTop: searching ? 16 : 18,
+    paddingBottom: 90 + insets.bottom,
+  };
+  const renderRefresh = () => (
+    <RefreshControl
+      colors={[t.accent]}
+      onRefresh={onRefresh}
+      progressBackgroundColor={t.card}
+      refreshing={refreshing}
+      tintColor={t.sub}
+    />
+  );
 
   return (
     <ProtoScreen>
@@ -259,46 +293,46 @@ export default function LibraryScreen() {
         </>
       )}
 
-      <ScrollView
-        contentContainerStyle={{
-          padding: 20,
-          paddingTop: searching ? 16 : 18,
-          paddingBottom: 90 + insets.bottom,
-        }}
-        refreshControl={
-          <RefreshControl
-            colors={[t.accent]}
-            onRefresh={onRefresh}
-            progressBackgroundColor={t.card}
-            refreshing={refreshing}
-            tintColor={t.sub}
-          />
-        }
-        style={{ flex: 1 }}
-      >
-        {searching ? (
-          <SearchResults
-            openDemo={openDemo}
-            openReader={openReader}
-            query={query}
-          />
-        ) : tab === "recent" ? (
-          <RecentTab openDoc={openDoc} />
-        ) : tab === "all" ? (
-          <AllTab lib={lib} openDoc={openDoc} />
-        ) : tab === "coll" ? (
-          <CollectionsTab openDemo={openDemo} openReader={openReader} />
-        ) : tab === "vocab" ? (
-          <VocabTab />
-        ) : (
-          <FilesTab
-            lib={lib}
-            openDoc={openDoc}
-            openUri={openFolderUri}
-            setOpenUri={setOpenFolderUri}
-          />
-        )}
-      </ScrollView>
+      {/* All and Files own their scroller — a FlashList can't be nested in a
+          ScrollView, and those are the two tabs long enough to need one. The
+          short, fixed-length tabs stay on a plain ScrollView. */}
+      {tab === "all" && !searching ? (
+        <AllTab
+          contentPad={contentPad}
+          lib={lib}
+          openDoc={openDoc}
+          refreshControl={renderRefresh()}
+        />
+      ) : tab === "files" && !searching ? (
+        <FilesTab
+          contentPad={contentPad}
+          lib={lib}
+          openDoc={openDoc}
+          openUri={openFolderUri}
+          refreshControl={renderRefresh()}
+          setOpenUri={setOpenFolderUri}
+        />
+      ) : (
+        <ScrollView
+          contentContainerStyle={contentPad}
+          refreshControl={renderRefresh()}
+          style={{ flex: 1 }}
+        >
+          {searching ? (
+            <SearchResults
+              openDemo={openDemo}
+              openReader={openReader}
+              query={query}
+            />
+          ) : tab === "recent" ? (
+            <RecentTab openDoc={openDoc} />
+          ) : tab === "coll" ? (
+            <CollectionsTab openDemo={openDemo} openReader={openReader} />
+          ) : (
+            <VocabTab />
+          )}
+        </ScrollView>
+      )}
 
       {/* import FAB */}
       <Tap
@@ -446,11 +480,7 @@ function RecentTab({ openDoc }: { openDoc: (doc: RecentEntry) => void }) {
             paddingY={4}
             rounded={20}
           >
-            <Text
-              color={docPct ? t.accentText : t.sub}
-              size={11}
-              weight="500"
-            >
+            <Text color={docPct ? t.accentText : t.sub} size={11} weight="500">
               {docPct ? `${docPct}%` : tr("library.recent.badgeNew")}
             </Text>
           </Box>
@@ -514,6 +544,74 @@ function RecentTab({ openDoc }: { openDoc: (doc: RecentEntry) => void }) {
   );
 }
 
+/* ============ Sorting ============ */
+
+const SORT_KEYS: SortKey[] = ["date", "name", "size"];
+
+/**
+ * Sort chips shared by All and Files. Tapping the active key flips its
+ * direction, so both orders are one tap away without a menu — the arrow on
+ * the active chip is what says which way the list currently runs.
+ */
+function SortBar() {
+  const t = useProtoTheme();
+  const { t: tr } = useTranslation("home");
+  const sort = useAppStore((s) => s.librarySort);
+  const setApp = useAppStore((s) => s.set);
+
+  const choose = (key: SortKey) =>
+    setApp({
+      librarySort:
+        key === sort.key
+          ? { key, dir: sort.dir === "asc" ? "desc" : "asc" }
+          : // Dates read newest-first by default; names read A→Z.
+            { key, dir: key === "name" ? "asc" : "desc" },
+    });
+
+  return (
+    <Box
+      align="center"
+      direction="row"
+      gap={8}
+      paddingBottom={14}
+      style={{ flexWrap: "wrap" }}
+    >
+      <Text color={t.faint} size={11.5} weight="500">
+        {tr("library.sort.label")}
+      </Text>
+      {SORT_KEYS.map((key) => {
+        const active = key === sort.key;
+        return (
+          <Tap key={key} onPress={() => choose(key)} scale={0.94}>
+            <Box
+              align="center"
+              bg={active ? t.accentSoft : t.chip}
+              direction="row"
+              gap={4}
+              paddingX={11}
+              paddingY={5}
+              rounded={20}
+            >
+              <Text
+                color={active ? t.accentText : t.sub}
+                size={11.5}
+                weight="500"
+              >
+                {tr(`library.sort.${key}`)}
+              </Text>
+              {active ? (
+                <Text color={t.accentText} size={10} weight="600">
+                  {sort.dir === "asc" ? "↑" : "↓"}
+                </Text>
+              ) : null}
+            </Box>
+          </Tap>
+        );
+      })}
+    </Box>
+  );
+}
+
 /* ============ All ============ */
 
 function docMeta(size: number, modifiedAt: number | null): string {
@@ -526,9 +624,11 @@ function DocCover({ doc }: { doc: DeviceDoc }) {
 }
 
 function AllTab({
+  contentPad,
   lib,
   openDoc,
-}: {
+  refreshControl,
+}: ScrollerProps & {
   lib: DeviceLibrary;
   openDoc: (doc: DeviceDoc) => void;
 }) {
@@ -536,11 +636,48 @@ function AllTab({
   const { t: tr } = useTranslation("home");
   const { access, ensureAccess, docs, pickFolder, scanning, scanProgress } =
     lib;
+  const sort = useAppStore((s) => s.librarySort);
+  const sorted = useMemo(() => sortByLibrarySort(docs, sort), [docs, sort]);
 
-  // full-screen scan UI only for the very first scan (nothing to show yet);
-  // a pull-to-refresh rescan keeps the existing grid + its own spinner
-  if (scanning && docs.length === 0) {
-    return (
+  const header =
+    docs.length > 0 ? (
+      <>
+        {access === "denied" ? (
+          // documents from app storage only — offer device-wide access
+          <Tap onPress={ensureAccess}>
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              direction="row"
+              gap={12}
+              marginBottom={16}
+              paddingX={14}
+              paddingY={12}
+              rounded={12}
+            >
+              <IconFolder color={t.accentText} size={17} />
+              <Box flex={1}>
+                <Text color={t.accentText} size={13} weight="600">
+                  {tr("library.all.allowBtn")}
+                </Text>
+                <Text color={t.sub} size={11.5} style={{ marginTop: 2 }}>
+                  {tr("library.all.allowBannerSub")}
+                </Text>
+              </Box>
+              <IconChevron color={t.accentText} size={15} />
+            </Box>
+          </Tap>
+        ) : null}
+        <SortBar />
+      </>
+    ) : null;
+
+  // The empty and scanning states ride inside the list rather than replacing
+  // it, so pull-to-refresh still works when there's nothing to show yet.
+  const empty =
+    scanning && docs.length === 0 ? (
+      // full-screen scan UI only for the very first scan (nothing to show
+      // yet); a rescan keeps the existing grid and its own spinner
       <Box gap={14} paddingX={12} paddingY={48}>
         <Box align="center" gap={6}>
           <Text size={15} weight="600">
@@ -552,21 +689,16 @@ function AllTab({
         </Box>
         <IndeterminateBar />
       </Box>
-    );
-  }
-
-  if (docs.length === 0) {
-    const needsAccess = access === "denied";
-    return (
+    ) : (
       <Box align="center" gap={10} paddingX={24} paddingY={44}>
         <IconFolder color={t.faint} size={26} />
         <Text size={15} weight="600">
-          {needsAccess
+          {access === "denied"
             ? tr("library.all.allowTitle")
             : tr("library.all.emptyTitle")}
         </Text>
         <Text align="center" color={t.sub} lh={21} size={13}>
-          {needsAccess
+          {access === "denied"
             ? tr("library.all.allowBody")
             : tr("library.all.emptyBody")}
         </Text>
@@ -587,62 +719,44 @@ function AllTab({
         ) : null}
       </Box>
     );
-  }
 
   return (
-    <>
-      {access === "denied" ? (
-        // documents from app storage only — offer device-wide access
-        <Tap onPress={ensureAccess}>
-          <Box
-            align="center"
-            bg={t.accentSoft}
-            direction="row"
-            gap={12}
-            marginBottom={16}
-            paddingX={14}
-            paddingY={12}
-            rounded={12}
-          >
-            <IconFolder color={t.accentText} size={17} />
-            <Box flex={1}>
-              <Text color={t.accentText} size={13} weight="600">
-                {tr("library.all.allowBtn")}
+    <FlashList
+      ListEmptyComponent={empty}
+      ListHeaderComponent={header}
+      // The 14px column gutter comes from each cell's own padding, so the
+      // container is inset by that much less and the outer edge still lands
+      // at the 20px the rest of the screen uses.
+      contentContainerStyle={{
+        ...contentPad,
+        paddingLeft: 13,
+        paddingRight: 13,
+      }}
+      data={sorted}
+      keyExtractor={(doc) => doc.uri}
+      numColumns={GRID_COLUMNS}
+      refreshControl={refreshControl}
+      style={{ flex: 1 }}
+      renderItem={({ item }) => (
+        <Tap
+          onPress={() => openDoc(item)}
+          scale={0.96}
+          style={{ paddingHorizontal: 7, paddingBottom: 16 }}
+        >
+          <Box gap={7}>
+            <DocCover doc={item} />
+            <Box gap={2}>
+              <Text lh={15} numberOfLines={2} size={11.5} weight="500">
+                {item.name}
               </Text>
-              <Text color={t.sub} size={11.5} style={{ marginTop: 2 }}>
-                {tr("library.all.allowBannerSub")}
+              <Text color={t.faint} size={10}>
+                {docMeta(item.size, item.modifiedAt)}
               </Text>
             </Box>
-            <IconChevron color={t.accentText} size={15} />
           </Box>
         </Tap>
-      ) : null}
-      <Box
-        direction="row"
-        style={{ flexWrap: "wrap", columnGap: 14, rowGap: 16 }}
-      >
-        {docs.map((doc) => (
-          <Tap
-            key={doc.uri}
-            onPress={() => openDoc(doc)}
-            scale={0.96}
-            style={{ width: "30%", flexGrow: 1 }}
-          >
-            <Box gap={7}>
-              <DocCover doc={doc} />
-              <Box gap={2}>
-                <Text lh={15} numberOfLines={2} size={11.5} weight="500">
-                  {doc.name}
-                </Text>
-                <Text color={t.faint} size={10}>
-                  {docMeta(doc.size, doc.modifiedAt)}
-                </Text>
-              </Box>
-            </Box>
-          </Tap>
-        ))}
-      </Box>
-    </>
+      )}
+    />
   );
 }
 
@@ -838,11 +952,13 @@ function VocabTab() {
 /* ============ Files ============ */
 
 function FilesTab({
+  contentPad,
   lib,
   openDoc,
   openUri,
+  refreshControl,
   setOpenUri,
-}: {
+}: ScrollerProps & {
   lib: DeviceLibrary;
   openDoc: (doc: DeviceDoc) => void;
   openUri: string | null;
@@ -852,6 +968,13 @@ function FilesTab({
   const { t: tr } = useTranslation("home");
   const libRootName = useAppStore((s) => s.libRootName);
   const { access, ensureAccess, folders, docs, pickFolder, scanning } = lib;
+  const sort = useAppStore((s) => s.librarySort);
+  // Folders carry the same three fields as documents — newest document,
+  // combined size — so one sort choice reads sensibly at both levels.
+  const sortedFolders = useMemo(
+    () => sortByLibrarySort(folders, sort),
+    [folders, sort],
+  );
 
   const folderLabel = (f: {
     isAppStorage: boolean;
@@ -861,28 +984,46 @@ function FilesTab({
     f.isAppStorage
       ? tr("library.files.appStorage")
       : f.isDeviceRoot
-        ? tr("library.files.internalStorage")
-        : f.name;
+      ? tr("library.files.internalStorage")
+      : f.name;
 
   const openFolder = folders.find((f) => f.uri === openUri);
 
   if (openFolder) {
-    const folderDocs = docs.filter((d) => d.folderUri === openFolder.uri);
+    const folderDocs = sortByLibrarySort(
+      docs.filter((d) => d.folderUri === openFolder.uri),
+      sort,
+    );
     return (
-      <>
-        <Tap onPress={() => setOpenUri(null)}>
-          <Box align="center" direction="row" gap={8} paddingBottom={14}>
-            <IconBack color={t.accentText} size={16} />
-            <Text color={t.accentText} size={13} weight="600">
-              {tr("library.files.allFolders")}
-            </Text>
-          </Box>
-        </Tap>
-        <Box paddingBottom={8}>
-          <SectionLabel>{folderLabel(openFolder)}</SectionLabel>
-        </Box>
-        {folderDocs.map((doc) => (
-          <Tap key={doc.uri} onPress={() => openDoc(doc)}>
+      <FlashList
+        ListEmptyComponent={
+          <Text color={t.sub} size={13} style={{ paddingTop: 12 }}>
+            {tr("library.files.folderEmpty")}
+          </Text>
+        }
+        ListHeaderComponent={
+          <>
+            <Tap onPress={() => setOpenUri(null)}>
+              <Box align="center" direction="row" gap={8} paddingBottom={14}>
+                <IconBack color={t.accentText} size={16} />
+                <Text color={t.accentText} size={13} weight="600">
+                  {tr("library.files.allFolders")}
+                </Text>
+              </Box>
+            </Tap>
+            <Box paddingBottom={8}>
+              <SectionLabel>{folderLabel(openFolder)}</SectionLabel>
+            </Box>
+            {folderDocs.length ? <SortBar /> : null}
+          </>
+        }
+        contentContainerStyle={contentPad}
+        data={folderDocs}
+        keyExtractor={(doc) => doc.uri}
+        refreshControl={refreshControl}
+        style={{ flex: 1 }}
+        renderItem={({ item }) => (
+          <Tap onPress={() => openDoc(item)}>
             <Box
               align="center"
               direction="row"
@@ -893,30 +1034,27 @@ function FilesTab({
               <Cover height={58} width={44} />
               <Box flex={1}>
                 <Text numberOfLines={1} size={14} weight="600">
-                  {doc.name}
+                  {item.name}
                 </Text>
                 <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
-                  {docMeta(doc.size, doc.modifiedAt)}
+                  {docMeta(item.size, item.modifiedAt)}
                 </Text>
               </Box>
               <IconChevron color={t.faint} size={16} />
             </Box>
           </Tap>
-        ))}
-        {folderDocs.length === 0 ? (
-          <Text color={t.sub} size={13} style={{ paddingTop: 12 }}>
-            {tr("library.files.folderEmpty")}
-          </Text>
-        ) : null}
-      </>
+        )}
+      />
     );
   }
 
-  return (
+  const header = (
     <>
       <Box paddingBottom={8}>
         <SectionLabel>{tr("library.files.onThisDevice")}</SectionLabel>
       </Box>
+
+      {folders.length ? <SortBar /> : null}
 
       {access === "denied" ? (
         // Android without "All files access" — one tap re-opens the request
@@ -980,9 +1118,34 @@ function FilesTab({
           </Box>
         </Tap>
       ) : null}
+    </>
+  );
 
-      {folders.map((f) => (
-        <Tap key={f.uri} onPress={() => setOpenUri(f.uri)}>
+  return (
+    <FlashList
+      ListEmptyComponent={
+        scanning ? (
+          <Box align="center" paddingY={28}>
+            <Text color={t.sub} size={13}>
+              {tr("library.all.scanning")}
+            </Text>
+          </Box>
+        ) : (
+          <Box align="center" paddingX={24} paddingY={28}>
+            <Text align="center" color={t.sub} lh={21} size={13}>
+              {tr("library.files.empty")}
+            </Text>
+          </Box>
+        )
+      }
+      ListHeaderComponent={header}
+      contentContainerStyle={contentPad}
+      data={sortedFolders}
+      keyExtractor={(f) => f.uri}
+      refreshControl={refreshControl}
+      style={{ flex: 1 }}
+      renderItem={({ item }) => (
+        <Tap onPress={() => setOpenUri(item.uri)}>
           <Box
             align="center"
             direction="row"
@@ -1002,31 +1165,17 @@ function FilesTab({
             </Box>
             <Box flex={1}>
               <Text numberOfLines={1} size={14} weight="600">
-                {folderLabel(f)}
+                {folderLabel(item)}
               </Text>
               <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
-                {tr("library.files.docCount", { count: f.docCount })}
+                {tr("library.files.docCount", { count: item.docCount })}
               </Text>
             </Box>
             <IconChevron color={t.faint} size={16} />
           </Box>
         </Tap>
-      ))}
-
-      {scanning ? (
-        <Box align="center" paddingY={28}>
-          <Text color={t.sub} size={13}>
-            {tr("library.all.scanning")}
-          </Text>
-        </Box>
-      ) : folders.length === 0 ? (
-        <Box align="center" paddingX={24} paddingY={28}>
-          <Text align="center" color={t.sub} lh={21} size={13}>
-            {tr("library.files.empty")}
-          </Text>
-        </Box>
-      ) : null}
-    </>
+      )}
+    />
   );
 }
 
