@@ -130,14 +130,22 @@ export default function LibraryScreen() {
   ];
 
   const openReader = () => router.push("/reader");
-  // open a real on-device document — PDFs render in the native viewer
+  // Open formats that have a native reader. Other indexed formats remain
+  // visible in the library until their readers are added.
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
-    if (doc.ext !== "PDF") {
-      showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
+    if (doc.ext === "PDF") {
+      // the reader records the open itself, so every entry point counts
+      router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
       return;
     }
-    // the reader records the open itself, so every entry point counts
-    router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
+    if (doc.ext === "TXT" || doc.ext === "MD") {
+      router.push({
+        pathname: "/text",
+        params: { uri: doc.uri, name: doc.name, ext: doc.ext },
+      });
+      return;
+    }
+    showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
   };
   const openDemo = (name: string) =>
     showToast(tr("library.demoToast", { name }));

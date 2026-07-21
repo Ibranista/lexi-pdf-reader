@@ -34,7 +34,7 @@
     "demoToast": "Demo — “{{name}}” opens the same reader",
     "exitConfirm": "Press back again to exit",
     "docViewer": {
-      "pdfOnly": "{{ext}} preview isn't supported yet — opening PDFs only for now"
+      "pdfOnly": "{{ext}} reading isn't supported yet"
     },
     "sort": {
       "label": "Sort by",
