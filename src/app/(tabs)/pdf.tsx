@@ -793,13 +793,14 @@ export default function PdfViewerScreen() {
       {/* focus pill + break card; pill yields while the toolbar is out */}
       <FocusChrome onExit={toggleFocus} pillVisible={immersive} />
 
-      {!immersive && !focusOn && !searchOpen && summary === "closed" && !lexiOpen ? (
+      {!immersive &&
+      !focusOn &&
+      !searchOpen &&
+      summary === "closed" &&
+      !lexiOpen &&
+      aiOn ? (
         <LexiBubble
           onPress={() => {
-            if (!aiOn) {
-              showToast("AI is off — enable it in Reading settings");
-              return;
-            }
             setLexiOpen(true);
           }}
         />
@@ -831,7 +832,9 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
-      {lexiOpen ? <LexiSheet onClose={() => setLexiOpen(false)} /> : null}
+      {lexiOpen && aiOn ? (
+        <LexiSheet onClose={() => setLexiOpen(false)} />
+      ) : null}
     </Box>
   );
 }
