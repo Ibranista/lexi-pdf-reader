@@ -18,7 +18,6 @@ class UpdateManager {
       const update = await Updates.checkForUpdateAsync();
 
       if (update.isAvailable) {
-        console.log("New update available!");
         await Updates.fetchUpdateAsync();
 
         Alert.alert(
