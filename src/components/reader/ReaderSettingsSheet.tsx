@@ -5,7 +5,14 @@
  * into the page without re-extracting). "Focus mode" is screen state rather
  * than a stored setting, so it comes in as a prop from the viewer.
  */
-import { forwardRef } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box } from "@/components/atoms";
@@ -138,6 +145,91 @@ function SubRow({
   );
 }
 
+/**
+ * Previews changes no more than once per frame and persists only the final
+ * value. The readout follows the thumb live without queuing a long sequence of
+ * React/store updates that could continue after release.
+ */
+const SmartZoomControl = memo(function SmartZoomControl() {
+  const t = useProtoTheme();
+  const storedZoom = useAppStore((s) => s.zoom);
+  const setApp = useAppStore((s) => s.set);
+  const [displayZoom, setDisplayZoom] = useState(storedZoom);
+  const pendingZoom = useRef(storedZoom);
+  const previewFrame = useRef<ReturnType<typeof requestAnimationFrame> | null>(
+    null,
+  );
+
+  const showZoom = useCallback((next: number) => {
+    pendingZoom.current = next;
+    if (previewFrame.current !== null) return;
+
+    previewFrame.current = requestAnimationFrame(() => {
+      previewFrame.current = null;
+      setDisplayZoom((current) =>
+        current === pendingZoom.current ? current : pendingZoom.current,
+      );
+    });
+  }, []);
+
+  const handleChange = useCallback(
+    (next: number) => {
+      pendingZoom.current = next;
+      if (previewFrame.current !== null) {
+        cancelAnimationFrame(previewFrame.current);
+        previewFrame.current = null;
+      }
+      setDisplayZoom((current) => (current === next ? current : next));
+      setApp({ zoom: next });
+    },
+    [setApp],
+  );
+
+  useEffect(
+    () => () => {
+      if (previewFrame.current !== null) {
+        cancelAnimationFrame(previewFrame.current);
+      }
+    },
+    [],
+  );
+
+  return (
+    <>
+      <Box paddingBottom={10} paddingTop={18}>
+        <Box
+          direction="row"
+          justify="between"
+          style={{ alignItems: "baseline" }}
+        >
+          <SectionLabel size={11}>Smart zoom level</SectionLabel>
+          <Text color={t.accentText} size={14} weight="600">
+            {displayZoom}%
+          </Text>
+        </Box>
+      </Box>
+      <ProtoSlider
+        curve="log"
+        max={ZOOM_MAX}
+        min={ZOOM_MIN}
+        onChange={showZoom}
+        onChangeEnd={handleChange}
+        step={5}
+        ticks={ZOOM_TICKS}
+        value={storedZoom}
+      />
+      <Box direction="row" justify="between" paddingTop={4}>
+        <Text color={t.faint} size={11}>
+          {ZOOM_MIN}%
+        </Text>
+        <Text color={t.faint} size={11}>
+          {ZOOM_MAX}%
+        </Text>
+      </Box>
+    </>
+  );
+});
+
 interface Props {
   /** Distraction-free reading mode — viewer state, not a stored setting. */
   focusMode?: boolean;
@@ -268,35 +360,7 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           value={app.lineSp}
         />
 
-        <Box paddingBottom={10} paddingTop={18}>
-          <Box
-            direction="row"
-            justify="between"
-            style={{ alignItems: "baseline" }}
-          >
-            <SectionLabel size={11}>Smart zoom level</SectionLabel>
-            <Text color={t.accentText} size={14} weight="600">
-              {app.zoom}%
-            </Text>
-          </Box>
-        </Box>
-        <ProtoSlider
-          curve="log"
-          max={ZOOM_MAX}
-          min={ZOOM_MIN}
-          onChange={(v) => app.set({ zoom: v })}
-          step={5}
-          ticks={ZOOM_TICKS}
-          value={app.zoom}
-        />
-        <Box direction="row" justify="between" paddingTop={4}>
-          <Text color={t.faint} size={11}>
-            {ZOOM_MIN}%
-          </Text>
-          <Text color={t.faint} size={11}>
-            {ZOOM_MAX}%
-          </Text>
-        </Box>
+        <SmartZoomControl />
 
         <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>

@@ -2,24 +2,24 @@
  * Shared building blocks for the prototype screens — all built on the custom
  * `Box` / `Text` atoms (no raw `View`).
  */
-import type { ReactNode } from 'react';
-import type { GestureResponderEvent, StyleProp, ViewStyle } from 'react-native';
+import type { ReactNode } from "react";
+import type { GestureResponderEvent, StyleProp, ViewStyle } from "react-native";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Animated, Easing, Pressable } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Animated, Easing, Pressable } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box, Text } from '@/components/atoms';
-import { useToastStore } from '@/stores/app-store';
-import { useProtoTheme } from '@/theme/proto';
+import { Box, Text } from "@/components/atoms";
+import { useToastStore } from "@/stores/app-store";
+import { useProtoTheme } from "@/theme/proto";
 
-import { IconBack } from './icons';
+import { IconBack } from "./icons";
 
 /* =========================
    Tap — pressable with press-scale feedback
@@ -33,7 +33,13 @@ interface TapProps {
   readonly style?: StyleProp<ViewStyle>;
 }
 
-export function Tap({ children, disabled, onPress, scale = 0.96, style }: TapProps) {
+export function Tap({
+  children,
+  disabled,
+  onPress,
+  scale = 0.96,
+  style,
+}: TapProps) {
   return (
     <Pressable
       disabled={disabled}
@@ -49,7 +55,15 @@ export function Tap({ children, disabled, onPress, scale = 0.96, style }: TapPro
 }
 
 /** Uppercase section label ("EARLIER THIS WEEK", "APPEARANCE", …). */
-export function SectionLabel({ children, color, size = 12 }: { children: ReactNode; color?: string; size?: number }) {
+export function SectionLabel({
+  children,
+  color,
+  size = 12,
+}: {
+  children: ReactNode;
+  color?: string;
+  size?: number;
+}) {
   const t = useProtoTheme();
   return (
     <Text color={color ?? t.sub} ls={0.8} size={size} upper weight="600">
@@ -62,7 +76,13 @@ export function SectionLabel({ children, color, size = 12 }: { children: ReactNo
    Screen scaffolding
 ========================= */
 
-export function ProtoScreen({ children, bg }: { children: ReactNode; bg?: string }) {
+export function ProtoScreen({
+  children,
+  bg,
+}: {
+  children: ReactNode;
+  bg?: string;
+}) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -119,7 +139,14 @@ export function ScreenHeader({
 }) {
   const t = useProtoTheme();
   return (
-    <Box align="center" direction="row" gap={12} paddingLeft={20} paddingRight={20} paddingTop={8}>
+    <Box
+      align="center"
+      direction="row"
+      gap={12}
+      paddingLeft={20}
+      paddingRight={20}
+      paddingTop={8}
+    >
       {onBack ? (
         <HeaderButton onPress={onBack}>
           <IconBack color={t.ink} size={18} />
@@ -156,7 +183,15 @@ export function Card({
 }) {
   const t = useProtoTheme();
   return (
-    <Box bg={t.card} borderColor={t.line} borderWidth={1} gap={gap} padding={padding} rounded={rounded} style={style}>
+    <Box
+      bg={t.card}
+      borderColor={t.line}
+      borderWidth={1}
+      gap={gap}
+      padding={padding}
+      rounded={rounded}
+      style={style}
+    >
       {children}
     </Box>
   );
@@ -193,23 +228,27 @@ export function Segmented<K extends string>({
   value: K | null;
 }) {
   const t = useProtoTheme();
-  const activeBg = t.dark ? '#2B2620' : '#FFFFFF';
+  const activeBg = t.dark ? "#2B2620" : "#FFFFFF";
   return (
     <Box bg={t.chip} direction="row" padding={3} rounded={12}>
       {items.map((item) => {
         const on = item.key === value;
         return (
-          <Tap key={item.key} onPress={() => onChange(item.key)} style={{ flex: item.flex ?? 1 }}>
+          <Tap
+            key={item.key}
+            onPress={() => onChange(item.key)}
+            style={{ flex: item.flex ?? 1 }}
+          >
             <Box
               align="center"
-              bg={on ? activeBg : 'transparent'}
+              bg={on ? activeBg : "transparent"}
               justify="center"
               paddingY={9}
               rounded={9}
               style={
                 on
                   ? {
-                      shadowColor: '#14100C',
+                      shadowColor: "#14100C",
                       shadowOffset: { width: 0, height: 1 },
                       shadowOpacity: 0.12,
                       shadowRadius: 2,
@@ -227,7 +266,7 @@ export function Segmented<K extends string>({
                     ? { fontFamily: on ? item.font.active : item.font.inactive }
                     : undefined
                 }
-                weight={on ? '600' : '500'}
+                weight={on ? "600" : "500"}
               >
                 {item.label}
               </Text>
@@ -243,9 +282,15 @@ export function Segmented<K extends string>({
    Toggle switch (46×28)
 ========================= */
 
-export function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+export function Toggle({
+  on,
+  onToggle,
+}: {
+  on: boolean;
+  onToggle: () => void;
+}) {
   const t = useProtoTheme();
-  const off = t.dark ? 'rgba(241,235,226,.2)' : 'rgba(32,27,21,.18)';
+  const off = t.dark ? "rgba(241,235,226,.2)" : "rgba(32,27,21,.18)";
   return (
     <Pressable onPress={onToggle}>
       <Box bg={on ? t.accent : off} height={28} rounded={14} width={46}>
@@ -254,11 +299,11 @@ export function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) 
           height={24}
           rounded={12}
           style={{
-            position: 'absolute',
+            position: "absolute",
             top: 2,
             left: 2,
             transform: [{ translateX: on ? 18 : 0 }],
-            shadowColor: '#000',
+            shadowColor: "#000",
             shadowOffset: { width: 0, height: 1 },
             shadowOpacity: 0.25,
             shadowRadius: 3,
@@ -296,12 +341,12 @@ export function Cover({
         bg={t.coverB}
         key={i}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: x,
           top: -height,
           width: stripeW,
           height: span * 2,
-          transform: [{ rotate: '45deg' }],
+          transform: [{ rotate: "45deg" }],
         }}
       />,
     );
@@ -313,7 +358,7 @@ export function Cover({
       height={height}
       justify="center"
       rounded={rounded}
-      style={{ overflow: 'hidden' }}
+      style={{ overflow: "hidden" }}
       width={width}
     >
       {stripes}
@@ -334,7 +379,12 @@ export function ProgressBar({ pct }: { pct: number }) {
   const t = useProtoTheme();
   return (
     <Box bg={t.chip} height={4} rounded={2}>
-      <Box bg={t.accent} height={4} rounded={2} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+      <Box
+        bg={t.accent}
+        height={4}
+        rounded={2}
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+      />
     </Box>
   );
 }
@@ -361,18 +411,18 @@ export function IndeterminateBar() {
   }, [x]);
 
   return (
-    <Box bg={t.chip} height={4} rounded={2} style={{ overflow: 'hidden' }}>
+    <Box bg={t.chip} height={4} rounded={2} style={{ overflow: "hidden" }}>
       <Animated.View
         style={{
-          position: 'absolute',
+          position: "absolute",
           top: 0,
           bottom: 0,
-          width: '35%',
+          width: "35%",
           borderRadius: 2,
           backgroundColor: t.accent,
           left: x.interpolate({
             inputRange: [0, 1],
-            outputRange: ['-35%', '100%'],
+            outputRange: ["-35%", "100%"],
           }),
         }}
       />
@@ -391,10 +441,11 @@ const TICK_H = 11;
 const TICK_SNAP = 0.03;
 
 export function ProtoSlider({
-  curve = 'linear',
+  curve = "linear",
   max,
   min,
   onChange,
+  onChangeEnd,
   step = 1,
   ticks,
   value,
@@ -404,10 +455,13 @@ export function ProtoSlider({
    * that's the difference between 100% sitting a third of the way along and
    * sitting dead centre, which is where a neutral value belongs.
    */
-  readonly curve?: 'linear' | 'log';
+  readonly curve?: "linear" | "log";
   readonly max: number;
   readonly min: number;
-  readonly onChange: (value: number) => void;
+  /** Called for every stepped value while the finger moves. */
+  readonly onChange?: (value: number) => void;
+  /** Called once with the final stepped value after the gesture finishes. */
+  readonly onChangeEnd?: (value: number) => void;
   readonly step?: number;
   /** Values to mark with a detent line and pull towards when close. */
   readonly ticks?: readonly number[];
@@ -416,26 +470,30 @@ export function ProtoSlider({
   const t = useProtoTheme();
   const [width, setWidth] = useState(0);
 
-  const isLog = curve === 'log' && min > 0;
+  const isLog = curve === "log" && min > 0;
   const lo = isLog ? Math.log(min) : min;
   const span = (isLog ? Math.log(max) : max) - lo;
 
   const posOf = useCallback(
     (v: number) =>
-      span <= 0 ? 0 : Math.min(1, Math.max(0, ((isLog ? Math.log(v) : v) - lo) / span)),
+      span <= 0
+        ? 0
+        : Math.min(1, Math.max(0, ((isLog ? Math.log(v) : v) - lo) / span)),
     [isLog, lo, span],
   );
 
   const tickVals = useMemo(() => (ticks ? [...ticks] : []), [ticks]);
-  const tickPos = useMemo(() => tickVals.map((v) => posOf(v)), [tickVals, posOf]);
+  const tickPos = useMemo(
+    () => tickVals.map((v) => posOf(v)),
+    [tickVals, posOf],
+  );
 
-  /* Position while a drag is live. -1 means "not dragging", and the thumb
-     falls back to the position implied by the prop — so there is no mirrored
-     copy of `value` to keep in sync, and nothing to reconcile when the value
-     changes from a stepper or a store rehydrate. */
-  const dragPos = useSharedValue(-1);
+  /* Keep the thumb's position on the UI thread for the life of this mounted
+     slider. Clearing it on release briefly exposed the previous controlled
+     value while Zustand was still propagating the new value across the JS/UI
+     boundary, making the thumb jump back and then forward. */
+  const sliderPos = useSharedValue(posOf(value));
   const lastSent = useSharedValue(value);
-  const restPos = posOf(value);
 
   const gesture = useMemo(() => {
     /**
@@ -450,7 +508,7 @@ export function ProtoSlider({
      * reading jumped and the slider felt like it was catching on something.
      */
     const commit = (x: number) => {
-      'worklet';
+      "worklet";
       if (width <= 0 || span <= 0) return;
       const at = Math.min(1, Math.max(0, x / width));
       const raw = isLog ? Math.exp(lo + at * span) : lo + at * span;
@@ -462,19 +520,23 @@ export function ProtoSlider({
         }
       }
       // show the stepped position, so thumb and readout never disagree
-      dragPos.value = Math.min(
+      sliderPos.value = Math.min(
         1,
         Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span),
       );
       if (next !== lastSent.value) {
         lastSent.value = next;
-        runOnJS(onChange)(next);
+        if (onChange) {
+          runOnJS(onChange)(next);
+        }
       }
     };
 
-    const release = () => {
-      'worklet';
-      dragPos.value = -1;
+    const finish = () => {
+      "worklet";
+      if (onChangeEnd && lastSent.value !== value) {
+        runOnJS(onChangeEnd)(lastSent.value);
+      }
     };
 
     /* activeOffsetX claims a horizontal drag for the slider before a bottom
@@ -487,24 +549,35 @@ export function ProtoSlider({
         .failOffsetY([-14, 14])
         .onStart((e) => commit(e.x))
         .onUpdate((e) => commit(e.x))
-        .onFinalize(release),
+        .onFinalize(finish),
       Gesture.Tap()
         .maxDuration(400)
         .onEnd((e) => commit(e.x))
-        .onFinalize(release),
+        .onFinalize(finish),
     );
-    // dragPos/lastSent are shared values — stable refs for the life of the
-    // component, and listing them here trips the immutability rule for the
-    // writes above.
+    // The shared values are stable refs for the life of the component, and
+    // listing them here trips the immutability rule for the writes above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLog, lo, max, min, onChange, span, step, tickPos, tickVals, width]);
+  }, [
+    isLog,
+    lo,
+    max,
+    min,
+    onChange,
+    onChangeEnd,
+    span,
+    step,
+    tickPos,
+    tickVals,
+    width,
+  ]);
 
   const fillStyle = useAnimatedStyle(() => {
-    const p = dragPos.value < 0 ? restPos : dragPos.value;
+    const p = sliderPos.value;
     return { width: `${p * 100}%` };
   });
   const thumbStyle = useAnimatedStyle(() => {
-    const p = dragPos.value < 0 ? restPos : dragPos.value;
+    const p = sliderPos.value;
     return { transform: [{ translateX: p * width - THUMB / 2 }] };
   });
 
@@ -517,7 +590,10 @@ export function ProtoSlider({
       >
         <Box bg={t.chip} height={4} rounded={2}>
           <Reanimated.View
-            style={[{ backgroundColor: t.accent, borderRadius: 2, height: 4 }, fillStyle]}
+            style={[
+              { backgroundColor: t.accent, borderRadius: 2, height: 4 },
+              fillStyle,
+            ]}
           />
         </Box>
 
@@ -533,7 +609,7 @@ export function ProtoSlider({
                 style={{
                   left: p * width - 1,
                   opacity: 0.4,
-                  position: 'absolute',
+                  position: "absolute",
                   top: (SLIDER_H - TICK_H) / 2,
                 }}
                 width={2}
@@ -544,12 +620,12 @@ export function ProtoSlider({
         <Reanimated.View
           style={[
             {
-              backgroundColor: '#FFFFFF',
+              backgroundColor: "#FFFFFF",
               borderRadius: THUMB / 2,
               elevation: 3,
               height: THUMB,
-              position: 'absolute',
-              shadowColor: '#000',
+              position: "absolute",
+              shadowColor: "#000",
               shadowOffset: { height: 1, width: 0 },
               shadowOpacity: 0.3,
               shadowRadius: 3,
@@ -575,7 +651,13 @@ export function Toast() {
     <Box
       align="center"
       pointerEvents="none"
-      style={{ position: 'absolute', bottom: 104, left: 0, right: 0, zIndex: 80 }}
+      style={{
+        position: "absolute",
+        bottom: 104,
+        left: 0,
+        right: 0,
+        zIndex: 80,
+      }}
     >
       <Box bg="rgba(24,20,15,.92)" paddingX={20} paddingY={11} rounded={22}>
         <Text color="#F6F3EE" size={13} weight="500">
@@ -590,12 +672,18 @@ export function Toast() {
    Overlay primitives (backdrop + bottom sheet)
 ========================= */
 
-export function Backdrop({ onPress, opacity = 0.35 }: { onPress?: () => void; opacity?: number }) {
+export function Backdrop({
+  onPress,
+  opacity = 0.35,
+}: {
+  onPress?: () => void;
+  opacity?: number;
+}) {
   return (
     <Pressable
       onPress={onPress}
       style={{
-        position: 'absolute',
+        position: "absolute",
         top: 0,
         bottom: 0,
         left: 0,
@@ -624,7 +712,7 @@ export function BottomSheet({
       roundedTopLeft={24}
       roundedTopRight={24}
       style={{
-        position: 'absolute',
+        position: "absolute",
         left: 0,
         right: 0,
         bottom: 0,
@@ -632,15 +720,24 @@ export function BottomSheet({
         paddingLeft: paddingX,
         paddingRight: paddingX,
         paddingBottom: 24 + insets.bottom,
-        shadowColor: '#14100C',
+        shadowColor: "#14100C",
         shadowOffset: { width: 0, height: -12 },
         shadowOpacity: 0.3,
         shadowRadius: 44,
         elevation: 24,
       }}
     >
-      <Pressable onPress={onHandle} style={{ paddingTop: 10, paddingBottom: 6 }}>
-        <Box bg={t.line} height={4} rounded={2} style={{ alignSelf: 'center' }} width={40} />
+      <Pressable
+        onPress={onHandle}
+        style={{ paddingTop: 10, paddingBottom: 6 }}
+      >
+        <Box
+          bg={t.line}
+          height={4}
+          rounded={2}
+          style={{ alignSelf: "center" }}
+          width={40}
+        />
       </Pressable>
       {children}
     </Box>
