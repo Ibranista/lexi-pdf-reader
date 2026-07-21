@@ -1,7 +1,7 @@
 import { Directory, File, Paths } from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useAppStore } from "@/stores/app-store";
+import { type LibrarySort, useAppStore } from "@/stores/app-store";
 import {
   DEVICE_STORAGE_ROOT,
   hasStorageAccess,
@@ -44,6 +44,21 @@ export interface DeviceFolder {
   isAppStorage: boolean;
   isDeviceRoot: boolean;
   docCount: number;
+  size: number;
+  modifiedAt: number | null;
+}
+
+export function sortByLibrarySort<
+  T extends { name: string; size: number; modifiedAt: number | null },
+>(entries: T[], { key, dir }: LibrarySort): T[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...entries].sort((a, b) => {
+    if (key === "name") {
+      return sign * a.name.localeCompare(b.name, undefined, { numeric: true });
+    }
+    if (key === "size") return sign * (a.size - b.size);
+    return sign * ((a.modifiedAt ?? 0) - (b.modifiedAt ?? 0));
+  });
 }
 
 const yieldFrame = () => new Promise<void>((r) => setTimeout(r, 0));
@@ -76,6 +91,8 @@ async function scanTree(
     }
 
     let count = 0;
+    let folderSize = 0;
+    let folderModified: number | null = null;
     for (const entry of entries) {
       const isDir = entry.uri.endsWith("/");
 
@@ -99,6 +116,10 @@ async function scanTree(
         size = file.size ?? 0;
         modifiedAt = file.lastModified;
       } catch {}
+      folderSize += size;
+      if (modifiedAt !== null && modifiedAt > (folderModified ?? 0)) {
+        folderModified = modifiedAt;
+      }
       docs.push({
         uri: file.uri,
         name: file.name.replace(DOC_EXT_RE, ""),
@@ -116,6 +137,8 @@ async function scanTree(
         isAppStorage: kind === "app" && depth === 0,
         isDeviceRoot: kind === "device" && depth === 0,
         docCount: count,
+        size: folderSize,
+        modifiedAt: folderModified,
       });
     }
   }

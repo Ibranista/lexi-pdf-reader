@@ -36,6 +36,12 @@
     "docViewer": {
       "pdfOnly": "{{ext}} preview isn't supported yet — opening PDFs only for now"
     },
+    "sort": {
+      "label": "Sort by",
+      "date": "Date",
+      "name": "Name",
+      "size": "Size"
+    },
     "recent": {
       "continueReading": "CONTINUE READING",
       "pageOf": "Page {{page}} of {{total}}",

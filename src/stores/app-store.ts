@@ -17,6 +17,12 @@ export type Contrast = 'soft' | 'std';
 export type ExplainStyle = 'advanced' | 'balanced' | 'simple';
 export type FocusSensitivity = 'balanced' | 'frequent' | 'relaxed';
 export type PaywallPlan = 'annual' | 'monthly';
+export type SortKey = 'date' | 'name' | 'size';
+export type SortDir = 'asc' | 'desc';
+export interface LibrarySort {
+  key: SortKey;
+  dir: SortDir;
+}
 
 export interface VocabEntry {
   word: string;
@@ -109,6 +115,7 @@ interface AppState {
   libRootUri: string | null;
   libRootName: string | null;
   storageAsked: boolean;
+  librarySort: LibrarySort;
 
   setPage: (page: number) => void;
   toggleBookmark: (page: number) => void;
@@ -154,6 +161,7 @@ export const useAppStore = create<AppState>()(
       libRootUri: null,
       libRootName: null,
       storageAsked: false,
+      librarySort: { key: 'date', dir: 'desc' },
 
       setPage: (page) => set({ page }),
 
