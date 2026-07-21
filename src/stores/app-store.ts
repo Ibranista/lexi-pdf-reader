@@ -23,6 +23,7 @@ export interface LibrarySort {
   key: SortKey;
   dir: SortDir;
 }
+export type LibraryView = 'grid' | 'list';
 
 export interface VocabEntry {
   word: string;
@@ -116,6 +117,7 @@ interface AppState {
   libRootName: string | null;
   storageAsked: boolean;
   librarySort: LibrarySort;
+  libraryView: LibraryView;
 
   setPage: (page: number) => void;
   toggleBookmark: (page: number) => void;
@@ -162,6 +164,7 @@ export const useAppStore = create<AppState>()(
       libRootName: null,
       storageAsked: false,
       librarySort: { key: 'date', dir: 'desc' },
+      libraryView: 'grid',
 
       setPage: (page) => set({ page }),
 

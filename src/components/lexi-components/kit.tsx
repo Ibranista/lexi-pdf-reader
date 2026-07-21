@@ -20,6 +20,7 @@ import { IconBack } from "./icons";
 interface TapProps {
   readonly children?: ReactNode;
   readonly disabled?: boolean;
+  readonly onLongPress?: (event: GestureResponderEvent) => void;
   readonly onPress?: (event: GestureResponderEvent) => void;
   readonly scale?: number;
   readonly style?: StyleProp<ViewStyle>;
@@ -28,6 +29,7 @@ interface TapProps {
 export function Tap({
   children,
   disabled,
+  onLongPress,
   onPress,
   scale = 0.96,
   style,
@@ -35,6 +37,7 @@ export function Tap({
   return (
     <Pressable
       disabled={disabled}
+      onLongPress={onLongPress}
       onPress={onPress}
       style={({ pressed }) => [
         style,

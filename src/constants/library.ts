@@ -83,21 +83,19 @@ export const LIBRARY_INDEX: LibraryEntry[] = [
   { name: 'Recipe Collection', meta: '52 pages', where: 'All PDFs' },
 ];
 
+/**
+ * Prototype fixtures for the "Auto-filled for you" suggestions, which are
+ * still a placeholder. The real shelves live in `constants/collections.ts`
+ * and are filled by the user, not by reader type.
+ */
 export interface CollectionSet {
   label: string;
-  colls: [emoji: string, name: string, meta: string][];
   filed: [name: string, coll: string, kind: string][];
 }
 
 export const COLLECTIONS: Record<ReaderType, CollectionSet> = {
   student: {
     label: 'Student',
-    colls: [
-      ['📚', 'Studying', '12 PDFs'],
-      ['📖', 'Reading Later', '5 PDFs'],
-      ['⭐', 'Important', '3 PDFs'],
-      ['🧠', 'Review', '7 PDFs · 4 cards due'],
-    ],
     filed: [
       ['Amharic Phrasebook', '📚 Studying', 'Textbook'],
       ['Attention Is All You Need', '📚 Studying', 'Paper'],
@@ -106,12 +104,6 @@ export const COLLECTIONS: Record<ReaderType, CollectionSet> = {
   },
   researcher: {
     label: 'Researcher',
-    colls: [
-      ['📄', 'Papers', '14 PDFs'],
-      ['🔖', 'To Read', '6 PDFs'],
-      ['⭐', 'Key sources', '4 PDFs'],
-      ['🧠', 'Review', '5 PDFs · 2 cards due'],
-    ],
     filed: [
       ['Attention Is All You Need', '📄 Papers', 'Paper'],
       ['City Planning 101', '🔖 To Read', 'Textbook'],
@@ -120,12 +112,6 @@ export const COLLECTIONS: Record<ReaderType, CollectionSet> = {
   },
   professional: {
     label: 'Professional',
-    colls: [
-      ['💼', 'Work', '16 PDFs'],
-      ['📑', 'Contracts', '4 PDFs'],
-      ['📖', 'Reading Later', '5 PDFs'],
-      ['⭐', 'Important', '3 PDFs'],
-    ],
     filed: [
       ['Q3 Market Report.pdf', '💼 Work', 'Report'],
       ['Rental Agreement — Final', '📑 Contracts', 'Contract'],
@@ -134,12 +120,6 @@ export const COLLECTIONS: Record<ReaderType, CollectionSet> = {
   },
   casual: {
     label: 'Casual reader',
-    colls: [
-      ['📖', 'Reading list', '9 PDFs'],
-      ['💛', 'Favorites', '4 PDFs'],
-      ['✅', 'Finished', '6 PDFs'],
-      ['🔖', 'Later', '3 PDFs'],
-    ],
     filed: [
       ['The Age of Light', '📖 Reading list', 'Book'],
       ['Recipe Collection', '💛 Favorites', 'Book'],

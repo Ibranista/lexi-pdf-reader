@@ -20,19 +20,24 @@ import { useProtoTheme } from "@/theme/proto";
 
 import {
   docMeta,
+  DocRow,
   GRID_COLUMNS,
   PdfThumb,
   SortBar,
+  SwipeToFavorite,
+  type OpenCollections,
   type ScrollerProps,
 } from "./shared";
 
 export function AllTab({
   contentPad,
   lib,
+  openCollections,
   openDoc,
   refreshControl,
 }: ScrollerProps & {
   lib: DeviceLibrary;
+  openCollections: OpenCollections;
   openDoc: (doc: DeviceDoc) => void;
 }) {
   const t = useProtoTheme();
@@ -40,6 +45,7 @@ export function AllTab({
   const { access, ensureAccess, docs, pickFolder, scanning, scanProgress } =
     lib;
   const sort = useAppStore((s) => s.librarySort);
+  const view = useAppStore((s) => s.libraryView);
   const sorted = useMemo(() => sortByLibrarySort(docs, sort), [docs, sort]);
 
   const header =
@@ -118,39 +124,52 @@ export function AllTab({
       </Box>
     );
 
+  const grid = view === "grid";
+
   return (
     <FlashList
+      key={view}
       ListEmptyComponent={empty}
       ListHeaderComponent={header}
-      contentContainerStyle={{
-        ...contentPad,
-        paddingLeft: 13,
-        paddingRight: 13,
-      }}
+      contentContainerStyle={
+        grid ? { ...contentPad, paddingLeft: 13, paddingRight: 13 } : contentPad
+      }
       data={sorted}
       keyExtractor={(doc) => doc.uri}
-      numColumns={GRID_COLUMNS}
+      numColumns={grid ? GRID_COLUMNS : 1}
       refreshControl={refreshControl}
       style={{ flex: 1 }}
-      renderItem={({ item }) => (
-        <Tap
-          onPress={() => openDoc(item)}
-          scale={0.96}
-          style={{ paddingHorizontal: 7, paddingBottom: 16 }}
-        >
-          <Box gap={7}>
-            <PdfThumb doc={item} style={{ aspectRatio: 3 / 4 }} />
-            <Box gap={2}>
-              <Text lh={15} numberOfLines={2} size={11.5} weight="500">
-                {item.name}
-              </Text>
-              <Text color={t.faint} size={10}>
-                {docMeta(item.size, item.modifiedAt)}
-              </Text>
+      renderItem={({ item }) =>
+        grid ? (
+          <Tap
+            onLongPress={() => openCollections(item)}
+            onPress={() => openDoc(item)}
+            scale={0.96}
+            style={{ paddingHorizontal: 7, paddingBottom: 16 }}
+          >
+            <Box gap={7}>
+              <PdfThumb doc={item} style={{ aspectRatio: 3 / 4 }} />
+              <Box gap={2}>
+                <Text lh={15} numberOfLines={2} size={11.5} weight="500">
+                  {item.name}
+                </Text>
+                <Text color={t.faint} size={10}>
+                  {docMeta(item.size, item.modifiedAt)}
+                </Text>
+              </Box>
             </Box>
-          </Box>
-        </Tap>
-      )}
+          </Tap>
+        ) : (
+          <SwipeToFavorite doc={item}>
+            <DocRow
+              doc={item}
+              meta={docMeta(item.size, item.modifiedAt)}
+              onLongPress={() => openCollections(item)}
+              onPress={() => openDoc(item)}
+            />
+          </SwipeToFavorite>
+        )
+      }
     />
   );
 }

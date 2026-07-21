@@ -74,7 +74,22 @@
       "autoFilled": "Auto-filled for you",
       "basedOn": "Based on your onboarding · {{label}}",
       "filedIn": "Filed in {{collection}}",
-      "tapSuggestion": "Tap a suggestion to move it — nothing files without you seeing it."
+      "tapSuggestion": "Tap a suggestion to move it — nothing files without you seeing it.",
+      "names": {
+        "studying": "Studying",
+        "later": "Reading Later",
+        "important": "Important"
+      },
+      "addTo": "ADD TO COLLECTION",
+      "docCount_one": "{{count}} document",
+      "docCount_other": "{{count}} documents",
+      "addedToast": "Added to {{collection}}",
+      "removedToast": "Removed from {{collection}}",
+      "allCollections": "All collections",
+      "shelfEmpty": "Nothing filed here yet.\nTap & hold a document anywhere in your library to file it.",
+      "filedWhen": "Added {{when}}",
+      "manageHint": "Tap & hold a document to move it between collections.",
+      "howToFile": "Tap & hold any document to file it here. In list view, swipe a row right-to-left to star it as Important."
     },
     "vocab": {
       "savedWords": "Saved words",

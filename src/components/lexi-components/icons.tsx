@@ -310,11 +310,12 @@ export function IconExternal({ size, color = '#000', strokeWidth = 2 }: IconProp
   );
 }
 
-export function IconStar({ size, color = '#000', strokeWidth = 1.7 }: IconProps) {
+export function IconStar({ size, color = '#000', strokeWidth = 1.7, fill = 'none' }: IconProps & { fill?: string }) {
   return (
     <Frame size={size}>
       <Path
         d="M10 2.5 11.8 8l5.7.1-4.6 3.5 1.7 5.5L10 13.7l-4.6 3.4 1.7-5.5L2.5 8.1 8.2 8Z"
+        fill={fill}
         stroke={color}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -329,6 +330,25 @@ export function IconHighlighter({ size, color = '#000', strokeWidth = 1.7 }: Ico
     <Frame size={size}>
       <Path d="M4 13l7-7 3 3-7 7H4Z" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} />
       <Path d="M4 17h12" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+    </Frame>
+  );
+}
+
+export function IconGrid({ size, color = '#000', strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Frame size={size}>
+      <Rect height="6" rx="1.4" stroke={color} strokeWidth={strokeWidth} width="6" x="3" y="3" />
+      <Rect height="6" rx="1.4" stroke={color} strokeWidth={strokeWidth} width="6" x="11" y="3" />
+      <Rect height="6" rx="1.4" stroke={color} strokeWidth={strokeWidth} width="6" x="3" y="11" />
+      <Rect height="6" rx="1.4" stroke={color} strokeWidth={strokeWidth} width="6" x="11" y="11" />
+    </Frame>
+  );
+}
+
+export function IconList({ size, color = '#000', strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Frame size={size}>
+      <Path d="M3 5h14M3 10h14M3 15h14" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
     </Frame>
   );
 }
