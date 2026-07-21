@@ -11,6 +11,11 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Pdf from "react-native-pdf";
+import Reanimated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, Text } from "@/components/atoms";
@@ -44,6 +49,8 @@ import { useProtoTheme } from "@/theme/proto";
 
 type ViewMode = "page" | "reflow";
 
+const TITLE_SWAP = LinearTransition.duration(260);
+
 function savedPageFor(uri: string | undefined): number {
   if (!uri) return 1;
   const saved = useRecentsStore
@@ -62,6 +69,20 @@ export default function PdfViewerScreen() {
   const setApp = useAppStore((s) => s.set);
   const toggleBookmark = useAppStore((s) => s.toggleBookmark);
   const showToast = useToastStore((s) => s.showToast);
+
+  const [titleOpen, setTitleOpen] = useState(false);
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const toggleTitle = () => {
+    clearTimeout(titleTimer.current);
+    setTitleOpen((open) => {
+      if (open) return false;
+      titleTimer.current = setTimeout(() => setTitleOpen(false), 4000);
+      return true;
+    });
+  };
+  useEffect(() => () => clearTimeout(titleTimer.current), []);
 
   const focusOn = useFocusStore((s) => s.active);
   const startFocus = useFocusStore((s) => s.start);
@@ -510,59 +531,76 @@ export default function PdfViewerScreen() {
           <HeaderButton onPress={() => router.back()}>
             <IconBack color={t.ink} size={18} />
           </HeaderButton>
-          <Box flex={1}>
-            <Text numberOfLines={1} serif size={16} weight="600">
-              {name ?? "Document"}
-            </Text>
-            {chapter ? (
+          <Reanimated.View layout={TITLE_SWAP} style={{ flex: 1 }}>
+            <Tap onPress={toggleTitle} scale={0.99}>
               <Text
-                color={t.sub}
-                numberOfLines={1}
-                size={12}
-                style={{ marginTop: 2 }}
+                numberOfLines={titleOpen ? 4 : 1}
+                serif
+                size={16}
+                weight="600"
               >
-                {chapter.title}
+                {name ?? "Document"}
               </Text>
-            ) : null}
-          </Box>
-          <Box direction="row" gap={2}>
-            <HeaderButton
-              onPress={() => switchTo(mode === "reflow" ? "page" : "reflow")}
+              {chapter ? (
+                <Text
+                  color={t.sub}
+                  numberOfLines={titleOpen ? 2 : 1}
+                  size={12}
+                  style={{ marginTop: 2 }}
+                >
+                  {chapter.title}
+                </Text>
+              ) : null}
+            </Tap>
+          </Reanimated.View>
+          {titleOpen ? null : (
+            <Reanimated.View
+              entering={FadeIn.duration(180)}
+              exiting={FadeOut.duration(140)}
+              layout={TITLE_SWAP}
             >
-              <IconReflow
-                color={mode === "reflow" ? t.accent : t.ink}
-                size={18}
-              />
-            </HeaderButton>
-            <HeaderButton onPress={openSummary}>
-              <IconSpark color={t.accent} size={18} />
-            </HeaderButton>
-            <HeaderButton onPress={toggleFocus}>
-              <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
-            </HeaderButton>
-            <HeaderButton onPress={() => setSearchOpen(true)}>
-              <IconSearch color={t.ink} size={18} />
-            </HeaderButton>
-            <HeaderButton onPress={() => router.push("/notes")}>
-              <IconPencil color={t.ink} size={18} />
-            </HeaderButton>
-            <HeaderButton
-              onPress={() => {
-                toggleBookmark(page);
-                showToast(
-                  bookmarks.includes(page)
-                    ? "Bookmark removed"
-                    : `Page ${page} bookmarked`,
-                );
-              }}
-            >
-              <IconBookmark
-                color={bookmarks.includes(page) ? t.accent : t.ink}
-                fill={bookmarks.includes(page) ? t.accent : "none"}
-                size={18}
-              />
-            </HeaderButton>
-          </Box>
+              <Box direction="row" gap={2}>
+                <HeaderButton
+                  onPress={() =>
+                    switchTo(mode === "reflow" ? "page" : "reflow")
+                  }
+                >
+                  <IconReflow
+                    color={mode === "reflow" ? t.accent : t.ink}
+                    size={18}
+                  />
+                </HeaderButton>
+                <HeaderButton onPress={openSummary}>
+                  <IconSpark color={t.accent} size={18} />
+                </HeaderButton>
+                <HeaderButton onPress={toggleFocus}>
+                  <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
+                </HeaderButton>
+                <HeaderButton onPress={() => setSearchOpen(true)}>
+                  <IconSearch color={t.ink} size={18} />
+                </HeaderButton>
+                <HeaderButton onPress={() => router.push("/notes")}>
+                  <IconPencil color={t.ink} size={18} />
+                </HeaderButton>
+                <HeaderButton
+                  onPress={() => {
+                    toggleBookmark(page);
+                    showToast(
+                      bookmarks.includes(page)
+                        ? "Bookmark removed"
+                        : `Page ${page} bookmarked`,
+                    );
+                  }}
+                >
+                  <IconBookmark
+                    color={bookmarks.includes(page) ? t.accent : t.ink}
+                    fill={bookmarks.includes(page) ? t.accent : "none"}
+                    size={18}
+                  />
+                </HeaderButton>
+              </Box>
+            </Reanimated.View>
+          )}
         </Box>
       </Animated.View>
 
