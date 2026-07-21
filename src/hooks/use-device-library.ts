@@ -131,9 +131,9 @@ async function scanTree(
       // uri check above already established this is a file, not a Directory
       const file = entry as File;
       const ext = file.name.match(DOC_EXT_RE)?.[1];
-      if (__DEV__) {
-        console.log("file:", file.name, "| ext:", ext ?? "none");
-      }
+      // if (__DEV__) {
+      //   console.log("file:", file.name, "| ext:", ext ?? "none");
+      // }
       if (!ext) continue;
 
       count += 1;
@@ -341,3 +341,5 @@ export function formatWhen(ms: number | null): string {
     day: "numeric",
   });
 }
+
+export type DeviceLibrary = ReturnType<typeof useDeviceLibrary>;
