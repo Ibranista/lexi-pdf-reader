@@ -57,6 +57,7 @@
     "i18next": "^26.1.0",
     "iconsax-react-nativejs": "^0.0.8",
     "liveface": "^1.2.0",
+    "mammoth": "^1.12.0",
     "nativewind": "^4.1.23",
     "react": "19.2.3",
     "react-circle-flags": "^0.0.23",

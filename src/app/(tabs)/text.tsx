@@ -1,9 +1,11 @@
 import { File } from "expo-file-system";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import mammoth from "mammoth";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   ScrollView,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -14,8 +16,7 @@ import { Box, Text } from "@/components/atoms";
 import { HeaderButton, IconBack } from "@/components/lexi-components";
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
-
-const PROGRESS_STEPS = 100;
+import { textPageReadingPlan } from "@/utils/reading-progress";
 
 /**
  * A lightweight reader for documents that already contain plain UTF-8 text.
@@ -37,12 +38,41 @@ export default function TextViewerScreen() {
   const savedProgress = useRecentsStore
     .getState()
     .recents.find((doc) => doc.uri === uri)?.page;
+  const readingPlan = useMemo(
+    () => (contents === null ? [] : textPageReadingPlan(contents)),
+    [contents],
+  );
+  const visit = useRef({ page: savedProgress ?? 1, startedAt: 0 });
+  const appIsActive = useRef(AppState.currentState === "active");
+
+  const recordCurrentReadingTime = useCallback(() => {
+    if (!uri) return;
+    const now = Date.now();
+    if (!visit.current.startedAt) {
+      visit.current.startedAt = now;
+      return;
+    }
+    const elapsed = now - visit.current.startedAt;
+    if (elapsed > 0) {
+      useRecentsStore
+        .getState()
+        .recordReadingTime(uri, visit.current.page, elapsed);
+    }
+    visit.current.startedAt = now;
+  }, [uri]);
 
   useEffect(() => {
     if (!uri) return;
     let active = true;
-    new File(uri)
-      .text()
+    (async () => {
+      const contents =
+        ext === "DOCX"
+          ? (await mammoth.extractRawText({
+              arrayBuffer: await new File(uri).arrayBuffer(),
+            })).value
+          : await new File(uri).text();
+      return contents.replace(/^\uFEFF/, "");
+    })()
       .then((text) => {
         if (!active) return;
         setError(null);
@@ -54,7 +84,11 @@ export default function TextViewerScreen() {
     return () => {
       active = false;
     };
-  }, [uri]);
+  }, [uri, ext]);
+
+  useEffect(() => {
+    visit.current = { page: savedProgress ?? 1, startedAt: Date.now() };
+  }, [uri, savedProgress]);
 
   useEffect(() => {
     if (!uri) return;
@@ -64,15 +98,37 @@ export default function TextViewerScreen() {
   }, [uri, name, ext]);
 
   useEffect(() => {
-    if (!contentHeight || !viewportHeight || !savedProgress) return;
+    if (!contentHeight || !viewportHeight || !savedProgress || !readingPlan.length)
+      return;
     const maxOffset = Math.max(0, contentHeight - viewportHeight);
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
-        y: maxOffset * ((savedProgress - 1) / (PROGRESS_STEPS - 1)),
+        y: maxOffset * ((savedProgress - 1) / Math.max(1, readingPlan.length - 1)),
         animated: false,
       });
     });
-  }, [contentHeight, viewportHeight, savedProgress]);
+  }, [contentHeight, viewportHeight, savedProgress, readingPlan.length]);
+
+  useEffect(() => {
+    if (!uri || !readingPlan.length) return;
+    useRecentsStore.getState().setReadingPlan(uri, readingPlan);
+  }, [uri, readingPlan]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        appIsActive.current = true;
+        visit.current.startedAt = Date.now();
+      } else if (appIsActive.current) {
+        recordCurrentReadingTime();
+        appIsActive.current = false;
+      }
+    });
+    return () => {
+      subscription.remove();
+      if (appIsActive.current) recordCurrentReadingTime();
+    };
+  }, [recordCurrentReadingTime]);
 
   const recordProgress = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -82,13 +138,20 @@ export default function TextViewerScreen() {
       const ratio = maxOffset > 0 ? contentOffset.y / maxOffset : 0;
       const position = Math.max(
         1,
-        Math.min(PROGRESS_STEPS, Math.round(ratio * (PROGRESS_STEPS - 1)) + 1),
+        Math.min(
+          Math.max(1, readingPlan.length),
+          Math.round(ratio * Math.max(0, readingPlan.length - 1)) + 1,
+        ),
       );
+      if (position !== visit.current.page) {
+        recordCurrentReadingTime();
+        visit.current = { page: position, startedAt: Date.now() };
+      }
       useRecentsStore
         .getState()
-        .recordProgress(uri, position, PROGRESS_STEPS);
+        .recordProgress(uri, position, Math.max(1, readingPlan.length));
     },
-    [uri],
+    [uri, readingPlan.length, recordCurrentReadingTime],
   );
 
   if (!uri) {

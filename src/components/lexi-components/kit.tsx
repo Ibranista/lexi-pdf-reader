@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import type { GestureResponderEvent, StyleProp, ViewStyle } from "react-native";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Animated, Easing, Pressable } from "react-native";
+import { Animated, Easing, Pressable, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
   runOnJS,
@@ -233,7 +233,15 @@ export function Segmented<K extends string>({
   const t = useProtoTheme();
   const activeBg = t.dark ? "#2B2620" : "#FFFFFF";
   return (
-    <Box bg={t.chip} direction="row" padding={3} rounded={12}>
+    <View
+      style={{
+        backgroundColor: t.chip,
+        borderRadius: 14,
+        flexDirection: "row",
+        overflow: "hidden",
+        padding: 3,
+      }}
+    >
       {items.map((item) => {
         const on = item.key === value;
         return (
@@ -242,23 +250,26 @@ export function Segmented<K extends string>({
             onPress={() => onChange(item.key)}
             style={{ flex: item.flex ?? 1 }}
           >
-            <Box
-              align="center"
-              bg={on ? activeBg : "transparent"}
-              justify="center"
-              paddingY={9}
-              rounded={9}
-              style={
+            <View
+              style={[
+                {
+                  alignItems: "center",
+                  borderRadius: 10,
+                  justifyContent: "center",
+                  overflow: "hidden",
+                  paddingVertical: 9,
+                },
                 on
                   ? {
+                      backgroundColor: activeBg,
                       shadowColor: "#14100C",
                       shadowOffset: { width: 0, height: 1 },
                       shadowOpacity: 0.12,
                       shadowRadius: 2,
                       elevation: 2,
                     }
-                  : undefined
-              }
+                  : undefined,
+              ]}
             >
               <Text
                 color={on ? t.ink : t.sub}
@@ -273,11 +284,11 @@ export function Segmented<K extends string>({
               >
                 {item.label}
               </Text>
-            </Box>
+            </View>
           </Tap>
         );
       })}
-    </Box>
+    </View>
   );
 }
 

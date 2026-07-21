@@ -16,6 +16,10 @@ export interface RecentDoc {
   page: number;
   /** 0 until the document reports its length. */
   pageCount: number;
+  /** Expected reading time for every page, based on its word count. */
+  readingPlanMs?: number[];
+  /** Accumulated active reading time, keyed by 1-based page number. */
+  readingTimeMsByPage?: Record<string, number>;
 }
 
 interface RecentsState {
@@ -24,6 +28,8 @@ interface RecentsState {
   recordOpen: (doc: { uri: string; name: string; ext: string }) => void;
   /** Reading position, written as the reader moves through the document. */
   recordProgress: (uri: string, page: number, pageCount?: number) => void;
+  setReadingPlan: (uri: string, pageTimesMs: number[]) => void;
+  recordReadingTime: (uri: string, page: number, elapsedMs: number) => void;
   remove: (uri: string) => void;
   clear: () => void;
 }
@@ -73,6 +79,30 @@ export const useRecentsStore = create<RecentsState>()(
           };
         }),
 
+      setReadingPlan: (uri, pageTimesMs) =>
+        set((s) => ({
+          recents: s.recents.map((r) =>
+            r.uri === uri ? { ...r, readingPlanMs: pageTimesMs } : r,
+          ),
+        })),
+
+      recordReadingTime: (uri, page, elapsedMs) => {
+        if (elapsedMs <= 0) return;
+        set((s) => ({
+          recents: s.recents.map((r) => {
+            if (r.uri !== uri) return r;
+            const key = String(page);
+            return {
+              ...r,
+              readingTimeMsByPage: {
+                ...r.readingTimeMsByPage,
+                [key]: (r.readingTimeMsByPage?.[key] ?? 0) + elapsedMs,
+              },
+            };
+          }),
+        }));
+      },
+
       remove: (uri) =>
         set((s) => ({ recents: s.recents.filter((r) => r.uri !== uri) })),
 
@@ -87,6 +117,16 @@ export const useRecentsStore = create<RecentsState>()(
 
 /** Percent read, 0 when the document length isn't known yet. */
 export function progressPct(doc: RecentDoc): number {
+  if (doc.readingPlanMs?.length) {
+    const expected = doc.readingPlanMs.reduce((sum, ms) => sum + ms, 0);
+    if (!expected) return 0;
+    const elapsed = doc.readingPlanMs.reduce(
+      (sum, pageMs, index) =>
+        sum + Math.min(pageMs, doc.readingTimeMsByPage?.[String(index + 1)] ?? 0),
+      0,
+    );
+    return Math.min(100, Math.round((elapsed / expected) * 100));
+  }
   if (!doc.pageCount) return 0;
   return Math.min(100, Math.round((doc.page / doc.pageCount) * 100));
 }

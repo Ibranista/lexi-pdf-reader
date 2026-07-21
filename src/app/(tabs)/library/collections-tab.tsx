@@ -104,20 +104,20 @@ export function CollectionsTab({
 
   return (
     <>
-      <Box direction="row" style={{ flexWrap: "wrap", gap: 12 }}>
+      <Box direction="row" gap={8}>
         {COLLECTION_META.map(({ emoji, id }) => (
           <Tap
             key={id}
             onPress={() => openCollection(id)}
             scale={0.97}
-            style={{ width: "47%", flexGrow: 1 }}
+            style={{ flex: 1, minWidth: 0 }}
           >
-            <Card gap={8}>
-              <Text size={22}>{emoji}</Text>
-              <Text size={14} weight="600">
+            <Card gap={5} padding={10} rounded={14}>
+              <Text size={20}>{emoji}</Text>
+              <Text lh={16} numberOfLines={2} size={12} weight="600">
                 {tr(`library.collections.names.${id}`)}
               </Text>
-              <Text color={t.sub} size={12}>
+              <Text color={t.sub} numberOfLines={1} size={10}>
                 {tr("library.collections.docCount", {
                   count: (items[id] ?? []).length,
                 })}

@@ -1055,6 +1055,7 @@ function buildHtml(
     }
     content.appendChild(section);
     page.cleanup();
+    return (tc.items || []).map(function(item){ return item.str || ''; }).join(' ').trim().split(/\s+/).filter(Boolean).length;
   }
 
   /* ---- outline ----
@@ -1169,8 +1170,9 @@ function buildHtml(
     var firstPaint = false;
 
     pdfjsLib.getDocument({ data: b64ToBytes('${b64}') }).promise.then(async function(pdf){
+      var wordCounts = [];
       for (var p = 1; p <= pdf.numPages; p++){
-        try { await processPage(pdf, p, content); }
+        try { wordCounts[p - 1] = await processPage(pdf, p, content); }
         catch (e) { /* skip unreadable page */ }
         if (!firstPaint && content.childNodes.length) {
           firstPaint = true;
@@ -1182,7 +1184,7 @@ function buildHtml(
         post({ type: 'progress', page: p, total: pdf.numPages });
         if (p === INITIAL_PAGE) window.scrollToPage(INITIAL_PAGE);
       }
-      post({ type: 'done', pages: pdf.numPages });
+      post({ type: 'done', pages: pdf.numPages, wordCounts: wordCounts });
       if (INITIAL_PAGE > 1) window.scrollToPage(INITIAL_PAGE);
     }).catch(function(err){
       document.getElementById('status').textContent = 'Could not extract text from this PDF.';
@@ -1282,6 +1284,8 @@ interface Props {
   onIndexed?: () => void;
   /** The document's outline, embedded or parsed off a contents page. */
   onOutline?: (entries: PdfOutlineEntry[]) => void;
+  /** Word counts extracted per PDF page, used for time-based progress. */
+  onWordCounts?: (counts: number[]) => void;
 }
 
 export function PdfReflowView({
@@ -1298,6 +1302,7 @@ export function PdfReflowView({
   onSingleTap,
   onIndexed,
   onOutline,
+  onWordCounts,
 }: Props) {
   const t = useProtoTheme();
   const textSize = useAppStore((s) => s.textSize);
@@ -1458,6 +1463,7 @@ export function PdfReflowView({
                 total?: number;
                 results?: PdfSearchResult[];
                 entries?: PdfOutlineEntry[];
+                wordCounts?: number[];
               };
               if (msg.type === "firstpaint") setStatus("ready");
               else if (msg.type === "page" && msg.page)
@@ -1470,6 +1476,7 @@ export function PdfReflowView({
                 onOutline?.(msg.entries);
               else if (msg.type === "done") {
                 onIndexed?.();
+                onWordCounts?.(msg.wordCounts ?? []);
                 if (queryRef.current) setIndexSeq((n) => n + 1);
               } else if (msg.type === "progress") {
                 // refresh an in-flight search every few pages, not every page
