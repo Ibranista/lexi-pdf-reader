@@ -19,13 +19,15 @@ import {
 } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
-import { PdfThumb } from "./shared";
+import { PdfThumb, SwipeToFavorite, type OpenCollections } from "./shared";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function RecentTab({
+  openCollections,
   openDoc,
 }: {
+  openCollections: OpenCollections;
   openDoc: (doc: RecentEntry) => void;
 }) {
   const t = useProtoTheme();
@@ -69,46 +71,59 @@ export function RecentTab({
   const row = (doc: RecentEntry) => {
     const docPct = progressPct(doc);
     return (
-      <Tap key={doc.uri} onPress={() => openDoc(doc)}>
-        <Box
-          align="center"
-          direction="row"
-          gap={14}
-          paddingY={12}
-          style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+      <SwipeToFavorite doc={doc} key={doc.uri}>
+        <Tap
+          onLongPress={() => openCollections(doc)}
+          onPress={() => openDoc(doc)}
         >
-          <PdfThumb doc={doc} rounded={6} style={{ width: 44, height: 58 }} />
-          <Box flex={1}>
-            <Text numberOfLines={1} size={14} weight="600">
-              {doc.name}
-            </Text>
-            <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
-              {doc.pageCount
-                ? tr("library.recent.pagesWhen", {
-                    total: doc.pageCount,
-                    when: relativeWhen(doc.openedAt),
-                  })
-                : relativeWhen(doc.openedAt)}
-            </Text>
-          </Box>
           <Box
-            bg={docPct ? t.accentSoft : t.chip}
-            paddingX={10}
-            paddingY={4}
-            rounded={20}
+            align="center"
+            direction="row"
+            gap={14}
+            paddingY={12}
+            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
           >
-            <Text color={docPct ? t.accentText : t.sub} size={11} weight="500">
-              {docPct ? `${docPct}%` : tr("library.recent.badgeNew")}
-            </Text>
+            <PdfThumb doc={doc} rounded={6} style={{ width: 44, height: 58 }} />
+            <Box flex={1}>
+              <Text numberOfLines={1} size={14} weight="600">
+                {doc.name}
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
+                {doc.pageCount
+                  ? tr("library.recent.pagesWhen", {
+                      total: doc.pageCount,
+                      when: relativeWhen(doc.openedAt),
+                    })
+                  : relativeWhen(doc.openedAt)}
+              </Text>
+            </Box>
+            <Box
+              bg={docPct ? t.accentSoft : t.chip}
+              paddingX={10}
+              paddingY={4}
+              rounded={20}
+            >
+              <Text
+                color={docPct ? t.accentText : t.sub}
+                size={11}
+                weight="500"
+              >
+                {docPct ? `${docPct}%` : tr("library.recent.badgeNew")}
+              </Text>
+            </Box>
           </Box>
-        </Box>
-      </Tap>
+        </Tap>
+      </SwipeToFavorite>
     );
   };
 
   return (
     <>
-      <Tap onPress={() => openDoc(current)} scale={0.985}>
+      <Tap
+        onLongPress={() => openCollections(current)}
+        onPress={() => openDoc(current)}
+        scale={0.985}
+      >
         <Card rounded={18}>
           <Box align="center" direction="row" gap={16}>
             <PdfThumb

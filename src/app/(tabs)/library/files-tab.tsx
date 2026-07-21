@@ -19,17 +19,26 @@ import {
 import { useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
-import { docMeta, PdfThumb, SortBar, type ScrollerProps } from "./shared";
+import {
+  docMeta,
+  DocRow,
+  SortBar,
+  SwipeToFavorite,
+  type OpenCollections,
+  type ScrollerProps,
+} from "./shared";
 
 export function FilesTab({
   contentPad,
   lib,
+  openCollections,
   openDoc,
   openUri,
   refreshControl,
   setOpenUri,
 }: ScrollerProps & {
   lib: DeviceLibrary;
+  openCollections: OpenCollections;
   openDoc: (doc: DeviceDoc) => void;
   openUri: string | null;
   setOpenUri: (uri: string | null) => void;
@@ -93,30 +102,14 @@ export function FilesTab({
         refreshControl={refreshControl}
         style={{ flex: 1 }}
         renderItem={({ item }) => (
-          <Tap onPress={() => openDoc(item)}>
-            <Box
-              align="center"
-              direction="row"
-              gap={14}
-              paddingY={12}
-              style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
-            >
-              <PdfThumb
-                doc={item}
-                rounded={8}
-                style={{ width: 44, height: 58 }}
-              />
-              <Box flex={1}>
-                <Text numberOfLines={1} size={14} weight="600">
-                  {item.name}
-                </Text>
-                <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
-                  {docMeta(item.size, item.modifiedAt)}
-                </Text>
-              </Box>
-              <IconChevron color={t.faint} size={16} />
-            </Box>
-          </Tap>
+          <SwipeToFavorite doc={item}>
+            <DocRow
+              doc={item}
+              meta={docMeta(item.size, item.modifiedAt)}
+              onLongPress={() => openCollections(item)}
+              onPress={() => openDoc(item)}
+            />
+          </SwipeToFavorite>
         )}
       />
     );

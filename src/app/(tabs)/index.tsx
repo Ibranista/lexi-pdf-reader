@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,12 +18,15 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { CollectionPicker } from "@/components/library/CollectionPicker";
+import type { CollectionId } from "@/constants/collections";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
+import type { FilableDoc } from "@/stores/collections-store";
 import { useProtoTheme } from "@/theme/proto";
 
 import { AllTab as AllLibraryTab } from "./library/all-tab";
-import { CollectionsTab as CollectionsLibraryTab } from "./library/collections-tab";
+import { CollectionsTab } from "./library/collections-tab";
 import { FilesTab as FilesLibraryTab } from "./library/files-tab";
 import { RecentTab as RecentLibraryTab } from "./library/recent-tab";
 import { SearchResults as SearchLibraryResults } from "./library/search-results";
@@ -43,6 +47,10 @@ export default function LibraryScreen() {
   const { access, ensureAccess } = lib;
   // lifted out of FilesTab so the hardware back button can unwind it
   const [openFolderUri, setOpenFolderUri] = useState<string | null>(null);
+  // likewise for the collection being drilled into
+  const [openShelf, setOpenShelf] = useState<CollectionId | null>(null);
+  // the document whose "add to collection" sheet is open, if any
+  const [filing, setFiling] = useState<FilableDoc | null>(null);
 
   // pull-to-refresh: re-scan the device for documents. `refreshing` is
   // derived rather than stored, so the spinner clears itself when the scan
@@ -65,6 +73,10 @@ export default function LibraryScreen() {
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       const onBack = () => {
+        if (filing) {
+          setFiling(null);
+          return true;
+        }
         if (searching) {
           setSearching(false);
           setQuery("");
@@ -72,6 +84,10 @@ export default function LibraryScreen() {
         }
         if (tab === "files" && openFolderUri) {
           setOpenFolderUri(null);
+          return true;
+        }
+        if (tab === "coll" && openShelf) {
+          setOpenShelf(null);
           return true;
         }
         if (exitArmed.current) return false; // second press — let it exit
@@ -89,7 +105,7 @@ export default function LibraryScreen() {
         clearTimeout(timer);
         exitArmed.current = false;
       };
-    }, [searching, tab, openFolderUri, showToast, tr]),
+    }, [filing, searching, tab, openFolderUri, openShelf, showToast, tr]),
   );
 
   // ask for device-wide storage access once, on first open of the library
@@ -125,6 +141,11 @@ export default function LibraryScreen() {
   };
   const openDemo = (name: string) =>
     showToast(tr("library.demoToast", { name }));
+  // long-press anywhere a document is listed: file it into a collection
+  const openCollections = (doc: FilableDoc) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setFiling(doc);
+  };
 
   // Shared by every tab's scroller, whichever component owns it. The refresh
   // control is built per render rather than held in a variable — only one
@@ -261,6 +282,7 @@ export default function LibraryScreen() {
         <AllLibraryTab
           contentPad={contentPad}
           lib={lib}
+          openCollections={openCollections}
           openDoc={openDoc}
           refreshControl={renderRefresh()}
         />
@@ -268,6 +290,7 @@ export default function LibraryScreen() {
         <FilesLibraryTab
           contentPad={contentPad}
           lib={lib}
+          openCollections={openCollections}
           openDoc={openDoc}
           openUri={openFolderUri}
           refreshControl={renderRefresh()}
@@ -286,11 +309,18 @@ export default function LibraryScreen() {
               query={query}
             />
           ) : tab === "recent" ? (
-            <RecentLibraryTab openDoc={openDoc} />
+            <RecentLibraryTab
+              openCollections={openCollections}
+              openDoc={openDoc}
+            />
           ) : tab === "coll" ? (
-            <CollectionsLibraryTab
+            <CollectionsTab
+              openCollection={setOpenShelf}
+              openCollections={openCollections}
               openDemo={openDemo}
+              openDoc={openDoc}
               openReader={openReader}
+              shelf={openShelf}
             />
           ) : (
             <VocabLibraryTab openReader={openReader} />
@@ -322,6 +352,10 @@ export default function LibraryScreen() {
           <IconPlus color={t.onAccent} size={22} />
         </Box>
       </Tap>
+
+      {filing ? (
+        <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
+      ) : null}
     </ProtoScreen>
   );
 }

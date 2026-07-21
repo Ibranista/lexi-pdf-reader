@@ -25,6 +25,8 @@ export interface LibrarySort {
   key: SortKey;
   dir: SortDir;
 }
+/** Grid of covers, or a swipeable list of rows. */
+export type LibraryView = 'grid' | 'list';
 
 export interface VocabEntry {
   word: string;
@@ -125,6 +127,8 @@ interface AppState {
   storageAsked: boolean;
   /** How the All and Files tabs order documents and folders. */
   librarySort: LibrarySort;
+  /** Whether documents render as a cover grid or as rows. */
+  libraryView: LibraryView;
 
   setPage: (page: number) => void;
   toggleBookmark: (page: number) => void;
@@ -172,6 +176,7 @@ export const useAppStore = create<AppState>()(
       storageAsked: false,
       // newest first — matches how the scan already presents documents
       librarySort: { key: 'date', dir: 'desc' },
+      libraryView: 'grid',
 
       setPage: (page) => set({ page }),
 

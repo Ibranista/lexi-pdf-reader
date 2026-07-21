@@ -28,8 +28,10 @@ import {
   IconReflow,
   IconSearch,
   IconSpark,
+  IconStar,
   Tap,
 } from "@/components/lexi-components";
+import { CollectionPicker } from "@/components/library/CollectionPicker";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import {
   FocusChrome,
@@ -43,6 +45,7 @@ import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -164,6 +167,12 @@ export default function PdfViewerScreen() {
     // markerFade is a stable Animated.Value — only the marker drives this
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMarker]);
+  // Filing the open document into a collection, without going back to the
+  // library to long-press it there.
+  const [filingOpen, setFilingOpen] = useState(false);
+  const filedSomewhere = useCollectionsStore((s) =>
+    Object.values(s.items).some((shelf) => shelf.some((d) => d.uri === uri)),
+  );
   const [lexiOpen, setLexiOpen] = useState(false);
   const [summary, setSummary] = useState<"closed" | "done" | "loading">(
     "closed",
@@ -661,6 +670,13 @@ export default function PdfViewerScreen() {
                 <HeaderButton onPress={() => router.push("/notes")}>
                   <IconPencil color={t.ink} size={18} />
                 </HeaderButton>
+                <HeaderButton onPress={() => setFilingOpen(true)}>
+                  <IconStar
+                    color={filedSomewhere ? t.accent : t.ink}
+                    fill={filedSomewhere ? t.accent : "none"}
+                    size={18}
+                  />
+                </HeaderButton>
                 <HeaderButton
                   onPress={() => {
                     toggleBookmark(page);
@@ -834,6 +850,12 @@ export default function PdfViewerScreen() {
       ) : null}
       {lexiOpen && aiOn ? (
         <LexiSheet onClose={() => setLexiOpen(false)} />
+      ) : null}
+      {filingOpen ? (
+        <CollectionPicker
+          doc={{ uri, name: name ?? "Document", ext: "PDF" }}
+          onClose={() => setFilingOpen(false)}
+        />
       ) : null}
     </Box>
   );
