@@ -369,18 +369,16 @@ export default function ReaderScreen() {
         />
       ) : null}
 
-      {!overlayOpen && !focusMode ? (
+      {!overlayOpen && !focusMode && app.aiOn ? (
         <LexiBubble
           onPress={() => {
-            if (!app.aiOn) {
-              showToast("AI is off — enable it in Settings");
-              return;
-            }
             setLexiOpen(true);
           }}
         />
       ) : null}
-      {lexiOpen ? <LexiSheet onClose={() => setLexiOpen(false)} /> : null}
+      {lexiOpen && app.aiOn ? (
+        <LexiSheet onClose={() => setLexiOpen(false)} />
+      ) : null}
 
       {toc ? (
         <TocDrawer onClose={() => setToc(false)} onGoPage={goPage} />
