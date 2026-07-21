@@ -38,6 +38,18 @@ type ViewMode = "page" | "reflow";
 const MIN_TEXT = 13;
 const MAX_TEXT = 23;
 
+/**
+ * Smart zoom is a multiplier on the reading size, so it wants a ratio scale:
+ * 50% is as far below neutral as 200% is above it. On a log track that puts
+ * 100% exactly halfway, marked with a detent rather than a label — the live
+ * readout above already says the number, and the mark is what you actually
+ * aim at. The old 100–200% range couldn't express "smaller than normal" at
+ * all, which is why the readout looked stuck at 100%.
+ */
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 200;
+const ZOOM_TICKS = [100];
+
 const THEME_ITEMS: SegmentItem<ThemeMode>[] = [
   { key: "light", label: "Light" },
   { key: "dark", label: "Dark" },
@@ -264,12 +276,22 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           </Box>
         </Box>
         <ProtoSlider
-          max={200}
-          min={100}
+          curve="log"
+          max={ZOOM_MAX}
+          min={ZOOM_MIN}
           onChange={(v) => app.set({ zoom: v })}
           step={5}
+          ticks={ZOOM_TICKS}
           value={app.zoom}
         />
+        <Box direction="row" justify="between" paddingTop={4}>
+          <Text color={t.faint} size={11}>
+            {ZOOM_MIN}%
+          </Text>
+          <Text color={t.faint} size={11}>
+            {ZOOM_MAX}%
+          </Text>
+        </Box>
 
         <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>
