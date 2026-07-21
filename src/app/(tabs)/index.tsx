@@ -9,7 +9,6 @@ import { Box, TextInput } from "@/components/atoms";
 import {
   HeaderButton,
   IconBrain,
-  IconPlus,
   IconSearch,
   IconSliders,
   IconSun,
@@ -104,11 +103,6 @@ export default function LibraryScreen() {
     }
   }, [storageAsked, access, ensureAccess]);
 
-  const importDocuments = async () => {
-    const count = await lib.importDocuments();
-    if (count !== null) showToast(tr("library.importedToast", { count }));
-  };
-
   const TAB_ITEMS = [
     { key: "recent" as const, label: tr("tabItems.recent") },
     { key: "all" as const, label: tr("tabItems.all") },
@@ -123,7 +117,7 @@ export default function LibraryScreen() {
       router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
       return;
     }
-    if (doc.ext === "TXT" || doc.ext === "MD") {
+    if (doc.ext === "TXT" || doc.ext === "MD" || doc.ext === "DOCX") {
       router.push({
         pathname: "/text",
         params: { uri: doc.uri, name: doc.name, ext: doc.ext },
@@ -310,30 +304,6 @@ export default function LibraryScreen() {
           )}
         </ScrollView>
       )}
-
-      <Tap
-        onPress={importDocuments}
-        scale={0.92}
-        style={{ position: "absolute", right: 20, bottom: 26 + insets.bottom }}
-      >
-        <Box
-          align="center"
-          bg={t.accent}
-          height={56}
-          justify="center"
-          rounded={18}
-          style={{
-            shadowColor: "#201B15",
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.35,
-            shadowRadius: 24,
-            elevation: 8,
-          }}
-          width={56}
-        >
-          <IconPlus color={t.onAccent} size={22} />
-        </Box>
-      </Tap>
 
       {filing ? (
         <CollectionPicker doc={filing} onClose={() => setFiling(null)} />

@@ -1,9 +1,10 @@
 import * as NavigationBar from "expo-navigation-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Animated,
   Dimensions,
   Easing,
@@ -49,6 +50,7 @@ import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
+import { expectedReadingMs } from "@/utils/reading-progress";
 
 type ViewMode = "page" | "reflow";
 
@@ -94,6 +96,8 @@ export default function PdfViewerScreen() {
   const [mode, setMode] = useState<ViewMode>("page");
   const [page, setPage] = useState(() => savedPageFor(uri));
   const [pageCount, setPageCount] = useState(0);
+  const readingVisit = useRef({ uri, page: savedPageFor(uri), startedAt: 0 });
+  const appIsActive = useRef(AppState.currentState === "active");
   const [error, setError] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -120,6 +124,46 @@ export default function PdfViewerScreen() {
     boxes: { x0: number; y0: number; x1: number; y1: number }[];
     seq: number;
   } | null>(null);
+
+  const recordCurrentReadingTime = useCallback(() => {
+    const current = readingVisit.current;
+    if (!current.uri) return;
+    const now = Date.now();
+    if (!current.startedAt) {
+      current.startedAt = now;
+      return;
+    }
+    const elapsed = now - current.startedAt;
+    if (elapsed > 0) {
+      useRecentsStore
+        .getState()
+        .recordReadingTime(current.uri, current.page, elapsed);
+    }
+    readingVisit.current.startedAt = now;
+  }, []);
+
+  useEffect(() => {
+    if (readingVisit.current.uri === uri && readingVisit.current.page !== page) {
+      recordCurrentReadingTime();
+    }
+    readingVisit.current = { uri, page, startedAt: Date.now() };
+  }, [uri, page, recordCurrentReadingTime]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        appIsActive.current = true;
+        readingVisit.current.startedAt = Date.now();
+      } else if (appIsActive.current) {
+        recordCurrentReadingTime();
+        appIsActive.current = false;
+      }
+    });
+    return () => {
+      subscription.remove();
+      if (appIsActive.current) recordCurrentReadingTime();
+    };
+  }, [recordCurrentReadingTime]);
   const [markerFade] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (!pageMarker) return;
@@ -491,6 +535,12 @@ export default function PdfViewerScreen() {
               }}
               onIndexed={() => setIndexed(true)}
               onOutline={setReflowOutline}
+              onWordCounts={(counts) => {
+                useRecentsStore.getState().setReadingPlan(
+                  uri,
+                  counts.map((count) => expectedReadingMs(count || 275)),
+                );
+              }}
               onSearchResults={setSearchResults}
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
