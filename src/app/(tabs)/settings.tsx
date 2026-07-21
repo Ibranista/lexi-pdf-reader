@@ -16,11 +16,11 @@ import {
   IconType,
   ProtoScreen,
   ProtoSlider,
-  Text,
   ScreenHeader,
   SectionLabel,
   Segmented,
   Tap,
+  Text,
   Toggle,
 } from "@/components/lexi-components";
 import { COLLECTIONS } from "@/constants/library";

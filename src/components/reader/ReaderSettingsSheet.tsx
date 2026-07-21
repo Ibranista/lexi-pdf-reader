@@ -101,7 +101,12 @@ function SubRow({
   const t = useProtoTheme();
   return (
     <Box align="center" direction="row" gap={12} paddingLeft={14} paddingY={8}>
-      <Box bg={t.calmLine} rounded={2} style={{ alignSelf: "stretch" }} width={3} />
+      <Box
+        bg={t.calmLine}
+        rounded={2}
+        style={{ alignSelf: "stretch" }}
+        width={3}
+      />
       <Box flex={1}>
         <Text size={13} weight="600">
           {title}
