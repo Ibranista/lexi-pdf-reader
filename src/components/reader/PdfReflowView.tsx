@@ -99,7 +99,20 @@ function buildHtml(
     height: ${topInset + 16}px;
     transition: height 380ms cubic-bezier(0.33, 0.01, 0.2, 1);
   }
-  section { scroll-margin-top: 12px; }
+  /* This is what makes pinching drag. --fs lives on :root, so every change
+     invalidates layout for every paragraph in the book at once — a 300-page
+     PDF is tens of thousands of them, re-wrapped on every frame of the
+     gesture. content-visibility lets the engine skip layout entirely for
+     sections that aren't near the viewport, so a pinch only re-wraps what you
+     can actually see. The "auto" in contain-intrinsic-size makes a section
+     remember its real height once measured, so the scrollbar settles instead
+     of drifting as you move through the document.
+     (No-op on WebKit before iOS 18 — degrades to today's behaviour.) */
+  section {
+    scroll-margin-top: 12px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 1200px;
+  }
   #content p {
     font-size: var(--fs);
     line-height: var(--lh);
@@ -107,10 +120,18 @@ function buildHtml(
     word-break: break-word;
     overflow-wrap: break-word;
   }
+  /* Each figure carries an inline width — its size on the page, not its pixel
+     count — so a small mark keeps its size instead of being blown up to the
+     column and turning to mush. Height stays auto and both caps only shrink;
+     for a replaced element that means the ratio is held on the way down, so a
+     figure taller than the screen loses width to match rather than squashing.
+     Setting width:auto here would defeat all of it: author styles outrank the
+     size attribute, and the figure would resolve to its bitmap width. */
   #content img {
     display: block;
-    max-width: 100%;
     height: auto;
+    max-width: 100%;
+    max-height: 78vh;
     margin: 1.2em auto;
     border-radius: 4px;
   }
@@ -159,7 +180,12 @@ function buildHtml(
   var BASE_FS = ${s.baseFs};
   var ZOOM_FS = ${s.zoomedFs};
   var INITIAL_PAGE = ${initialPage};
-  var RENDER_SCALE = 1.0;
+  /* Geometry (paragraph spans, search boxes) is measured at 1x — those are all
+     ratios, so density buys nothing. Figures are a different story: cropping
+     them out of a 1x raster and then letting CSS stretch them to the column
+     lands them at roughly a third of the screen's real pixels. Pages carrying
+     images rasterize at device density instead. */
+  var IMG_SCALE = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
   var DARK_BG = ${isDark(s.bg) ? "true" : "false"};
   var zoomed = false;
 
@@ -336,18 +362,28 @@ function buildHtml(
   var focusOn = false;
   var litEl = null;
   function updateSpotlight(){
-    if (!focusOn) return;
-    var blocks = document.querySelectorAll('#content p, #content img');
-    if (!blocks.length) return;
+    if (!focusOn || (pinch && pinch.active)) return;
+    // Measure per section, not per paragraph: the old sweep took a rect off
+    // every block in the document on every scroll frame, which in a long PDF
+    // is tens of thousands of reads to find one winner that was always within
+    // a screen of the beam. Sections are in document order, so we can walk to
+    // the viewport and stop at the far edge.
+    var secs = document.querySelectorAll('#content section');
     var beam = window.innerHeight * 0.45;
     var best = null, bestD = Infinity;
-    for (var i = 0; i < blocks.length; i++){
-      var r = blocks[i].getBoundingClientRect();
-      if (r.bottom < 0 || r.top > window.innerHeight) continue;  // off-screen
-      var d = (r.top <= beam && r.bottom >= beam)
-        ? 0
-        : Math.min(Math.abs(r.top - beam), Math.abs(r.bottom - beam));
-      if (d < bestD) { bestD = d; best = blocks[i]; }
+    for (var i = 0; i < secs.length; i++){
+      var sr = secs[i].getBoundingClientRect();
+      if (sr.bottom < 0) continue;
+      if (sr.top > window.innerHeight) break;
+      var blocks = secs[i].children;
+      for (var j = 0; j < blocks.length; j++){
+        var r = blocks[j].getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) continue;  // off-screen
+        var d = (r.top <= beam && r.bottom >= beam)
+          ? 0
+          : Math.min(Math.abs(r.top - beam), Math.abs(r.bottom - beam));
+        if (d < bestD) { bestD = d; best = blocks[j]; }
+      }
     }
     if (!best || best === litEl) return;
     if (litEl) litEl.classList.remove('f-lit');
@@ -387,6 +423,26 @@ function buildHtml(
   var pinch = null;
   var fsRaf = false, pendingFs = 0;
 
+  /* A font change resizes the pages above you as well as the one you're on, so
+     the whole document slides under your fingers while you pinch — which reads
+     as the gesture sticking and fighting back. Pin the block at the reading
+     line and put the scroll position back after the reflow, so the text grows
+     around where you're looking instead of running away from it. */
+  function anchorAt(beam){
+    var secs = document.querySelectorAll('#content section');
+    for (var i = 0; i < secs.length; i++){
+      var sr = secs[i].getBoundingClientRect();
+      if (sr.bottom < beam) continue;
+      if (sr.top > beam) break;               // sections are in document order
+      var kids = secs[i].children;
+      for (var j = 0; j < kids.length; j++){
+        var r = kids[j].getBoundingClientRect();
+        if (r.bottom >= beam) return { el: kids[j], top: r.top };
+      }
+    }
+    return null;
+  }
+
   // batched via rAF so continuous pinching reflows at frame rate, not
   // once per touchmove event
   function setFs(v){
@@ -399,7 +455,12 @@ function buildHtml(
       fsRaf = true;
       requestAnimationFrame(function(){
         fsRaf = false;
+        var a = anchorAt(window.innerHeight * 0.4);
         document.documentElement.style.setProperty('--fs', pendingFs + 'px');
+        if (a) {
+          var drift = a.el.getBoundingClientRect().top - a.top;
+          if (drift) window.scrollBy(0, drift);
+        }
       });
     }
   }
@@ -518,9 +579,15 @@ function buildHtml(
       else if (fn === OPS.setFillCMYKColor) {
         if (args[0] > 0.1 || args[1] > 0.1 || args[2] > 0.1) hasColor = true;
       }
+      // The object name matters as much as the placement: it's the handle to
+      // the image's own bitmap, which beats anything croppable off the page.
       else if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject ||
-               fn === OPS.paintInlineImageXObject) {
-        images.push(ctm.slice());
+               fn === OPS.paintImageXObjectRepeat) {
+        images.push({ ctm: ctm.slice(), name: args[0] });
+      }
+      else if (fn === OPS.paintInlineImageXObject) {
+        // inline images carry their pixels in the operand, not the object store
+        images.push({ ctm: ctm.slice(), name: null });
       }
     }
     return { images: images, hasColor: hasColor };
@@ -541,6 +608,147 @@ function buildHtml(
       w: Math.max.apply(null, xs) - Math.min.apply(null, xs),
       h: Math.max.apply(null, ys) - Math.min.apply(null, ys)
     };
+  }
+
+  /* Publishers routinely emit one figure as a stack of strips — scanner output,
+     sliced exports, gradient tiles. Left alone each strip becomes its own
+     <img> with margins between them and the figure arrives shredded, so union
+     placements that touch or overlap before anything gets cropped. */
+  function mergeBoxes(entries, viewport){
+    var boxes = [];
+    for (var i = 0; i < entries.length; i++){
+      var b = boxOf(entries[i].ctm, viewport);
+      b.parts = [entries[i]];
+      boxes.push(b);
+    }
+    var joined = true;
+    while (joined) {
+      joined = false;
+      for (var a = 0; a < boxes.length && !joined; a++){
+        for (var c = a + 1; c < boxes.length && !joined; c++){
+          var p = boxes[a], q = boxes[c];
+          // touching counts, not just overlapping — strips usually abut exactly
+          var gapX = Math.max(p.x, q.x) - Math.min(p.x + p.w, q.x + q.w);
+          var gapY = Math.max(p.y, q.y) - Math.min(p.y + p.h, q.y + q.h);
+          if (gapX > 2 || gapY > 2) continue;
+          var x0 = Math.min(p.x, q.x), y0 = Math.min(p.y, q.y);
+          var x1 = Math.max(p.x + p.w, q.x + q.w);
+          var y1 = Math.max(p.y + p.h, q.y + q.h);
+          boxes[a] = { x: x0, y: y0, w: x1 - x0, h: y1 - y0,
+                       parts: p.parts.concat(q.parts) };
+          boxes.splice(c, 1);
+          joined = true;
+        }
+      }
+    }
+    return boxes;
+  }
+
+  /* Page-local XObjects live on the page, ones shared across pages on the
+     document, and the naming that tells them apart has moved between pdf.js
+     releases — so ask both. Either store throws rather than waits if the
+     worker hasn't resolved the object yet, hence the guards; a miss is not a
+     failure, it just means we crop instead. The objects exist by now only
+     because the page render above forced them to resolve. */
+  function imageSource(pdf, page, name){
+    if (!name) return null;
+    var stores = [page.objs, pdf.commonObjs];
+    for (var i = 0; i < stores.length; i++){
+      try {
+        if (stores[i] && stores[i].has(name)) return stores[i].get(name);
+      } catch (e) { /* not resolved in this store — try the next */ }
+    }
+    return null;
+  }
+
+  /* pdf.js hands back either a decoded ImageBitmap or a raw pixel buffer
+     tagged with its ImageKind. Unpack whichever arrived into a canvas at the
+     image's own resolution. */
+  function toCanvas(obj){
+    if (!obj) return null;
+    var cv = document.createElement('canvas');
+    if (obj.bitmap) {
+      cv.width = obj.bitmap.width; cv.height = obj.bitmap.height;
+      cv.getContext('2d').drawImage(obj.bitmap, 0, 0);
+      return cv;
+    }
+    var w = obj.width, h = obj.height, src = obj.data;
+    if (!src || !w || !h || w * h > 3e7) return null;
+    cv.width = w; cv.height = h;
+    var c = cv.getContext('2d');
+    var id = c.createImageData(w, h);
+    var out = id.data;
+    var K = pdfjsLib.ImageKind || {};
+    if (obj.kind === K.RGBA_32BPP || src.length === w * h * 4) {
+      out.set(src.subarray(0, w * h * 4));
+    }
+    else if (obj.kind === K.RGB_24BPP || src.length === w * h * 3) {
+      for (var i = 0, j = 0; i < w * h; i++, j += 3){
+        out[i*4] = src[j]; out[i*4+1] = src[j+1];
+        out[i*4+2] = src[j+2]; out[i*4+3] = 255;
+      }
+    }
+    else if (obj.kind === K.GRAYSCALE_1BPP) {
+      // rows are byte-aligned and a set bit is white (pdf.js' packing)
+      var rowBytes = (w + 7) >> 3;
+      for (var y = 0; y < h; y++){
+        for (var x = 0; x < w; x++){
+          var v = (src[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1 ? 255 : 0;
+          var o = (y * w + x) * 4;
+          out[o] = out[o+1] = out[o+2] = v; out[o+3] = 255;
+        }
+      }
+    }
+    else return null;
+    c.putImageData(id, 0, 0);
+    return cv;
+  }
+
+  /* Redraw the bitmap through its own CTM into a buffer shaped like its
+     on-page box. Going through the transform rather than a plain blit means
+     rotation and mirroring land exactly as the page has them, and any stretch
+     the PDF itself applies is reproduced — that's the document's design. What
+     we never do is add a stretch of our own. */
+  function redraw(src, entry, viewport, box){
+    var Util = pdfjsLib.Util;
+    // don't manufacture pixels the source doesn't have
+    var fit = Math.sqrt((src.width * src.height) / Math.max(1, box.w * box.h));
+    var k = Math.min(1, fit);
+    var w = Math.max(1, Math.round(box.w * k));
+    var h = Math.max(1, Math.round(box.h * k));
+    if (w * h > 1.6e7) return null;
+    var out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    var c = out.getContext('2d');
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    var m = Util.transform(viewport.transform, entry.ctm);           // unit → page
+    m = Util.transform([k, 0, 0, k, -box.x * k, -box.y * k], m);     // page → box
+    m = Util.transform(m, [1/src.width, 0, 0, -1/src.height, 0, 1]); // bitmap → unit
+    c.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    c.drawImage(src, 0, 0);
+    return out;
+  }
+
+  /* JPEG rings badly around the hard edges in diagrams, charts and
+     screenshots, and it has no alpha at all, so a logo on a transparent
+     background comes back as a black brick. Sample the result: transparency or
+     a small palette means line art, which wants PNG. Everything else is
+     photographic, where JPEG is smaller and indistinguishable. */
+  function encode(cv){
+    var alpha = false, flat = true;
+    try {
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      var px = cv.width * cv.height;
+      var step = Math.max(1, Math.floor(px / 4096)) * 4;
+      var seen = {}, n = 0;
+      for (var i = 0; i < d.length; i += step){
+        if (d[i+3] < 250) { alpha = true; break; }
+        var key = (d[i] >> 4) + '|' + (d[i+1] >> 4) + '|' + (d[i+2] >> 4);
+        if (!seen[key]) { seen[key] = 1; if (++n > 48) { flat = false; break; } }
+      }
+      return cv.toDataURL(alpha || flat ? 'image/png' : 'image/jpeg', 0.92);
+    } catch (e) { return null; }   // tainted canvas
   }
 
   /* Neutral (black/gray) text inherits the theme color — otherwise body text
@@ -664,18 +872,22 @@ function buildHtml(
 
   async function processPage(pdf, pageNo, content){
     var page = await pdf.getPage(pageNo);
-    var viewport = page.getViewport({ scale: RENDER_SCALE });
+    // All geometry stays in 1x page space; only the raster gets scaled up.
+    var viewport = page.getViewport({ scale: 1 });
     var ops = await page.getOperatorList();
     var info = scanOps(ops);
 
-    // Only rasterize when we actually need pixels (images or colored text).
+    // Only rasterize when we actually need pixels (images or colored text),
+    // and only pay for device density when there are figures to keep sharp.
+    var imgScale = info.images.length ? IMG_SCALE : 1;
+    var rv = page.getViewport({ scale: imgScale });
     var canvas = null, ctx = null;
     if (info.images.length || info.hasColor) {
       canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
+      canvas.width = Math.ceil(rv.width);
+      canvas.height = Math.ceil(rv.height);
       ctx = canvas.getContext('2d', { willReadFrequently: true });
-      await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport: rv }).promise;
     }
 
     var tc = await page.getTextContent();
@@ -686,34 +898,70 @@ function buildHtml(
       for (var i = 0; i < lines.length; i++){
         var it = lines[i].item;
         if (!it || !it.transform) continue;
-        var pt = pdfjsLib.Util.applyTransform([it.transform[4], it.transform[5]], viewport.transform);
-        var hgt = Math.max(4, (it.height || 10) * RENDER_SCALE);
-        var wid = Math.max(4, (it.width || 40) * RENDER_SCALE);
+        var pt = pdfjsLib.Util.applyTransform([it.transform[4], it.transform[5]], rv.transform);
+        var hgt = Math.max(4, (it.height || 10) * imgScale);
+        var wid = Math.max(4, (it.width || 40) * imgScale);
         lines[i].color = sampleColor(ctx, canvas, { x: pt[0], y: pt[1] - hgt, w: wid, h: hgt });
       }
     }
 
     var paras = toParagraphs(lines);
 
-    // crop images out of the rendered page
+    // lift the figures off the page
     var imgs = [];
-    if (ctx) {
-      for (var m = 0; m < info.images.length; m++){
-        var box = boxOf(info.images[m], viewport);
-        if (box.w < 24 || box.h < 24) continue; // skip rules/bullets/artifacts
-        var sx = Math.max(0, Math.floor(box.x));
-        var sy = Math.max(0, Math.floor(box.y));
-        var sw = Math.min(canvas.width - sx, Math.ceil(box.w));
-        var sh = Math.min(canvas.height - sy, Math.ceil(box.h));
-        if (sw <= 0 || sh <= 0) continue;
-        var c2 = document.createElement('canvas');
-        c2.width = sw; c2.height = sh;
-        c2.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-        try {
-          imgs.push({ top: box.y, src: c2.toDataURL('image/jpeg', 0.85), w: sw, h: sh });
-        } catch (e) { /* tainted canvas — skip */ }
+    if (ctx && info.images.length) {
+      var textLen = 0;
+      for (var t = 0; t < lines.length; t++) textLen += (lines[t].text || '').length;
+      var pageArea = rv.width * rv.height;
+      var boxes = mergeBoxes(info.images, rv);
+
+      for (var m = 0; m < boxes.length; m++){
+        var box = boxes[m];
+        var minSide = 24 * imgScale;
+        if (box.w < minSide || box.h < minSide) continue;  // rules, bullets
+        // extreme aspect ratios are borders and dividers, not figures
+        var aspect = box.w / box.h;
+        if (aspect > 25 || aspect < 0.04) continue;
+        // A page-sized image sitting behind real text is a scan backdrop or a
+        // watermark. Emitting it would stack a picture of the whole page on
+        // top of that same page's text.
+        if (box.w * box.h > pageArea * 0.8 && textLen > 200) continue;
+
+        var out = null;
+        // Preferred path: the image's own bitmap, redrawn under its own CTM.
+        // Cropping the composited page cost us two things — the figure came
+        // out at page-raster density, and whatever the page drew over it
+        // (captions, rules, watermarks) came along for the ride.
+        if (box.parts.length === 1) {
+          var native = toCanvas(imageSource(pdf, page, box.parts[0].name));
+          if (native) out = redraw(native, box.parts[0], rv, box);
+        }
+        if (!out) {
+          // Inline images, soft-masked art, merged strips: crop the raster.
+          var sx = Math.max(0, Math.floor(box.x));
+          var sy = Math.max(0, Math.floor(box.y));
+          var sw = Math.min(canvas.width - sx, Math.ceil(box.w));
+          var sh = Math.min(canvas.height - sy, Math.ceil(box.h));
+          if (sw <= 0 || sh <= 0) continue;
+          out = document.createElement('canvas');
+          out.width = sw; out.height = sh;
+          out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+        }
+
+        var data = encode(out);
+        if (!data) continue;
+        // Display size is the figure's size on the page, in CSS pixels — the
+        // extra pixels live in the backing store, where they belong. Sizing
+        // from the bitmap instead would blow a high-res icon up to a banner.
+        imgs.push({
+          top: box.y / imgScale,
+          src: data,
+          w: Math.max(1, Math.round(box.w / imgScale)),
+          h: Math.max(1, Math.round(box.h / imgScale))
+        });
       }
     }
+    if (canvas) { canvas.width = 0; canvas.height = 0; }  // release early
 
     // merge text + images in visual order (device y, top-down)
     var blocks = [];
@@ -748,7 +996,7 @@ function buildHtml(
           if (gl && len) {
             var g0 = pdfjsLib.Util.applyTransform([gl.x0, gl.y], viewport.transform);
             var g1 = pdfjsLib.Util.applyTransform([gl.x1, gl.y], viewport.transform);
-            var gh = Math.max(6, gl.h);   // device px at RENDER_SCALE 1
+            var gh = Math.max(6, gl.h);   // 1x page space, same as viewport
             geo.push({
               o: off, l: len,
               x0: +(g0[0] / viewport.width).toFixed(4),
@@ -765,8 +1013,11 @@ function buildHtml(
       else {
         var im = document.createElement('img');
         im.src = blocks[q].data.src;
-        im.width = blocks[q].data.w;
-        im.height = blocks[q].data.h;
+        // inline width, so nothing in the sheet can quietly outrank it
+        im.style.width = blocks[q].data.w + 'px';
+        im.setAttribute('width', blocks[q].data.w);
+        im.setAttribute('height', blocks[q].data.h);
+        im.decoding = 'async';
         section.appendChild(im);
       }
     }

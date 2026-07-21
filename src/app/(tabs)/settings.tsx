@@ -29,6 +29,8 @@ import { useOnboardingStore } from "@/stores/onboarding-store";
 import type { ThemeMode } from "@/theme/proto";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 
+const ZOOM_TICKS = [100];
+
 const THEME_ITEMS: { key: ThemeMode; label: string }[] = [
   { key: "light", label: "Light" },
   { key: "dark", label: "Dark" },
@@ -269,15 +271,17 @@ export default function SettingsScreen() {
             </Text>
           </Box>
           <ProtoSlider
+            curve="log"
             max={200}
-            min={100}
+            min={50}
             onChange={(v) => app.set({ zoom: v })}
             step={5}
+            ticks={ZOOM_TICKS}
             value={app.zoom}
           />
           <Box direction="row" justify="between">
             <Text color={t.faint} size={11}>
-              100%
+              50%
             </Text>
             <Text color={t.faint} size={11}>
               200%

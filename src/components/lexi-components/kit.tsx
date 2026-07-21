@@ -1,8 +1,14 @@
 import type { ReactNode } from 'react';
 import type { GestureResponderEvent, StyleProp, ViewStyle } from 'react-native';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, Pressable } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Box, Text } from '@/components/atoms';
@@ -336,61 +342,151 @@ export function IndeterminateBar() {
   );
 }
 
+const SLIDER_H = 28;
+const THUMB = 18;
+const TICK_H = 11;
+const TICK_SNAP = 0.03;
+
 export function ProtoSlider({
+  curve = 'linear',
   max,
   min,
   onChange,
   step = 1,
+  ticks,
   value,
 }: {
-  max: number;
-  min: number;
-  onChange: (value: number) => void;
-  step?: number;
-  value: number;
+  readonly curve?: 'linear' | 'log';
+  readonly max: number;
+  readonly min: number;
+  readonly onChange: (value: number) => void;
+  readonly step?: number;
+  readonly ticks?: readonly number[];
+  readonly value: number;
 }) {
   const t = useProtoTheme();
   const [width, setWidth] = useState(0);
 
-  const applyX = (x: number) => {
-    if (width <= 0) return;
-    const raw = min + (Math.min(Math.max(x, 0), width) / width) * (max - min);
-    const stepped = Math.round(raw / step) * step;
-    onChange(Math.min(max, Math.max(min, stepped)));
-  };
+  const isLog = curve === 'log' && min > 0;
+  const lo = isLog ? Math.log(min) : min;
+  const span = (isLog ? Math.log(max) : max) - lo;
 
-  const pct = width > 0 ? (value - min) / (max - min) : 0;
+  const posOf = useCallback(
+    (v: number) =>
+      span <= 0 ? 0 : Math.min(1, Math.max(0, ((isLog ? Math.log(v) : v) - lo) / span)),
+    [isLog, lo, span],
+  );
+
+  const tickVals = useMemo(() => (ticks ? [...ticks] : []), [ticks]);
+  const tickPos = useMemo(() => tickVals.map((v) => posOf(v)), [tickVals, posOf]);
+
+  const dragPos = useSharedValue(-1);
+  const lastSent = useSharedValue(value);
+  const restPos = posOf(value);
+
+  const gesture = useMemo(() => {
+    const commit = (x: number) => {
+      'worklet';
+      if (width <= 0 || span <= 0) return;
+      const at = Math.min(1, Math.max(0, x / width));
+      const raw = isLog ? Math.exp(lo + at * span) : lo + at * span;
+      let next = Math.min(max, Math.max(min, Math.round(raw / step) * step));
+      for (let i = 0; i < tickPos.length; i++) {
+        if (Math.abs(tickPos[i] - at) < TICK_SNAP) {
+          next = tickVals[i];
+          break;
+        }
+      }
+      dragPos.value = Math.min(
+        1,
+        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span),
+      );
+      if (next !== lastSent.value) {
+        lastSent.value = next;
+        runOnJS(onChange)(next);
+      }
+    };
+
+    const release = () => {
+      'worklet';
+      dragPos.value = -1;
+    };
+
+    return Gesture.Exclusive(
+      Gesture.Pan()
+        .activeOffsetX([-6, 6])
+        .failOffsetY([-14, 14])
+        .onStart((e) => commit(e.x))
+        .onUpdate((e) => commit(e.x))
+        .onFinalize(release),
+      Gesture.Tap()
+        .maxDuration(400)
+        .onEnd((e) => commit(e.x))
+        .onFinalize(release),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLog, lo, max, min, onChange, span, step, tickPos, tickVals, width]);
+
+  const fillStyle = useAnimatedStyle(() => {
+    const p = dragPos.value < 0 ? restPos : dragPos.value;
+    return { width: `${p * 100}%` };
+  });
+  const thumbStyle = useAnimatedStyle(() => {
+    const p = dragPos.value < 0 ? restPos : dragPos.value;
+    return { transform: [{ translateX: p * width - THUMB / 2 }] };
+  });
 
   return (
-    <Box
-      height={28}
-      justify="center"
-      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-      onMoveShouldSetResponder={() => true}
-      onResponderGrant={(e) => applyX(e.nativeEvent.locationX)}
-      onResponderMove={(e) => applyX(e.nativeEvent.locationX)}
-      onResponderTerminationRequest={() => false}
-      onStartShouldSetResponder={() => true}
-    >
-      <Box bg={t.chip} height={4} rounded={2}>
-        <Box bg={t.accent} height={4} rounded={2} style={{ width: `${pct * 100}%` }} />
-      </Box>
+    <GestureDetector gesture={gesture}>
       <Box
-        bg="#FFFFFF"
-        height={18}
-        rounded={9}
-        style={{
-          position: 'absolute',
-          left: Math.max(0, pct * width - 9),
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.3,
-          shadowRadius: 3,
-          elevation: 3,
-        }}
-        width={18}
-      />
-    </Box>
+        height={SLIDER_H}
+        justify="center"
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      >
+        <Box bg={t.chip} height={4} rounded={2}>
+          <Reanimated.View
+            style={[{ backgroundColor: t.accent, borderRadius: 2, height: 4 }, fillStyle]}
+          />
+        </Box>
+
+        {width > 0
+          ? tickPos.map((p, i) => (
+              <Box
+                bg={t.sub}
+                height={TICK_H}
+                key={tickVals[i]}
+                rounded={1}
+                style={{
+                  left: p * width - 1,
+                  opacity: 0.4,
+                  position: 'absolute',
+                  top: (SLIDER_H - TICK_H) / 2,
+                }}
+                width={2}
+              />
+            ))
+          : null}
+
+        <Reanimated.View
+          style={[
+            {
+              backgroundColor: '#FFFFFF',
+              borderRadius: THUMB / 2,
+              elevation: 3,
+              height: THUMB,
+              position: 'absolute',
+              shadowColor: '#000',
+              shadowOffset: { height: 1, width: 0 },
+              shadowOpacity: 0.3,
+              shadowRadius: 3,
+              top: (SLIDER_H - THUMB) / 2,
+              width: THUMB,
+            },
+            thumbStyle,
+          ]}
+        />
+      </Box>
+    </GestureDetector>
   );
 }
 
