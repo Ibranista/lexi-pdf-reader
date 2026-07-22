@@ -54,6 +54,10 @@ import { expectedReadingMs } from "@/utils/reading-progress";
 
 type ViewMode = "page" | "reflow";
 
+/** Stable empty list, so the bookmark selector doesn't return a new array
+ *  every render and re-render the whole reader. */
+const EMPTY_BOOKMARKS: number[] = [];
+
 /** Eases the title/controls trade when the title is opened out. */
 const TITLE_SWAP = LinearTransition.duration(260);
 
@@ -78,9 +82,14 @@ export default function PdfViewerScreen() {
   const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
-  const bookmarks = useAppStore((s) => s.bookmarks);
   const setApp = useAppStore((s) => s.set);
-  const toggleBookmark = useAppStore((s) => s.toggleBookmark);
+  // Bookmarks live on the document, not the app: the app-store's list belongs
+  // to the demo book in /reader, so every real PDF was showing its pages.
+  const bookmarks = useRecentsStore(
+    (s) => s.recents.find((r) => r.uri === uri)?.bookmarks ?? EMPTY_BOOKMARKS,
+  );
+  const toggleBookmark = (target: number) =>
+    useRecentsStore.getState().toggleBookmark(uri, target);
   const showToast = useToastStore((s) => s.showToast);
 
   // Tapping the title opens it out to its full length; the controls shrink
@@ -785,7 +794,7 @@ export default function PdfViewerScreen() {
       {/* Left-edge Contents affordance: a catcher for the swipe, plus the
           example's handle tab so the gesture is discoverable. Both only
           exist when the document has an outline to show. */}
-      {outline.length && !outlineOpen && !searchOpen ? (
+      {(outline.length || bookmarks.length) && !outlineOpen && !searchOpen ? (
         <GestureDetector gesture={swipeFromLeftEdge}>
           <Box
             style={{
@@ -881,12 +890,14 @@ export default function PdfViewerScreen() {
       ) : null}
       {outlineOpen ? (
         <PdfOutlineDrawer
+          bookmarks={bookmarks}
           entries={outline}
           onClose={() => setOutlineOpen(false)}
           onGoPage={(target) => {
             setOutlineOpen(false);
             goToPage(target);
           }}
+          onRemoveBookmark={toggleBookmark}
           page={page}
           title={name ?? "Document"}
         />

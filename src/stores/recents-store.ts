@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
-import { zustandStorage } from '@/utils/storage';
+import { zustandStorage } from "@/utils/storage";
 
 /** Most-recent-first; older entries fall off the end. */
 const MAX_RECENTS = 30;
@@ -16,6 +16,12 @@ export interface RecentDoc {
   page: number;
   /** 0 until the document reports its length. */
   pageCount: number;
+  /**
+   * Bookmarked pages, ascending. Per document rather than app-wide — the
+   * app-store's `bookmarks` belongs to the single demo book in `/reader`,
+   * and sharing it here meant every real document showed the same ones.
+   */
+  bookmarks?: number[];
   /** Expected reading time for every page, based on its word count. */
   readingPlanMs?: number[];
   /** Accumulated active reading time, keyed by 1-based page number. */
@@ -30,6 +36,8 @@ interface RecentsState {
   recordProgress: (uri: string, page: number, pageCount?: number) => void;
   setReadingPlan: (uri: string, pageTimesMs: number[]) => void;
   recordReadingTime: (uri: string, page: number, elapsedMs: number) => void;
+  /** Adds the page to this document's bookmarks, or removes it if already on. */
+  toggleBookmark: (uri: string, page: number) => void;
   remove: (uri: string) => void;
   clear: () => void;
 }
@@ -42,7 +50,11 @@ export const useRecentsStore = create<RecentsState>()(
       recordOpen: ({ uri, name, ext }) =>
         set((s) => {
           const previous = s.recents.find((r) => r.uri === uri);
+          // Spread the previous entry first: listing the fields by hand meant
+          // everything not named here (bookmarks, the reading plan, accrued
+          // reading time) was dropped every time the document was reopened.
           const entry: RecentDoc = {
+            ...previous,
             uri,
             name,
             ext,
@@ -103,13 +115,29 @@ export const useRecentsStore = create<RecentsState>()(
         }));
       },
 
+      toggleBookmark: (uri, page) =>
+        set((s) => ({
+          recents: s.recents.map((r) => {
+            if (r.uri !== uri) return r;
+            const current = r.bookmarks ?? [];
+            return {
+              ...r,
+              // kept sorted, so the drawer can list them in reading order
+              // without re-sorting on every render
+              bookmarks: current.includes(page)
+                ? current.filter((p) => p !== page)
+                : [...current, page].sort((a, b) => a - b),
+            };
+          }),
+        })),
+
       remove: (uri) =>
         set((s) => ({ recents: s.recents.filter((r) => r.uri !== uri) })),
 
       clear: () => set({ recents: [] }),
     }),
     {
-      name: 'lexipdf-recents',
+      name: "lexipdf-recents",
       storage: createJSONStorage(() => zustandStorage),
     },
   ),
@@ -122,7 +150,8 @@ export function progressPct(doc: RecentDoc): number {
     if (!expected) return 0;
     const elapsed = doc.readingPlanMs.reduce(
       (sum, pageMs, index) =>
-        sum + Math.min(pageMs, doc.readingTimeMsByPage?.[String(index + 1)] ?? 0),
+        sum +
+        Math.min(pageMs, doc.readingTimeMsByPage?.[String(index + 1)] ?? 0),
       0,
     );
     return Math.min(100, Math.round((elapsed / expected) * 100));
