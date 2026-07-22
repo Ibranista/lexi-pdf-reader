@@ -164,6 +164,10 @@ export default function PdfViewerScreen() {
   } | null>(null);
   // Bumped to tell the reflow page to drop its own selection.
   const [clearSelSeq, setClearSelSeq] = useState(0);
+  // True while the note composer has the passage. Focusing its input pulls
+  // focus out of the WebView, which drops the selection there and would
+  // otherwise unmount the composer the instant the keyboard began to open.
+  const [composing, setComposing] = useState(false);
   // Saved highlights, painted back into the reflowed text. Narrowed to what
   // the page needs so an unrelated edit (a note's wording) doesn't repaint.
   const annotations = useAnnotationsStore((s) => s.items);
@@ -677,9 +681,12 @@ export default function PdfViewerScreen() {
                 );
               }}
               onSearchResults={setSearchResults}
-              onSelection={(text, selPage) =>
-                setSelection(text ? { text, page: selPage || page } : null)
-              }
+              onSelection={(text, selPage) => {
+                // The composer owns the passage once it's open; the WebView
+                // losing its selection is expected, not a dismissal.
+                if (composing) return;
+                setSelection(text ? { text, page: selPage || page } : null);
+              }}
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
               topInset={insets.top}
@@ -992,7 +999,9 @@ export default function PdfViewerScreen() {
             toggleBookmark(selection.page);
             showToast(`Page ${selection.page} bookmarked`);
           }}
+          onComposingChange={setComposing}
           onClose={() => {
+            setComposing(false);
             setSelection(null);
             // Drop the WebView's own selection too, or the handles stay up
             // and the next selectionchange re-opens the bar.

@@ -8,7 +8,9 @@
  * one list rather than two things to keep in sync.
  */
 import { useState } from "react";
+import { Keyboard } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
@@ -20,18 +22,21 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
-import { useToastStore } from "@/stores/app-store";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
   type HighlightColor,
   useAnnotationsStore,
 } from "@/stores/annotations-store";
+import { useToastStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
+
+const NOTE_DEFAULT_COLOR: HighlightColor = "amber";
 
 export function AnnotateBar({
   onBookmark,
   onClose,
+  onComposingChange,
   page,
   text,
   uri,
@@ -39,120 +44,157 @@ export function AnnotateBar({
   /** Bookmarks the page the passage is on. */
   onBookmark: () => void;
   onClose: () => void;
+  /**
+   * True while the note composer is open. The reader needs this because
+   * focusing the composer's input pulls focus out of the reflow WebView,
+   * which drops its text selection — and the reader was tearing this whole
+   * component down in response, mid keyboard animation.
+   */
+  onComposingChange?: (composing: boolean) => void;
   page: number;
   text: string;
   uri: string;
 }) {
   const t = useProtoTheme();
+  const insets = useSafeAreaInsets();
   const showToast = useToastStore((s) => s.showToast);
   const add = useAnnotationsStore((s) => s.add);
-  const setNote = useAnnotationsStore((s) => s.setNote);
 
-  // Set once the passage has been saved, so the composer knows what to attach
-  // the note to. Null means "still just a selection".
-  const [noteFor, setNoteFor] = useState<string | null>(null);
+  // Null means "still just a selection". Once true, the note composer opens.
+  const [noteFor, setNoteFor] = useState<boolean>(false);
   const [draft, setDraft] = useState("");
+
+  const dismissComposer = () => {
+    // The keyboard was raised by this composer, so it goes down with it —
+    // otherwise closing from the ✕ leaves it up over the page.
+    Keyboard.dismiss();
+    setDraft("");
+    setNoteFor(false);
+    onComposingChange?.(false);
+    onClose();
+  };
 
   const save = (color: HighlightColor) =>
     add({ uri, page, text, color, note: "" });
 
   const highlight = (color: HighlightColor) => {
     save(color);
-    onClose();
+    dismissComposer();
     showToast("Highlighted — find it in My Notes");
   };
 
-  if (noteFor !== null) {
+  if (noteFor) {
     return (
       <>
         <Backdrop
           onPress={() => {
-            // Backing out keeps the highlight; only the note is abandoned.
-            onClose();
+            // Backing out abandons the draft note.
+            dismissComposer();
           }}
           opacity={0.4}
         />
-        {/* KeyboardStickyView translates with the keyboard, which is the
-            only thing that works on Android now that it runs edge-to-edge:
-            the window no longer resizes, so RN's KeyboardAvoidingView has
-            nothing to measure and the composer stayed under the keyboard. */}
-        <KeyboardStickyView
-          offset={{ closed: 0, opened: 12 }}
+        <Box
           style={{
             position: "absolute",
-            left: 16,
-            right: 16,
-            bottom: 24,
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
             zIndex: 40,
           }}
         >
-          <Box
-            bg={t.card}
-            borderColor={t.line}
-            borderWidth={1}
-            gap={12}
-            padding={16}
-            rounded={18}
-            style={{ elevation: 20 }}
+          {/* Keep the dismiss area tappable while the composer itself sticks
+              to the keyboard and moves with it on Android edge-to-edge. */}
+          <Tap onPress={dismissComposer} scale={1} style={{ flex: 1 }}>
+            <Box style={{ flex: 1 }} />
+          </Tap>
+
+          {/* The safe-area inset keeps the card clear of the gesture bar
+              once the keyboard is down. With the keyboard up that space is
+              covered anyway, so `opened` gives it back rather than leaving a
+              gap between the card and the keyboard. */}
+          <KeyboardStickyView
+            offset={{ closed: 0, opened: insets.bottom }}
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 16 + insets.bottom,
+            }}
           >
-            <Box align="center" direction="row" gap={10}>
-              <IconNoteDoc color={t.accentText} size={15} />
-              <Box flex={1}>
-                <Text size={13} weight="600">
-                  Note on page {page}
-                </Text>
-              </Box>
-              <Tap onPress={onClose} scale={0.9}>
-                <IconClose color={t.sub} size={16} />
-              </Tap>
-            </Box>
-
             <Box
-              style={{
-                borderLeftWidth: 3,
-                borderLeftColor: HIGHLIGHT_FILL.amber,
-                paddingLeft: 10,
-              }}
-            >
-              <Text color={t.sub} lh={18} numberOfLines={3} serif size={12.5}>
-                {text}
-              </Text>
-            </Box>
-
-            <TextInput
-              autoFocus
-              backgroundColor={t.chip}
+              bg={t.card}
               borderColor={t.line}
               borderWidth={1}
-              fontSize={14}
-              multiline
-              onChangeText={setDraft}
-              placeholder="What did you make of it?"
-              placeholderTextColor={t.faint}
-              rounded={12}
-              style={{ minHeight: 88, textAlignVertical: "top" }}
-              textColor={t.ink}
-              value={draft}
-            />
-
-            <Tap
-              onPress={() => {
-                setNote(noteFor, draft.trim());
-                onClose();
-                showToast(
-                  draft.trim() ? "Note saved" : "Highlighted — note left empty",
-                );
-              }}
-              scale={0.97}
+              gap={12}
+              padding={16}
+              rounded={18}
+              style={{ elevation: 20 }}
             >
-              <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
-                <Text color={t.onAccent} size={14} weight="600">
-                  Save note
+              <Box align="center" direction="row" gap={10}>
+                <IconNoteDoc color={t.accentText} size={15} />
+                <Box flex={1}>
+                  <Text size={13} weight="600">
+                    Note on page {page}
+                  </Text>
+                </Box>
+                <Tap onPress={dismissComposer} scale={0.9}>
+                  <IconClose color={t.sub} size={16} />
+                </Tap>
+              </Box>
+
+              <Box
+                style={{
+                  borderLeftWidth: 3,
+                  borderLeftColor: HIGHLIGHT_FILL[NOTE_DEFAULT_COLOR],
+                  paddingLeft: 10,
+                }}
+              >
+                <Text color={t.sub} lh={18} numberOfLines={3} serif size={12.5}>
+                  {text}
                 </Text>
               </Box>
-            </Tap>
-          </Box>
-        </KeyboardStickyView>
+
+              <TextInput
+                autoFocus
+                backgroundColor={t.chip}
+                borderColor={t.line}
+                borderWidth={1}
+                fontSize={14}
+                multiline
+                onChangeText={setDraft}
+                placeholder="What did you make of it?"
+                placeholderTextColor={t.faint}
+                rounded={12}
+                style={{ minHeight: 88, textAlignVertical: "top" }}
+                textColor={t.ink}
+                value={draft}
+              />
+
+              <Tap
+                onPress={() => {
+                  const note = draft.trim();
+                  add({
+                    uri,
+                    page,
+                    text,
+                    color: NOTE_DEFAULT_COLOR,
+                    note,
+                  });
+                  dismissComposer();
+                  showToast(
+                    note ? "Note saved" : "Highlighted — note left empty",
+                  );
+                }}
+                scale={0.97}
+              >
+                <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
+                  <Text color={t.onAccent} size={14} weight="600">
+                    Save note
+                  </Text>
+                </Box>
+              </Tap>
+            </Box>
+          </KeyboardStickyView>
+        </Box>
       </>
     );
   }
@@ -193,9 +235,11 @@ export function AnnotateBar({
             icon={<IconNoteDoc color="#F6F3EE" size={16} />}
             label="Note"
             onPress={() => {
-              // Saved first so the note always has a passage to hang on,
-              // even if the composer is dismissed.
-              setNoteFor(save("amber"));
+              // Notes are persisted on "Save note", so backing out here does
+              // not leave behind an empty highlight.
+              setDraft("");
+              setNoteFor(true);
+              onComposingChange?.(true);
             }}
           />
           <SelAction
@@ -203,7 +247,7 @@ export function AnnotateBar({
             label="Bookmark"
             onPress={() => {
               onBookmark();
-              onClose();
+              dismissComposer();
             }}
           />
         </Box>
