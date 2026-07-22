@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Box } from "@/components/atoms";
 import {
   Card,
+  CollectionGlyph,
   Cover,
   IconBack,
   IconSpark,
@@ -10,7 +11,11 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
-import { COLLECTION_META, type CollectionId } from "@/constants/collections";
+import {
+  COLLECTION_META,
+  type CollectionId,
+  resolveCollectionColor,
+} from "@/constants/collections";
 import { BOOK_TITLE, COLLECTIONS } from "@/constants/library";
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
@@ -59,7 +64,13 @@ export function CollectionsTab({
           paddingBottom={10}
           style={{ alignItems: "baseline" }}
         >
-          <Text size={18}>{meta?.emoji}</Text>
+          {meta ? (
+            <CollectionGlyph
+              color={resolveCollectionColor(meta.color, t.dark, t.ink)}
+              icon={meta.icon}
+              size={18}
+            />
+          ) : null}
           <Text serif size={20} weight="600">
             {tr(`library.collections.names.${shelf}`)}
           </Text>
@@ -71,7 +82,13 @@ export function CollectionsTab({
 
         {docs.length === 0 ? (
           <Box align="center" gap={10} paddingX={24} paddingY={44}>
-            <Text size={26}>{meta?.emoji}</Text>
+            {meta ? (
+              <CollectionGlyph
+                color={resolveCollectionColor(meta.color, t.dark, t.sub)}
+                icon={meta.icon}
+                size={26}
+              />
+            ) : null}
             <Text align="center" color={t.sub} lh={21} size={13}>
               {tr("library.collections.shelfEmpty")}
             </Text>
@@ -104,7 +121,7 @@ export function CollectionsTab({
   return (
     <>
       <Box direction="row" gap={8}>
-        {COLLECTION_META.map(({ emoji, id }) => (
+        {COLLECTION_META.map(({ color, icon, id }) => (
           <Tap
             key={id}
             onPress={() => openCollection(id)}
@@ -112,7 +129,11 @@ export function CollectionsTab({
             style={{ flex: 1, minWidth: 0 }}
           >
             <Card gap={5} padding={10} rounded={14}>
-              <Text size={20}>{emoji}</Text>
+              <CollectionGlyph
+                color={resolveCollectionColor(color, t.dark, t.ink)}
+                icon={icon}
+                size={20}
+              />
               <Text lh={16} numberOfLines={2} size={12} weight="600">
                 {tr(`library.collections.names.${id}`)}
               </Text>

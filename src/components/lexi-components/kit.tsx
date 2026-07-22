@@ -12,10 +12,27 @@ import Reanimated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, Text } from "@/components/atoms";
+import type { CollectionIcon } from "@/constants/collections";
 import { useToastStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
 import { IconBack } from "./icons";
+
+export function CollectionGlyph({
+  color,
+  icon,
+  size = 18,
+}: {
+  color?: string;
+  icon: CollectionIcon;
+  size?: number;
+}) {
+  if (typeof icon === "string") {
+    return <Text size={size}>{icon}</Text>;
+  }
+  const Icon = icon;
+  return <Icon color={color} size={size} />;
+}
 
 interface TapProps {
   readonly children?: ReactNode;
