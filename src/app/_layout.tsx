@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import "@/i18n";
@@ -29,23 +30,29 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    // gesture root + modal provider are required by @gorhom/bottom-sheet
+    // gesture root + modal provider are required by @gorhom/bottom-sheet;
+    // KeyboardProvider backs react-native-keyboard-controller, which is how
+    // anything anchored above the keyboard tracks it — Android runs
+    // edge-to-edge, so the window no longer resizes and RN's own
+    // KeyboardAvoidingView has nothing to react to.
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AppThemeProvider storage={storage}>
-        <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
-          <BottomSheetModalProvider>
-            <AnimatedSplashOverlay />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Protected guard={hasCompletedOnboarding}>
-                <Stack.Screen name="(tabs)" />
-              </Stack.Protected>
-              <Stack.Protected guard={!hasCompletedOnboarding}>
-                <Stack.Screen name="onboarding" />
-              </Stack.Protected>
-            </Stack>
-          </BottomSheetModalProvider>
-        </ThemeProvider>
-      </AppThemeProvider>
+      <KeyboardProvider>
+        <AppThemeProvider storage={storage}>
+          <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
+            <BottomSheetModalProvider>
+              <AnimatedSplashOverlay />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Protected guard={hasCompletedOnboarding}>
+                  <Stack.Screen name="(tabs)" />
+                </Stack.Protected>
+                <Stack.Protected guard={!hasCompletedOnboarding}>
+                  <Stack.Screen name="onboarding" />
+                </Stack.Protected>
+              </Stack>
+            </BottomSheetModalProvider>
+          </ThemeProvider>
+        </AppThemeProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

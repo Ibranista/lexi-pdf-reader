@@ -222,3 +222,28 @@ export const useToastStore = create<ToastState>()((set) => ({
     toastTimer = setTimeout(() => set({ toast: '' }), 1700);
   },
 }));
+
+/**
+ * A page the reader should jump to when it next comes into focus — how the
+ * Notes screen sends you back to a highlight or bookmark.
+ *
+ * Ephemeral and consumed once: the reader clears it on arrival, so returning
+ * to the reader later by any other route doesn't re-trigger the jump. Carries
+ * the uri so a stale request can't move a different document.
+ */
+interface ReaderJumpState {
+  pending: { uri: string; page: number } | null;
+  request: (uri: string, page: number) => void;
+  consume: (uri: string) => number | null;
+}
+
+export const useReaderJumpStore = create<ReaderJumpState>()((set, get) => ({
+  pending: null,
+  request: (uri, page) => set({ pending: { uri, page } }),
+  consume: (uri) => {
+    const { pending } = get();
+    if (!pending || pending.uri !== uri) return null;
+    set({ pending: null });
+    return pending.page;
+  },
+}));

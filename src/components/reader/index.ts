@@ -4,5 +4,6 @@ export * from "./focus";
 export * from "./FocusChrome";
 export * from "./lexi";
 export * from "./PdfOutlineDrawer";
+export * from "./AnnotateBar";
 export * from "./PdfSearchPanel";
 export * from "./sheets";

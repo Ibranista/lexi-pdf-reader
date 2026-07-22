@@ -1,7 +1,7 @@
 import * as NavigationBar from "expo-navigation-bar";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -34,6 +34,7 @@ import {
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import {
+  AnnotateBar,
   FocusChrome,
   LexiBubble,
   LexiSheet,
@@ -44,8 +45,12 @@ import {
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
-import { BOOK_TITLE } from "@/constants/library";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useAnnotationsStore } from "@/stores/annotations-store";
+import {
+  useAppStore,
+  useReaderJumpStore,
+  useToastStore,
+} from "@/stores/app-store";
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
@@ -151,6 +156,24 @@ export default function PdfViewerScreen() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const outline =
     reflowOutline.length > nativeOutline.length ? reflowOutline : nativeOutline;
+  // Text selected in Reflow, and the page it started on. Page view has no
+  // text layer to select from, so this only ever fills in Reflow.
+  const [selection, setSelection] = useState<{
+    text: string;
+    page: number;
+  } | null>(null);
+  // Bumped to tell the reflow page to drop its own selection.
+  const [clearSelSeq, setClearSelSeq] = useState(0);
+  // Saved highlights, painted back into the reflowed text. Narrowed to what
+  // the page needs so an unrelated edit (a note's wording) doesn't repaint.
+  const annotations = useAnnotationsStore((s) => s.items);
+  const highlights = useMemo(
+    () =>
+      annotations
+        .filter((a) => a.uri === uri)
+        .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
+    [annotations, uri],
+  );
   const [pageMarker, setPageMarker] = useState<{
     page: number;
     /** Word-accurate boxes; a single full-width entry when geometry is
@@ -335,6 +358,21 @@ export default function PdfViewerScreen() {
       setReflowGoto((current) => ({ page: nextPage, seq: current.seq + 1 }));
     }
   };
+
+  /**
+   * Notes and bookmarks navigate by leaving a request behind rather than by
+   * passing a param, because they return here with `router.back()` — there is
+   * no navigation to attach a param to. Consumed on arrival so it fires once.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      const target = useReaderJumpStore.getState().consume(uri);
+      if (target) goToPage(target);
+      // goToPage closes over view state that changes every render; the store
+      // read is the part that must happen exactly once, on focus.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [uri]),
+  );
 
   // Jump to a result, staying in whichever view the reader is already in.
   // Reflow marks the exact word; page view flashes a locator band where the
@@ -609,6 +647,14 @@ export default function PdfViewerScreen() {
                 focus animation that moves the native PDF surface. */}
             <PdfReflowView
               chromeOffset={immersive ? 0 : barH}
+              clearSelectionSeq={clearSelSeq}
+              highlights={highlights}
+              onHighlightPress={(id) =>
+                router.push({
+                  pathname: "/notes",
+                  params: { uri, name: name ?? "Document", focus: id },
+                })
+              }
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -631,6 +677,9 @@ export default function PdfViewerScreen() {
                 );
               }}
               onSearchResults={setSearchResults}
+              onSelection={(text, selPage) =>
+                setSelection(text ? { text, page: selPage || page } : null)
+              }
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
               topInset={insets.top}
@@ -688,7 +737,7 @@ export default function PdfViewerScreen() {
                 size={16}
                 weight="600"
               >
-                {BOOK_TITLE}
+                {name ?? "Document"}
               </Text>
               {chapter ? (
                 <Text
@@ -735,9 +784,20 @@ export default function PdfViewerScreen() {
                 <HeaderButton onPress={() => setSearchOpen(true)}>
                   <IconSearch color={t.ink} size={18} />
                 </HeaderButton>
-                <HeaderButton onPress={() => router.push("/notes")}>
-                  <IconPencil color={t.ink} size={18} />
-                </HeaderButton>
+                {/* Only in Reflow: highlights and notes come from selecting
+                    text, which Page view's bitmap can't do. */}
+                {mode === "reflow" ? (
+                  <HeaderButton
+                    onPress={() =>
+                      router.push({
+                        pathname: "/notes",
+                        params: { uri, name: name ?? "Document" },
+                      })
+                    }
+                  >
+                    <IconPencil color={t.ink} size={18} />
+                  </HeaderButton>
+                ) : null}
                 <HeaderButton
                   onPress={() => {
                     toggleBookmark(page);
@@ -924,6 +984,23 @@ export default function PdfViewerScreen() {
         <CollectionPicker
           doc={{ uri, name: name ?? "Document", ext: "PDF" }}
           onClose={() => setFilingOpen(false)}
+        />
+      ) : null}
+      {selection && mode === "reflow" ? (
+        <AnnotateBar
+          onBookmark={() => {
+            toggleBookmark(selection.page);
+            showToast(`Page ${selection.page} bookmarked`);
+          }}
+          onClose={() => {
+            setSelection(null);
+            // Drop the WebView's own selection too, or the handles stay up
+            // and the next selectionchange re-opens the bar.
+            setClearSelSeq((n) => n + 1);
+          }}
+          page={selection.page}
+          text={selection.text}
+          uri={uri}
         />
       ) : null}
     </Box>
