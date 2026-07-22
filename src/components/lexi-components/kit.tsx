@@ -82,57 +82,6 @@ export function ProtoScreen({
   );
 }
 
-const EDGE_WIDTH = 28;
-const EDGE_COMMIT_X = 14;
-const EDGE_CANCEL_Y = 16;
-
-export function EdgeSwipe({
-  children,
-  onSwipe,
-}: {
-  children: ReactNode;
-  onSwipe: () => void;
-}) {
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
-  const fired = useSharedValue(false);
-
-  const gesture = Gesture.Pan()
-    .manualActivation(true)
-    .onTouchesDown((e, manager) => {
-      const touch = e.allTouches[0];
-      if (!touch) return;
-      if (touch.absoluteX > EDGE_WIDTH) {
-        manager.fail();
-        return;
-      }
-      startX.value = touch.absoluteX;
-      startY.value = touch.absoluteY;
-      fired.value = false;
-    })
-    .onTouchesMove((e, manager) => {
-      const touch = e.allTouches[0];
-      if (!touch || fired.value) return;
-      const dx = touch.absoluteX - startX.value;
-      const dy = Math.abs(touch.absoluteY - startY.value);
-      if (dy > EDGE_CANCEL_Y && dy > dx) {
-        manager.fail();
-        return;
-      }
-      if (dx > EDGE_COMMIT_X) {
-        fired.value = true;
-        manager.activate();
-        runOnJS(onSwipe)();
-      }
-    });
-
-  return (
-    <GestureDetector gesture={gesture}>
-      <Box flex={1}>{children}</Box>
-    </GestureDetector>
-  );
-}
-
 export function HeaderButton({
   children,
   onPress,

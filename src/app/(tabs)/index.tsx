@@ -3,11 +3,11 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackHandler, RefreshControl, ScrollView } from "react-native";
+import { Drawer } from "react-native-drawer-layout";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
-  EdgeSwipe,
   HeaderButton,
   IconBrain,
   IconSearch,
@@ -19,6 +19,7 @@ import {
   Text,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
+import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
@@ -48,6 +49,7 @@ export default function LibraryScreen() {
   const [openFolderUri, setOpenFolderUri] = useState<string | null>(null);
   const [openShelf, setOpenShelf] = useState<CollectionId | null>(null);
   const [filing, setFiling] = useState<FilableDoc | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [pulled, setPulled] = useState(false);
   const refreshing = pulled && lib.scanning;
@@ -62,6 +64,10 @@ export default function LibraryScreen() {
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       const onBack = () => {
+        if (settingsOpen) {
+          setSettingsOpen(false);
+          return true;
+        }
         if (filing) {
           setFiling(null);
           return true;
@@ -94,7 +100,16 @@ export default function LibraryScreen() {
         clearTimeout(timer);
         exitArmed.current = false;
       };
-    }, [filing, searching, tab, openFolderUri, openShelf, showToast, tr])
+    }, [
+      settingsOpen,
+      filing,
+      searching,
+      tab,
+      openFolderUri,
+      openShelf,
+      showToast,
+      tr,
+    ])
   );
 
   useEffect(() => {
@@ -112,7 +127,12 @@ export default function LibraryScreen() {
     { key: "vocab" as const, label: tr("tabItems.vocab") },
   ];
 
-  const openSettings = useCallback(() => router.push("/settings"), []);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const renderSettings = useCallback(
+    () => <SettingsPanel onClose={closeSettings} />,
+    [closeSettings]
+  );
 
   const openReader = () => router.push("/reader");
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
@@ -155,7 +175,15 @@ export default function LibraryScreen() {
   );
 
   return (
-    <EdgeSwipe onSwipe={openSettings}>
+    <Drawer
+      drawerStyle={{ width: "100%" }}
+      drawerType="slide"
+      onClose={closeSettings}
+      onOpen={openSettings}
+      open={settingsOpen}
+      renderDrawerContent={renderSettings}
+      swipeEdgeWidth={40}
+    >
       <ProtoScreen>
         <Box
           align="center"
@@ -319,6 +347,6 @@ export default function LibraryScreen() {
           <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
         ) : null}
       </ProtoScreen>
-    </EdgeSwipe>
+    </Drawer>
   );
 }
