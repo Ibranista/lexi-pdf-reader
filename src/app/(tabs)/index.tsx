@@ -255,7 +255,16 @@ export default function LibraryScreen() {
         </>
       )}
 
-      {tab === "all" && !searching ? (
+      {searching ? (
+        <SearchLibraryResults
+          contentPad={contentPad}
+          lib={lib}
+          openCollections={openCollections}
+          openDoc={openDoc}
+          query={query}
+          refreshControl={renderRefresh()}
+        />
+      ) : tab === "all" ? (
         <AllLibraryTab
           contentPad={contentPad}
           lib={lib}
@@ -263,7 +272,7 @@ export default function LibraryScreen() {
           openDoc={openDoc}
           refreshControl={renderRefresh()}
         />
-      ) : tab === "files" && !searching ? (
+      ) : tab === "files" ? (
         <FilesLibraryTab
           contentPad={contentPad}
           lib={lib}
@@ -279,13 +288,7 @@ export default function LibraryScreen() {
           refreshControl={renderRefresh()}
           style={{ flex: 1 }}
         >
-          {searching ? (
-            <SearchLibraryResults
-              openDemo={openDemo}
-              openReader={openReader}
-              query={query}
-            />
-          ) : tab === "recent" ? (
+          {tab === "recent" ? (
             <RecentLibraryTab
               openCollections={openCollections}
               openDoc={openDoc}

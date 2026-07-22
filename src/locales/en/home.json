@@ -115,10 +115,15 @@
       "folderEmpty": "No documents in this folder."
     },
     "search": {
-      "emptyPrompt": "Search across Recent and All documents\nby title.",
+      "emptyPrompt": "Search every document LexiPDF can see —\nby name or format.",
       "resultCount_one": "{{count}} document",
       "resultCount_other": "{{count}} documents",
-      "noMatch": "No documents match “{{query}}”."
+      "noMatch": "No documents match “{{query}}”.",
+      "stillScanning": "Still scanning your device — more may appear.",
+      "where": {
+        "recent": "Recent",
+        "filed": "Filed"
+      }
     }
   },
   "hero": {
