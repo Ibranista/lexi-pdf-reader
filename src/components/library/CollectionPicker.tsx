@@ -12,13 +12,14 @@ import { Modal, Pressable, StyleSheet, View } from "react-native";
 
 import { Box } from "@/components/atoms";
 import {
+  CollectionGlyph,
   IconCheck,
   IconClose,
   SectionLabel,
   Tap,
   Text,
 } from "@/components/lexi-components";
-import { COLLECTION_META } from "@/constants/collections";
+import { COLLECTION_META, resolveCollectionColor } from "@/constants/collections";
 import { useToastStore } from "@/stores/app-store";
 import {
   type FilableDoc,
@@ -80,7 +81,7 @@ export function CollectionPicker({
           </Box>
 
           <Box gap={3}>
-            {COLLECTION_META.map(({ emoji, id }) => {
+            {COLLECTION_META.map(({ color, icon, id }) => {
               const label = tr(`library.collections.names.${id}`);
               const filed = (items[id] ?? []).some((d) => d.uri === doc.uri);
               return (
@@ -109,7 +110,15 @@ export function CollectionPicker({
                     paddingY={6}
                     rounded={8}
                   >
-                    <Text size={14}>{emoji}</Text>
+                    <CollectionGlyph
+                      color={
+                        filed
+                          ? t.accentText
+                          : resolveCollectionColor(color, t.dark, t.ink)
+                      }
+                      icon={icon}
+                      size={14}
+                    />
                     <Box flex={1}>
                       <Text
                         color={filed ? t.accentText : t.ink}
