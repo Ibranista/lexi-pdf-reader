@@ -277,10 +277,19 @@ export default function LibraryScreen() {
         </>
       )}
 
-      {/* All and Files own their scroller — a FlashList can't be nested in a
-          ScrollView, and those are the two tabs long enough to need one. The
-          short, fixed-length tabs stay on a plain ScrollView. */}
-      {tab === "all" && !searching ? (
+      {/* Search, All and Files own their scroller — a FlashList can't be
+          nested in a ScrollView, and those are the views long enough to need
+          one. The short, fixed-length tabs stay on a plain ScrollView. */}
+      {searching ? (
+        <SearchLibraryResults
+          contentPad={contentPad}
+          lib={lib}
+          openCollections={openCollections}
+          openDoc={openDoc}
+          query={query}
+          refreshControl={renderRefresh()}
+        />
+      ) : tab === "all" ? (
         <AllLibraryTab
           contentPad={contentPad}
           lib={lib}
@@ -288,7 +297,7 @@ export default function LibraryScreen() {
           openDoc={openDoc}
           refreshControl={renderRefresh()}
         />
-      ) : tab === "files" && !searching ? (
+      ) : tab === "files" ? (
         <FilesLibraryTab
           contentPad={contentPad}
           lib={lib}
@@ -304,13 +313,7 @@ export default function LibraryScreen() {
           refreshControl={renderRefresh()}
           style={{ flex: 1 }}
         >
-          {searching ? (
-            <SearchLibraryResults
-              openDemo={openDemo}
-              openReader={openReader}
-              query={query}
-            />
-          ) : tab === "recent" ? (
+          {tab === "recent" ? (
             <RecentLibraryTab
               openCollections={openCollections}
               openDoc={openDoc}
