@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Keyboard } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
@@ -11,131 +13,162 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
-import { useToastStore } from "@/stores/app-store";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
   type HighlightColor,
   useAnnotationsStore,
 } from "@/stores/annotations-store";
+import { useToastStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
+
+const NOTE_DEFAULT_COLOR: HighlightColor = "amber";
 
 export function AnnotateBar({
   onBookmark,
   onClose,
+  onComposingChange,
   page,
   text,
   uri,
 }: {
   onBookmark: () => void;
   onClose: () => void;
+  onComposingChange?: (composing: boolean) => void;
   page: number;
   text: string;
   uri: string;
 }) {
   const t = useProtoTheme();
+  const insets = useSafeAreaInsets();
   const showToast = useToastStore((s) => s.showToast);
   const add = useAnnotationsStore((s) => s.add);
-  const setNote = useAnnotationsStore((s) => s.setNote);
 
-  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [noteFor, setNoteFor] = useState<boolean>(false);
   const [draft, setDraft] = useState("");
+
+  const dismissComposer = () => {
+    Keyboard.dismiss();
+    setDraft("");
+    setNoteFor(false);
+    onComposingChange?.(false);
+    onClose();
+  };
 
   const save = (color: HighlightColor) =>
     add({ uri, page, text, color, note: "" });
 
   const highlight = (color: HighlightColor) => {
     save(color);
-    onClose();
+    dismissComposer();
     showToast("Highlighted — find it in My Notes");
   };
 
-  if (noteFor !== null) {
+  if (noteFor) {
     return (
       <>
         <Backdrop
           onPress={() => {
-            onClose();
+            dismissComposer();
           }}
           opacity={0.4}
         />
-        <KeyboardStickyView
-          offset={{ closed: 0, opened: 12 }}
+        <Box
           style={{
             position: "absolute",
-            left: 16,
-            right: 16,
-            bottom: 24,
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
             zIndex: 40,
           }}
         >
-          <Box
-            bg={t.card}
-            borderColor={t.line}
-            borderWidth={1}
-            gap={12}
-            padding={16}
-            rounded={18}
-            style={{ elevation: 20 }}
+          <Tap onPress={dismissComposer} scale={1} style={{ flex: 1 }}>
+            <Box style={{ flex: 1 }} />
+          </Tap>
+
+          <KeyboardStickyView
+            offset={{ closed: 0, opened: insets.bottom }}
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 16 + insets.bottom,
+            }}
           >
-            <Box align="center" direction="row" gap={10}>
-              <IconNoteDoc color={t.accentText} size={15} />
-              <Box flex={1}>
-                <Text size={13} weight="600">
-                  Note on page {page}
-                </Text>
-              </Box>
-              <Tap onPress={onClose} scale={0.9}>
-                <IconClose color={t.sub} size={16} />
-              </Tap>
-            </Box>
-
             <Box
-              style={{
-                borderLeftWidth: 3,
-                borderLeftColor: HIGHLIGHT_FILL.amber,
-                paddingLeft: 10,
-              }}
-            >
-              <Text color={t.sub} lh={18} numberOfLines={3} serif size={12.5}>
-                {text}
-              </Text>
-            </Box>
-
-            <TextInput
-              autoFocus
-              backgroundColor={t.chip}
+              bg={t.card}
               borderColor={t.line}
               borderWidth={1}
-              fontSize={14}
-              multiline
-              onChangeText={setDraft}
-              placeholder="What did you make of it?"
-              placeholderTextColor={t.faint}
-              rounded={12}
-              style={{ minHeight: 88, textAlignVertical: "top" }}
-              textColor={t.ink}
-              value={draft}
-            />
-
-            <Tap
-              onPress={() => {
-                setNote(noteFor, draft.trim());
-                onClose();
-                showToast(
-                  draft.trim() ? "Note saved" : "Highlighted — note left empty",
-                );
-              }}
-              scale={0.97}
+              gap={12}
+              padding={16}
+              rounded={18}
+              style={{ elevation: 20 }}
             >
-              <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
-                <Text color={t.onAccent} size={14} weight="600">
-                  Save note
+              <Box align="center" direction="row" gap={10}>
+                <IconNoteDoc color={t.accentText} size={15} />
+                <Box flex={1}>
+                  <Text size={13} weight="600">
+                    Note on page {page}
+                  </Text>
+                </Box>
+                <Tap onPress={dismissComposer} scale={0.9}>
+                  <IconClose color={t.sub} size={16} />
+                </Tap>
+              </Box>
+
+              <Box
+                style={{
+                  borderLeftWidth: 3,
+                  borderLeftColor: HIGHLIGHT_FILL[NOTE_DEFAULT_COLOR],
+                  paddingLeft: 10,
+                }}
+              >
+                <Text color={t.sub} lh={18} numberOfLines={3} serif size={12.5}>
+                  {text}
                 </Text>
               </Box>
-            </Tap>
-          </Box>
-        </KeyboardStickyView>
+
+              <TextInput
+                autoFocus
+                backgroundColor={t.chip}
+                borderColor={t.line}
+                borderWidth={1}
+                fontSize={14}
+                multiline
+                onChangeText={setDraft}
+                placeholder="What did you make of it?"
+                placeholderTextColor={t.faint}
+                rounded={12}
+                style={{ minHeight: 88, textAlignVertical: "top" }}
+                textColor={t.ink}
+                value={draft}
+              />
+
+              <Tap
+                onPress={() => {
+                  const note = draft.trim();
+                  add({
+                    uri,
+                    page,
+                    text,
+                    color: NOTE_DEFAULT_COLOR,
+                    note,
+                  });
+                  dismissComposer();
+                  showToast(
+                    note ? "Note saved" : "Highlighted — note left empty",
+                  );
+                }}
+                scale={0.97}
+              >
+                <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
+                  <Text color={t.onAccent} size={14} weight="600">
+                    Save note
+                  </Text>
+                </Box>
+              </Tap>
+            </Box>
+          </KeyboardStickyView>
+        </Box>
       </>
     );
   }
@@ -176,7 +209,9 @@ export function AnnotateBar({
             icon={<IconNoteDoc color="#F6F3EE" size={16} />}
             label="Note"
             onPress={() => {
-              setNoteFor(save("amber"));
+              setDraft("");
+              setNoteFor(true);
+              onComposingChange?.(true);
             }}
           />
           <SelAction
@@ -184,7 +219,7 @@ export function AnnotateBar({
             label="Bookmark"
             onPress={() => {
               onBookmark();
-              onClose();
+              dismissComposer();
             }}
           />
         </Box>

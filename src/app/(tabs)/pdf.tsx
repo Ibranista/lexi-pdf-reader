@@ -134,6 +134,7 @@ export default function PdfViewerScreen() {
     page: number;
   } | null>(null);
   const [clearSelSeq, setClearSelSeq] = useState(0);
+  const [composing, setComposing] = useState(false);
   const annotations = useAnnotationsStore((s) => s.items);
   const highlights = useMemo(
     () =>
@@ -584,9 +585,10 @@ export default function PdfViewerScreen() {
                 );
               }}
               onSearchResults={setSearchResults}
-              onSelection={(text, selPage) =>
-                setSelection(text ? { text, page: selPage || page } : null)
-              }
+              onSelection={(text, selPage) => {
+                if (composing) return;
+                setSelection(text ? { text, page: selPage || page } : null);
+              }}
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
               topInset={insets.top}
@@ -885,7 +887,9 @@ export default function PdfViewerScreen() {
             toggleBookmark(selection.page);
             showToast(`Page ${selection.page} bookmarked`);
           }}
+          onComposingChange={setComposing}
           onClose={() => {
+            setComposing(false);
             setSelection(null);
             setClearSelSeq((n) => n + 1);
           }}
