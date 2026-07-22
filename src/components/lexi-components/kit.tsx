@@ -82,6 +82,57 @@ export function ProtoScreen({
   );
 }
 
+const EDGE_WIDTH = 28;
+const EDGE_COMMIT_X = 14;
+const EDGE_CANCEL_Y = 16;
+
+export function EdgeSwipe({
+  children,
+  onSwipe,
+}: {
+  children: ReactNode;
+  onSwipe: () => void;
+}) {
+  const startX = useSharedValue(0);
+  const startY = useSharedValue(0);
+  const fired = useSharedValue(false);
+
+  const gesture = Gesture.Pan()
+    .manualActivation(true)
+    .onTouchesDown((e, manager) => {
+      const touch = e.allTouches[0];
+      if (!touch) return;
+      if (touch.absoluteX > EDGE_WIDTH) {
+        manager.fail();
+        return;
+      }
+      startX.value = touch.absoluteX;
+      startY.value = touch.absoluteY;
+      fired.value = false;
+    })
+    .onTouchesMove((e, manager) => {
+      const touch = e.allTouches[0];
+      if (!touch || fired.value) return;
+      const dx = touch.absoluteX - startX.value;
+      const dy = Math.abs(touch.absoluteY - startY.value);
+      if (dy > EDGE_CANCEL_Y && dy > dx) {
+        manager.fail();
+        return;
+      }
+      if (dx > EDGE_COMMIT_X) {
+        fired.value = true;
+        manager.activate();
+        runOnJS(onSwipe)();
+      }
+    });
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Box flex={1}>{children}</Box>
+    </GestureDetector>
+  );
+}
+
 export function HeaderButton({
   children,
   onPress,
@@ -332,7 +383,7 @@ export function Cover({
           height: span * 2,
           transform: [{ rotate: "45deg" }],
         }}
-      />,
+      />
     );
   }
   return (
@@ -380,7 +431,7 @@ export function IndeterminateBar() {
         duration: 1100,
         easing: Easing.inOut(Easing.ease),
         useNativeDriver: false,
-      }),
+      })
     );
     loop.start();
     return () => loop.stop();
@@ -442,13 +493,13 @@ export function ProtoSlider({
       span <= 0
         ? 0
         : Math.min(1, Math.max(0, ((isLog ? Math.log(v) : v) - lo) / span)),
-    [isLog, lo, span],
+    [isLog, lo, span]
   );
 
   const tickVals = useMemo(() => (ticks ? [...ticks] : []), [ticks]);
   const tickPos = useMemo(
     () => tickVals.map((v) => posOf(v)),
-    [tickVals, posOf],
+    [tickVals, posOf]
   );
 
   const sliderPos = useSharedValue(posOf(value));
@@ -469,7 +520,7 @@ export function ProtoSlider({
       }
       sliderPos.value = Math.min(
         1,
-        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span),
+        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span)
       );
       if (next !== lastSent.value) {
         lastSent.value = next;
@@ -496,7 +547,7 @@ export function ProtoSlider({
       Gesture.Tap()
         .maxDuration(400)
         .onEnd((e) => commit(e.x))
-        .onFinalize(finish),
+        .onFinalize(finish)
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

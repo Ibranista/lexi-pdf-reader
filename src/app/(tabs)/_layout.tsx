@@ -27,7 +27,10 @@ export default function TabLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="settings" />
+        <Stack.Screen
+          name="settings"
+          options={{ animation: "ios_from_left" }}
+        />
         <Stack.Screen name="today" />
         <Stack.Screen name="brain" />
         <Stack.Screen name="reader" />
