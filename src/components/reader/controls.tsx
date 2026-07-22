@@ -11,10 +11,10 @@ import {
   IconSearch,
   IconSpark,
   ProtoSlider,
-  Text,
   SectionLabel,
   Segmented,
   Tap,
+  Text,
   Toggle,
 } from "@/components/lexi-components";
 import { BOOK_PAGES, BOOK_TITLE } from "@/constants/library";
