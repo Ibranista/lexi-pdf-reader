@@ -18,6 +18,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Box } from "@/components/atoms";
 import {
   Divider,
+  IconChevron,
+  IconStar,
   ProtoSlider,
   SectionLabel,
   Segmented,
@@ -231,9 +233,13 @@ const SmartZoomControl = memo(function SmartZoomControl() {
 });
 
 interface Props {
+  /** Whether the open document is filed on any shelf. */
+  filed?: boolean;
   /** Distraction-free reading mode — viewer state, not a stored setting. */
   focusMode?: boolean;
   onClose?: () => void;
+  /** Opens the collection picker for the document being read. */
+  onOpenCollections?: () => void;
   onToggleFocusMode?: () => void;
   onViewModeChange?: (mode: ViewMode) => void;
   viewMode?: ViewMode;
@@ -242,8 +248,10 @@ interface Props {
 export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
   (
     {
+      filed = false,
       focusMode = false,
       onClose,
+      onOpenCollections,
       onToggleFocusMode,
       onViewModeChange,
       viewMode = "page",
@@ -279,6 +287,41 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
             Reading settings
           </Text>
         </Box>
+
+        {/* Acts on the document rather than on how it reads, so it sits above
+            the settings proper. It lives here because the toolbar is full:
+            HeaderButton is a fixed 40px and a seventh one squeezed the title
+            out of the header entirely. */}
+        {onOpenCollections ? (
+          <Tap onPress={onOpenCollections} scale={0.98}>
+            <Box
+              align="center"
+              bg={filed ? t.accentSoft : t.chip}
+              direction="row"
+              gap={10}
+              marginTop={10}
+              paddingX={14}
+              paddingY={12}
+              rounded={12}
+            >
+              <IconStar
+                color={filed ? t.accentText : t.ink}
+                fill={filed ? t.accentText : "none"}
+                size={17}
+              />
+              <Box flex={1}>
+                <Text
+                  color={filed ? t.accentText : t.ink}
+                  size={14}
+                  weight="600"
+                >
+                  {filed ? "In your collections" : "Add to collection"}
+                </Text>
+              </Box>
+              <IconChevron color={filed ? t.accentText : t.faint} size={15} />
+            </Box>
+          </Tap>
+        ) : null}
 
         <Box paddingBottom={8} paddingTop={10}>
           <SectionLabel size={11}>View</SectionLabel>

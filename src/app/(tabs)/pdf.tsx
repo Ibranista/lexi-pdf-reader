@@ -29,7 +29,6 @@ import {
   IconReflow,
   IconSearch,
   IconSpark,
-  IconStar,
   Tap,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
@@ -730,13 +729,6 @@ export default function PdfViewerScreen() {
                 <HeaderButton onPress={() => router.push("/notes")}>
                   <IconPencil color={t.ink} size={18} />
                 </HeaderButton>
-                <HeaderButton onPress={() => setFilingOpen(true)}>
-                  <IconStar
-                    color={filedSomewhere ? t.accent : t.ink}
-                    fill={filedSomewhere ? t.accent : "none"}
-                    size={18}
-                  />
-                </HeaderButton>
                 <HeaderButton
                   onPress={() => {
                     toggleBookmark(page);
@@ -858,8 +850,14 @@ export default function PdfViewerScreen() {
       </GestureDetector>
 
       <ReaderSettingsSheet
+        filed={filedSomewhere}
         focusMode={focusOn}
         onClose={() => setSettingsOpen(false)}
+        onOpenCollections={() => {
+          sheetRef.current?.dismiss();
+          setSettingsOpen(false);
+          setFilingOpen(true);
+        }}
         onToggleFocusMode={toggleFocus}
         onViewModeChange={switchTo}
         ref={sheetRef}
