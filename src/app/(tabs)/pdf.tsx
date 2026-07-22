@@ -1,7 +1,7 @@
 import * as NavigationBar from "expo-navigation-bar";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -34,6 +34,7 @@ import {
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import {
+  AnnotateBar,
   FocusChrome,
   LexiBubble,
   LexiSheet,
@@ -44,8 +45,12 @@ import {
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
-import { BOOK_TITLE } from "@/constants/library";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useAnnotationsStore } from "@/stores/annotations-store";
+import {
+  useAppStore,
+  useReaderJumpStore,
+  useToastStore,
+} from "@/stores/app-store";
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
@@ -124,6 +129,19 @@ export default function PdfViewerScreen() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const outline =
     reflowOutline.length > nativeOutline.length ? reflowOutline : nativeOutline;
+  const [selection, setSelection] = useState<{
+    text: string;
+    page: number;
+  } | null>(null);
+  const [clearSelSeq, setClearSelSeq] = useState(0);
+  const annotations = useAnnotationsStore((s) => s.items);
+  const highlights = useMemo(
+    () =>
+      annotations
+        .filter((a) => a.uri === uri)
+        .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
+    [annotations, uri],
+  );
   const [pageMarker, setPageMarker] = useState<{
     page: number;
     boxes: { x0: number; y0: number; x1: number; y1: number }[];
@@ -287,6 +305,14 @@ export default function PdfViewerScreen() {
       setReflowGoto((current) => ({ page: nextPage, seq: current.seq + 1 }));
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      const target = useReaderJumpStore.getState().consume(uri);
+      if (target) goToPage(target);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [uri]),
+  );
 
   const goToSearchResult = (requestedPage: number, index: number) => {
     const query = searchQuery.trim();
@@ -531,6 +557,14 @@ export default function PdfViewerScreen() {
           >
             <PdfReflowView
               chromeOffset={immersive ? 0 : barH}
+              clearSelectionSeq={clearSelSeq}
+              highlights={highlights}
+              onHighlightPress={(id) =>
+                router.push({
+                  pathname: "/notes",
+                  params: { uri, name: name ?? "Document", focus: id },
+                })
+              }
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -550,6 +584,9 @@ export default function PdfViewerScreen() {
                 );
               }}
               onSearchResults={setSearchResults}
+              onSelection={(text, selPage) =>
+                setSelection(text ? { text, page: selPage || page } : null)
+              }
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
               topInset={insets.top}
@@ -604,7 +641,7 @@ export default function PdfViewerScreen() {
                 size={16}
                 weight="600"
               >
-                {BOOK_TITLE}
+                {name ?? "Document"}
               </Text>
               {chapter ? (
                 <Text
@@ -650,9 +687,18 @@ export default function PdfViewerScreen() {
                 <HeaderButton onPress={() => setSearchOpen(true)}>
                   <IconSearch color={t.ink} size={18} />
                 </HeaderButton>
-                <HeaderButton onPress={() => router.push("/notes")}>
-                  <IconPencil color={t.ink} size={18} />
-                </HeaderButton>
+                {mode === "reflow" ? (
+                  <HeaderButton
+                    onPress={() =>
+                      router.push({
+                        pathname: "/notes",
+                        params: { uri, name: name ?? "Document" },
+                      })
+                    }
+                  >
+                    <IconPencil color={t.ink} size={18} />
+                  </HeaderButton>
+                ) : null}
                 <HeaderButton
                   onPress={() => {
                     toggleBookmark(page);
@@ -831,6 +877,21 @@ export default function PdfViewerScreen() {
         <CollectionPicker
           doc={{ uri, name: name ?? "Document", ext: "PDF" }}
           onClose={() => setFilingOpen(false)}
+        />
+      ) : null}
+      {selection && mode === "reflow" ? (
+        <AnnotateBar
+          onBookmark={() => {
+            toggleBookmark(selection.page);
+            showToast(`Page ${selection.page} bookmarked`);
+          }}
+          onClose={() => {
+            setSelection(null);
+            setClearSelSeq((n) => n + 1);
+          }}
+          page={selection.page}
+          text={selection.text}
+          uri={uri}
         />
       ) : null}
     </Box>

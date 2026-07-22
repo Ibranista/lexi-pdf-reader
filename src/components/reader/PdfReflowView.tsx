@@ -84,6 +84,19 @@ function buildHtml(
     --hl: ${s.hl};
     --ff: ${s.fontFamily};
   }
+  /* Saved highlights. Alpha rather than a flat fill so the reader's own text
+     colour still carries the contrast — a solid pastel behind light text in
+     dark mode is unreadable. */
+  mark.lexi-hl {
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+    background: rgba(239,197,126,.42);
+  }
+  mark.lexi-hl[data-c="sage"] { background: rgba(180,212,180,.42); }
+  mark.lexi-hl[data-c="sky"]  { background: rgba(174,203,232,.42); }
+  mark.lexi-hl[data-c="rose"] { background: rgba(232,184,180,.42); }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); }
   body {
@@ -539,6 +552,17 @@ function buildHtml(
     if (moved) return;                              // was a scroll/drag
     if (Date.now() - startT > TAP_TIME) return;     // was a long press
     if (window.getSelection().toString() !== '') return;
+    // A tap on a saved highlight opens it, rather than toggling the chrome.
+    // Taken before the double-tap timer so it responds on the first tap.
+    var onMark = e.target && e.target.closest
+      ? e.target.closest('mark.lexi-hl')
+      : null;
+    if (onMark) {
+      if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+      e.preventDefault();
+      post({ type: 'highlighttap', id: onMark.getAttribute('data-id') || '' });
+      return;
+    }
     var now = Date.now();
     if (now - lastTap < DBL_WINDOW) {
       if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
@@ -574,6 +598,134 @@ function buildHtml(
       updateSpotlight();
     });
   }, { passive: true });
+
+  /* Selection → RN, so the reader can offer highlight/note on it. Reported on
+     settle rather than on every change: Android fires selectionchange for each
+     handle movement, and the action bar shouldn't flicker while you drag. */
+  var selTimer = null;
+  var lastSel = '';
+  document.addEventListener('selectionchange', function(){
+    clearTimeout(selTimer);
+    selTimer = setTimeout(function(){
+      var sel = window.getSelection();
+      var text = sel ? sel.toString().trim() : '';
+      if (text === lastSel) return;
+      lastSel = text;
+      if (!text) { post({ type: 'selection', text: '' }); return; }
+      // page comes from the section the selection starts in, so a passage
+      // spanning a page break is filed on the page it began
+      var node = sel.anchorNode;
+      var el = node && (node.nodeType === 1 ? node : node.parentElement);
+      var sec = el && el.closest ? el.closest('section[data-page]') : null;
+      post({
+        type: 'selection',
+        text: text,
+        page: sec ? parseInt(sec.getAttribute('data-page'), 10) : 0,
+      });
+    }, 320);
+  });
+
+  /* ===== saved highlights =====
+     Re-found by text rather than stored as offsets: reflow rebuilds the DOM
+     whenever the typeface or size changes, so any offset we recorded would go
+     stale. Matching the passage again survives all of that. */
+
+  /* Whitespace-collapsed copy of a string, plus a map back to the original
+     indices — reflow's text nodes carry the PDF's own line breaks, which the
+     selected string doesn't. */
+  function normMap(s){
+    var out = '', map = [], ws = false;
+    for (var i = 0; i < s.length; i++){
+      var ch = s[i];
+      // ch <= ' ' catches space, newline, tab and carriage return without
+      // escape sequences, which inside this template literal would need
+      // double-escaping to survive into the page.
+      if (ch <= ' ') {
+        if (ws) continue;
+        out += ' '; map.push(i); ws = true;
+      } else {
+        out += ch; map.push(i); ws = false;
+      }
+    }
+    return { text: out, map: map };
+  }
+
+  function textNodesOf(root){
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var nodes = [], n;
+    while ((n = w.nextNode())) nodes.push(n);
+    return nodes;
+  }
+
+  /* Wraps one passage. Works per text node so a passage crossing paragraphs
+     still marks — surroundContents throws on a range that straddles elements,
+     but never on one confined to a single text node. */
+  function markPassage(sec, needle, color, id){
+    var nodes = textNodesOf(sec);
+    if (!nodes.length) return false;
+    var full = '', starts = [];
+    for (var i = 0; i < nodes.length; i++){
+      starts.push(full.length);
+      full += nodes[i].nodeValue;
+    }
+    var nm = normMap(full);
+    var want = normMap(needle).text.trim();
+    if (!want) return false;
+    var at = nm.text.indexOf(want);
+    if (at < 0) return false;
+    var from = nm.map[at], to = nm.map[at + want.length - 1] + 1;
+
+    for (var j = 0; j < nodes.length; j++){
+      var ns = starts[j], ne = ns + nodes[j].nodeValue.length;
+      var s = Math.max(from, ns), e = Math.min(to, ne);
+      if (s >= e) continue;
+      try {
+        var r = document.createRange();
+        r.setStart(nodes[j], s - ns);
+        r.setEnd(nodes[j], e - ns);
+        var m = document.createElement('mark');
+        m.className = 'lexi-hl';
+        m.setAttribute('data-c', color);
+        if (id) m.setAttribute('data-id', id);
+        r.surroundContents(m);
+      } catch (err) { /* node vanished mid-pass — skip it */ }
+    }
+    return true;
+  }
+
+  var savedHighlights = [];
+
+  function clearHighlights(){
+    var marks = document.querySelectorAll('mark.lexi-hl');
+    for (var i = 0; i < marks.length; i++){
+      var m = marks[i], parent = m.parentNode;
+      if (!parent) continue;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();   // re-join, or the next match sees a split string
+    }
+  }
+
+  window.applyHighlights = function(list){
+    if (list) savedHighlights = list;
+    clearHighlights();
+    for (var i = 0; i < savedHighlights.length; i++){
+      var h = savedHighlights[i];
+      var sec = document.querySelector('section[data-page="' + h.page + '"]');
+      if (!sec) continue;
+      // A passage can run past its own page break; the next section is the
+      // only other place it can be.
+      if (!markPassage(sec, h.text, h.color, h.id) && sec.nextElementSibling) {
+        markPassage(sec.nextElementSibling, h.text, h.color, h.id);
+      }
+    }
+  };
+
+  window.clearTextSelection = function(){
+    try { window.getSelection().removeAllRanges(); } catch (e) {}
+    lastSel = '';
+    post({ type: 'selection', text: '' });
+  };
 
   function b64ToBytes(b64){
     var bin = atob(b64);
@@ -1542,6 +1694,10 @@ interface Props {
   onPageChange?: (page: number) => void;
   onSearchResults?: (results: PdfSearchResult[]) => void;
   onSingleTap?: () => void;
+  onSelection?: (text: string, page: number) => void;
+  clearSelectionSeq?: number;
+  highlights?: { id: string; page: number; text: string; color: string }[];
+  onHighlightPress?: (id: string) => void;
   onIndexed?: () => void;
   onOutline?: (entries: PdfOutlineEntry[]) => void;
   onWordCounts?: (counts: number[]) => void;
@@ -1556,8 +1712,12 @@ export function PdfReflowView({
   searchQuery,
   highlight,
   focusMode = false,
+  clearSelectionSeq = 0,
+  highlights,
+  onHighlightPress,
   onPageChange,
   onSearchResults,
+  onSelection,
   onSingleTap,
   onIndexed,
   onOutline,
@@ -1572,6 +1732,7 @@ export function PdfReflowView({
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("reading");
+  const [extractedSeq, setExtractedSeq] = useState(0);
 
   const settings: Settings = useMemo(
     () => ({
@@ -1661,6 +1822,22 @@ export function PdfReflowView({
   useEffect(() => {
     if (status !== "ready") return;
     webRef.current?.injectJavaScript(
+      `window.applyHighlights && window.applyHighlights(${JSON.stringify(
+        highlights ?? [],
+      )}); true;`,
+    );
+  }, [highlights, status, extractedSeq]);
+
+  useEffect(() => {
+    if (status !== "ready" || !clearSelectionSeq) return;
+    webRef.current?.injectJavaScript(
+      `window.clearTextSelection && window.clearTextSelection(); true;`,
+    );
+  }, [clearSelectionSeq, status]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    webRef.current?.injectJavaScript(
       `window.setFocusMode && window.setFocusMode(${focusMode ? "true" : "false"}); true;`,
     );
   }, [focusMode, status]);
@@ -1704,8 +1881,10 @@ export function PdfReflowView({
             try {
               const msg = JSON.parse(e.nativeEvent.data) as {
                 type: string;
+                id?: string;
                 page?: number;
                 total?: number;
+                text?: string;
                 results?: PdfSearchResult[];
                 entries?: PdfOutlineEntry[];
                 wordCounts?: number[];
@@ -1713,6 +1892,10 @@ export function PdfReflowView({
               if (msg.type === "firstpaint") setStatus("ready");
               else if (msg.type === "page" && msg.page)
                 onPageChange?.(msg.page);
+              else if (msg.type === "highlighttap")
+                onHighlightPress?.(msg.id ?? "");
+              else if (msg.type === "selection")
+                onSelection?.(msg.text ?? "", msg.page ?? 0);
               else if (msg.type === "tap") onSingleTap?.();
               else if (msg.type === "error") setStatus("error");
               else if (msg.type === "searchresults")
@@ -1722,6 +1905,7 @@ export function PdfReflowView({
               else if (msg.type === "done") {
                 onIndexed?.();
                 onWordCounts?.(msg.wordCounts ?? []);
+                setExtractedSeq((n) => n + 1);
                 if (queryRef.current) setIndexSeq((n) => n + 1);
               } else if (msg.type === "progress") {
                 if (queryRef.current && msg.page && msg.page % 5 === 0)

@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import "@/i18n";
@@ -30,21 +31,23 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AppThemeProvider storage={storage}>
-        <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
-          <BottomSheetModalProvider>
-            <AnimatedSplashOverlay />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Protected guard={hasCompletedOnboarding}>
-                <Stack.Screen name="(tabs)" />
-              </Stack.Protected>
-              <Stack.Protected guard={!hasCompletedOnboarding}>
-                <Stack.Screen name="onboarding" />
-              </Stack.Protected>
-            </Stack>
-          </BottomSheetModalProvider>
-        </ThemeProvider>
-      </AppThemeProvider>
+      <KeyboardProvider>
+        <AppThemeProvider storage={storage}>
+          <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
+            <BottomSheetModalProvider>
+              <AnimatedSplashOverlay />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Protected guard={hasCompletedOnboarding}>
+                  <Stack.Screen name="(tabs)" />
+                </Stack.Protected>
+                <Stack.Protected guard={!hasCompletedOnboarding}>
+                  <Stack.Screen name="onboarding" />
+                </Stack.Protected>
+              </Stack>
+            </BottomSheetModalProvider>
+          </ThemeProvider>
+        </AppThemeProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

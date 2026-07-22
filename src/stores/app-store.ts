@@ -209,3 +209,20 @@ export const useToastStore = create<ToastState>()((set) => ({
     toastTimer = setTimeout(() => set({ toast: '' }), 1700);
   },
 }));
+
+interface ReaderJumpState {
+  pending: { uri: string; page: number } | null;
+  request: (uri: string, page: number) => void;
+  consume: (uri: string) => number | null;
+}
+
+export const useReaderJumpStore = create<ReaderJumpState>()((set, get) => ({
+  pending: null,
+  request: (uri, page) => set({ pending: { uri, page } }),
+  consume: (uri) => {
+    const { pending } = get();
+    if (!pending || pending.uri !== uri) return null;
+    set({ pending: null });
+    return pending.page;
+  },
+}));
