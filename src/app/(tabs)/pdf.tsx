@@ -4,8 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  AppState,
   Animated,
+  AppState,
   Dimensions,
   Easing,
   Platform,
@@ -45,6 +45,7 @@ import {
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
+import { BOOK_TITLE } from "@/constants/library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
@@ -143,7 +144,10 @@ export default function PdfViewerScreen() {
   }, []);
 
   useEffect(() => {
-    if (readingVisit.current.uri === uri && readingVisit.current.page !== page) {
+    if (
+      readingVisit.current.uri === uri &&
+      readingVisit.current.page !== page
+    ) {
       recordCurrentReadingTime();
     }
     readingVisit.current = { uri, page, startedAt: Date.now() };
@@ -596,7 +600,7 @@ export default function PdfViewerScreen() {
                 size={16}
                 weight="600"
               >
-                {name ?? "Document"}
+                {BOOK_TITLE}
               </Text>
               {chapter ? (
                 <Text
@@ -627,8 +631,14 @@ export default function PdfViewerScreen() {
                     size={18}
                   />
                 </HeaderButton>
-                <HeaderButton onPress={openSummary}>
-                  <IconSpark color={t.accent} size={18} />
+                <HeaderButton
+                  onPress={() => {
+                    const next = !aiOn;
+                    setApp({ aiOn: next });
+                    showToast(next ? "AI companion on" : "AI companion off");
+                  }}
+                >
+                  <IconSpark color={aiOn ? t.accent : t.ink} size={18} />
                 </HeaderButton>
                 <HeaderButton onPress={toggleFocus}>
                   <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
