@@ -120,6 +120,30 @@ function buildHtml(
     word-break: break-word;
     overflow-wrap: break-word;
   }
+  #content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: var(--fs);
+    line-height: var(--lh);
+    color: var(--fg);
+    table-layout: fixed;
+  }
+  #content th, #content td {
+    border: 1px solid var(--faint);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  #content th {
+    font-weight: 600;
+    background: rgba(128,128,128,0.08);
+  }
+  #content tr:nth-child(even) {
+    background: rgba(128,128,128,0.04);
+  }
   /* Each figure carries an inline width — its size on the page, not its pixel
      count — so a small mark keeps its size instead of being blown up to the
      column and turning to mush. Height stays auto and both caps only shrink;
@@ -817,6 +841,193 @@ function buildHtml(
     return lines;
   }
 
+  /* ── table detection ───────────────────────────────────────────────
+     PDF has no table markup — tables are just positioned text with lines.
+     We reverse-engineer them by looking for items that fall into consistent
+     vertical columns across multiple rows. */
+  function detectTable(items, ops, viewport) {
+    if (items.length < 6) return null;
+
+    // Signal 1: does the page draw ruled paths/rectangles at all?
+    var hasRuleSignal = false;
+    var OPS = pdfjsLib.OPS;
+    for (var oi = 0; oi < ops.fnArray.length; oi++) {
+      var fn = ops.fnArray[oi];
+      var args = ops.argsArray[oi];
+      if (fn === OPS.rectangle) { hasRuleSignal = true; break; }
+      if (fn === OPS.constructPath && args && args[0] && args[0].length) {
+        hasRuleSignal = true;
+      }
+    }
+
+    var source = [];
+    for (var si = 0; si < items.length; si++) if (items[si] && items[si].transform) source.push(items[si]);
+    if (source.length < 6) return null;
+
+    // Sort top→bottom in PDF coordinates (higher y first).
+    source.sort(function(a, b) { return b.transform[5] - a.transform[5]; });
+
+    // Segment page into vertical bands so headers/footers/body don't pollute one cluster.
+    var bandBreak = Math.max(18, viewport.height * 0.045);
+    var bands = [];
+    var curBand = [source[0]];
+    for (var bi = 1; bi < source.length; bi++) {
+      var prevY = source[bi - 1].transform[5];
+      var y = source[bi].transform[5];
+      if (Math.abs(prevY - y) > bandBreak) {
+        bands.push(curBand);
+        curBand = [source[bi]];
+      } else {
+        curBand.push(source[bi]);
+      }
+    }
+    if (curBand.length) bands.push(curBand);
+
+    function clusterRows(bandItems, yTol) {
+      var rows = [];
+      for (var i = 0; i < bandItems.length; i++) {
+        var it = bandItems[i];
+        var y = it.transform[5];
+        var hit = -1;
+        for (var r = 0; r < rows.length; r++) {
+          if (Math.abs(rows[r].y - y) <= yTol) { hit = r; break; }
+        }
+        if (hit < 0) {
+          rows.push({ y: y, count: 1, items: [it] });
+        } else {
+          var row = rows[hit];
+          var n = row.count;
+          row.y = (row.y * n + y) / (n + 1);
+          row.count = n + 1;
+          row.items.push(it);
+        }
+      }
+      rows.sort(function(a, b) { return b.y - a.y; });
+      return rows;
+    }
+
+    function evalBand(bandItems) {
+      if (bandItems.length < 6) return null;
+      var yTol = Math.max(2, viewport.height * 0.0065);
+      var rows = clusterRows(bandItems, yTol).filter(function(r) { return r.items.length >= 2; });
+      if (rows.length < 3) return null;
+
+      var allXs = [];
+      for (var ri = 0; ri < rows.length; ri++) {
+        for (var ii = 0; ii < rows[ri].items.length; ii++) {
+          var it = rows[ri].items[ii];
+          allXs.push({ x: it.transform[4], width: it.width || 0 });
+        }
+      }
+      if (allXs.length < 6) return null;
+      allXs.sort(function(a, b) { return a.x - b.x; });
+
+      var xTol = Math.max(4, viewport.width * 0.012);
+      var cols = [];
+      for (var xi = 0; xi < allXs.length; xi++) {
+        var item = allXs[xi];
+        var merged = false;
+        for (var c = 0; c < cols.length; c++) {
+          if (Math.abs(cols[c].x - item.x) <= xTol) {
+            var n = cols[c].count;
+            cols[c].x = (cols[c].x * n + item.x) / (n + 1);
+            cols[c].count = n + 1;
+            merged = true;
+            break;
+          }
+        }
+        if (!merged) cols.push({ x: item.x, count: 1 });
+      }
+      if (cols.length < 2 || cols.length > 10) return null;
+      cols.sort(function(a, b) { return a.x - b.x; });
+
+      // Column consistency per row.
+      var consistentRows = 0;
+      for (var rj = 0; rj < rows.length; rj++) {
+        var rowXs = rows[rj].items.map(function(it) { return it.transform[4]; });
+        var matchedCols = 0;
+        for (var cj = 0; cj < cols.length; cj++) {
+          for (var rx = 0; rx < rowXs.length; rx++) {
+            if (Math.abs(rowXs[rx] - cols[cj].x) <= xTol) { matchedCols++; break; }
+          }
+        }
+        if (matchedCols >= Math.max(2, cols.length * 0.6)) consistentRows++;
+      }
+      var structure = consistentRows / rows.length;
+
+      // Row-spacing regularity helps reject prose.
+      var gaps = [];
+      for (var g = 1; g < rows.length; g++) gaps.push(Math.abs(rows[g - 1].y - rows[g].y));
+      var regularity = 0;
+      if (gaps.length >= 2) {
+        var mean = gaps.reduce(function(a, b) { return a + b; }, 0) / gaps.length;
+        if (mean > 0) {
+          var variance = 0;
+          for (var gv = 0; gv < gaps.length; gv++) {
+            var d = gaps[gv] - mean;
+            variance += d * d;
+          }
+          variance /= gaps.length;
+          var cv = Math.sqrt(variance) / mean;
+          regularity = Math.max(0, 1 - Math.min(1, cv));
+        }
+      }
+
+      var density = Math.min(1, allXs.length / Math.max(1, rows.length * cols.length));
+      var score = structure * 0.62 + regularity * 0.23 + density * 0.15 + (hasRuleSignal ? 0.08 : 0);
+
+      // Accept if very table-like, or reasonably table-like with ruling signal.
+      if (!(score >= 0.68 || (hasRuleSignal && score >= 0.56 && structure >= 0.45))) return null;
+
+      var grid = [];
+      var tableItems = [];
+      for (var rk = 0; rk < rows.length; rk++) {
+        var row = rows[rk];
+        row.items.sort(function(a, b) { return a.transform[4] - b.transform[4]; });
+        var rowCells = [];
+        var rowUsed = [];
+        for (var ck = 0; ck < cols.length; ck++) {
+          var colX = cols[ck].x;
+          var cellBits = [];
+          for (var ik = 0; ik < row.items.length; ik++) {
+            var rit = row.items[ik];
+            if (Math.abs(rit.transform[4] - colX) <= xTol) {
+              var txt = (rit.str || '').trim();
+              if (txt) cellBits.push(txt);
+              rowUsed.push(rit);
+            }
+          }
+          rowCells.push(cellBits.join(' ').trim());
+        }
+        var hasContent = rowCells.some(function(c2) { return c2.length > 0; });
+        if (hasContent) {
+          grid.push(rowCells);
+          tableItems = tableItems.concat(rowUsed);
+        }
+      }
+
+      if (grid.length < 2) return null;
+      var header = false;
+      if (grid.length > 1) {
+        var firstShort = grid[0].every(function(c3) { return c3.length < 36; });
+        var secondHasData = grid[1].some(function(c4) { return c4.length >= 8; });
+        header = firstShort && secondHasData;
+      }
+      return { rows: grid, header: header, tableItems: tableItems, score: score };
+    }
+
+    var best = null;
+    for (var b = 0; b < bands.length; b++) {
+      if (bands[b].length < 6) continue;
+      var cand = evalBand(bands[b]);
+      if (!cand) continue;
+      if (!best || cand.score > best.score) best = cand;
+    }
+
+    if (!best) return null;
+    return { rows: best.rows, header: best.header, tableItems: best.tableItems };
+  }
+
   /* Merge lines into paragraphs, carrying color. */
   function toParagraphs(lines){
     var gaps = [];
@@ -891,7 +1102,98 @@ function buildHtml(
     }
 
     var tc = await page.getTextContent();
-    var lines = toLines(tc.items);
+
+    // ── try tables first ──────────────────────────────────────────
+    // Pass the operator list so we can detect ruling lines
+    var tableInfo = detectTable(tc.items, ops, viewport);
+    var tableEl = null;
+    var tableItemIds = new Set(); // Use a set for O(1) lookup
+
+    if (tableInfo && tableInfo.rows.length >= 2) {
+      tableEl = document.createElement('table');
+      tableEl.style.cssText =
+        'width:100%;border-collapse:collapse;margin:1.2em 0;font-size:var(--fs);line-height:var(--lh);color:var(--fg);table-layout:fixed;';
+      for (var trIdx = 0; trIdx < tableInfo.rows.length; trIdx++) {
+        var tr = document.createElement('tr');
+        var isHeader = tableInfo.header && trIdx === 0;
+        for (var tdIdx = 0; tdIdx < tableInfo.rows[trIdx].length; tdIdx++) {
+          var td = document.createElement(isHeader ? 'th' : 'td');
+          td.textContent = tableInfo.rows[trIdx][tdIdx];
+          td.style.cssText =
+            'border:1px solid var(--faint);padding:5px 8px;text-align:left;vertical-align:top;overflow-wrap:break-word;word-break:break-word;';
+          if (isHeader) td.style.fontWeight = '600';
+          // Distribute columns somewhat evenly
+          td.style.width = 100 / tableInfo.rows[trIdx].length + '%';
+          tr.appendChild(td);
+        }
+        tableEl.appendChild(tr);
+      }
+
+      // Mark table items for exclusion
+      for (var ti = 0; ti < tableInfo.tableItems.length; ti++) {
+        // Use object reference or create a weak key
+        // Since we can't use WeakSet easily, filter by checking if item
+        // is in the tableItemSet by reference
+        tableItemIds.add(tableInfo.tableItems[ti]);
+      }
+    }
+
+    // Filter: exclude items that are in the table set
+    // We use a simple approach: check if item's y matches a table row
+    // AND x matches a table column
+    var nonTableItems = tc.items;
+    if (tableInfo && tableInfo.tableItems.length > 0) {
+      var tableYs = [];
+      var tableXs = [];
+      var tTol = Math.max(3, viewport.height * 0.008);
+      var xTol2 = Math.max(4, viewport.width * 0.015);
+
+      // Get unique row Ys and col Xs from table items
+      for (var tj = 0; tj < tableInfo.tableItems.length; tj++) {
+        var ty = tableInfo.tableItems[tj].transform[5];
+        var tx = tableInfo.tableItems[tj].transform[4];
+        var hasY = false, hasX = false;
+        for (var yy = 0; yy < tableYs.length; yy++) {
+          if (Math.abs(tableYs[yy] - ty) < tTol) {
+            hasY = true;
+            break;
+          }
+        }
+        for (var xx = 0; xx < tableXs.length; xx++) {
+          if (Math.abs(tableXs[xx] - tx) < xTol2) {
+            hasX = true;
+            break;
+          }
+        }
+        if (!hasY) tableYs.push(ty);
+        if (!hasX) tableXs.push(tx);
+      }
+
+      nonTableItems = tc.items.filter(function(it) {
+        if (!it.transform) return true;
+        if (tableItemIds.has(it)) return false;
+        var iy = it.transform[5];
+        var ix = it.transform[4];
+        var inTableY = false;
+        for (var vy = 0; vy < tableYs.length; vy++) {
+          if (Math.abs(tableYs[vy] - iy) < tTol) {
+            inTableY = true;
+            break;
+          }
+        }
+        if (!inTableY) return true;
+        var inTableX = false;
+        for (var vx = 0; vx < tableXs.length; vx++) {
+          if (Math.abs(tableXs[vx] - ix) < xTol2) {
+            inTableX = true;
+            break;
+          }
+        }
+        return !inTableX; // keep if not in table x-range
+      });
+    }
+
+    var lines = toLines(nonTableItems);
 
     // sample one color per line from the rendered page
     if (ctx) {
@@ -977,6 +1279,10 @@ function buildHtml(
 
     var section = document.createElement('section');
     section.setAttribute('data-page', String(pageNo));
+
+    // If we detected a table, prepend it before the text blocks
+    if (tableEl) section.appendChild(tableEl);
+
     for (var q = 0; q < blocks.length; q++){
       if (blocks[q].kind === 'p') {
         var pEl = paragraphEl(blocks[q].data);
