@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
-import { zustandStorage } from '@/utils/storage';
+import { zustandStorage } from "@/utils/storage";
 
 const MAX_RECENTS = 30;
 
@@ -12,6 +12,7 @@ export interface RecentDoc {
   openedAt: number;
   page: number;
   pageCount: number;
+  bookmarks?: number[];
   readingPlanMs?: number[];
   readingTimeMsByPage?: Record<string, number>;
 }
@@ -22,6 +23,7 @@ interface RecentsState {
   recordProgress: (uri: string, page: number, pageCount?: number) => void;
   setReadingPlan: (uri: string, pageTimesMs: number[]) => void;
   recordReadingTime: (uri: string, page: number, elapsedMs: number) => void;
+  toggleBookmark: (uri: string, page: number) => void;
   remove: (uri: string) => void;
   clear: () => void;
 }
@@ -35,6 +37,7 @@ export const useRecentsStore = create<RecentsState>()(
         set((s) => {
           const previous = s.recents.find((r) => r.uri === uri);
           const entry: RecentDoc = {
+            ...previous,
             uri,
             name,
             ext,
@@ -93,13 +96,27 @@ export const useRecentsStore = create<RecentsState>()(
         }));
       },
 
+      toggleBookmark: (uri, page) =>
+        set((s) => ({
+          recents: s.recents.map((r) => {
+            if (r.uri !== uri) return r;
+            const current = r.bookmarks ?? [];
+            return {
+              ...r,
+              bookmarks: current.includes(page)
+                ? current.filter((p) => p !== page)
+                : [...current, page].sort((a, b) => a - b),
+            };
+          }),
+        })),
+
       remove: (uri) =>
         set((s) => ({ recents: s.recents.filter((r) => r.uri !== uri) })),
 
       clear: () => set({ recents: [] }),
     }),
     {
-      name: 'lexipdf-recents',
+      name: "lexipdf-recents",
       storage: createJSONStorage(() => zustandStorage),
     },
   ),
@@ -111,7 +128,8 @@ export function progressPct(doc: RecentDoc): number {
     if (!expected) return 0;
     const elapsed = doc.readingPlanMs.reduce(
       (sum, pageMs, index) =>
-        sum + Math.min(pageMs, doc.readingTimeMsByPage?.[String(index + 1)] ?? 0),
+        sum +
+        Math.min(pageMs, doc.readingTimeMsByPage?.[String(index + 1)] ?? 0),
       0,
     );
     return Math.min(100, Math.round((elapsed / expected) * 100));

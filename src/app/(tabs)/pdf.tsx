@@ -54,6 +54,8 @@ import { expectedReadingMs } from "@/utils/reading-progress";
 
 type ViewMode = "page" | "reflow";
 
+const EMPTY_BOOKMARKS: number[] = [];
+
 const TITLE_SWAP = LinearTransition.duration(260);
 
 function savedPageFor(uri: string | undefined): number {
@@ -70,9 +72,12 @@ export default function PdfViewerScreen() {
   const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
-  const bookmarks = useAppStore((s) => s.bookmarks);
   const setApp = useAppStore((s) => s.set);
-  const toggleBookmark = useAppStore((s) => s.toggleBookmark);
+  const bookmarks = useRecentsStore(
+    (s) => s.recents.find((r) => r.uri === uri)?.bookmarks ?? EMPTY_BOOKMARKS,
+  );
+  const toggleBookmark = (target: number) =>
+    useRecentsStore.getState().toggleBookmark(uri, target);
   const showToast = useToastStore((s) => s.showToast);
 
   const [titleOpen, setTitleOpen] = useState(false);
@@ -699,7 +704,7 @@ export default function PdfViewerScreen() {
         </Tap>
       </Animated.View>
 
-      {outline.length && !outlineOpen && !searchOpen ? (
+      {(outline.length || bookmarks.length) && !outlineOpen && !searchOpen ? (
         <GestureDetector gesture={swipeFromLeftEdge}>
           <Box
             style={{
@@ -792,12 +797,14 @@ export default function PdfViewerScreen() {
       ) : null}
       {outlineOpen ? (
         <PdfOutlineDrawer
+          bookmarks={bookmarks}
           entries={outline}
           onClose={() => setOutlineOpen(false)}
           onGoPage={(target) => {
             setOutlineOpen(false);
             goToPage(target);
           }}
+          onRemoveBookmark={toggleBookmark}
           page={page}
           title={name ?? "Document"}
         />
