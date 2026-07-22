@@ -73,7 +73,7 @@ export interface DeviceFolder {
  * list rather than jumping to the top.
  */
 export function sortByLibrarySort<
-  T extends { name: string; size: number; modifiedAt: number | null },
+  T extends { name: string; size: number; modifiedAt: number | null }
 >(entries: T[], { key, dir }: LibrarySort): T[] {
   const sign = dir === "asc" ? 1 : -1;
   return [...entries].sort((a, b) => {
@@ -96,7 +96,7 @@ async function scanTree(
   kind: "app" | "device",
   docs: DeviceDoc[],
   folders: DeviceFolder[],
-  onTick: (found: number) => void,
+  onTick: (found: number) => void
 ) {
   const stack: { dir: Directory; depth: number }[] = [{ dir: root, depth: 0 }];
   let visited = 0;
@@ -173,6 +173,9 @@ async function scanTree(
   }
 }
 
+/** Minimum gap between scan-progress updates, in ms. */
+const SCAN_TICK_MS = 150;
+
 export function useDeviceLibrary() {
   const libRootUri = useAppStore((s) => s.libRootUri);
   const [docs, setDocs] = useState<DeviceDoc[]>([]);
@@ -181,7 +184,7 @@ export function useDeviceLibrary() {
   /** Live count of documents found so far during the current scan. */
   const [scanProgress, setScanProgress] = useState(0);
   const [access, setAccess] = useState<StorageAccess>(
-    storageAccessSupported() ? "denied" : "unavailable",
+    storageAccessSupported() ? "denied" : "unavailable"
   );
   const scanGen = useRef(0);
 
@@ -189,9 +192,18 @@ export function useDeviceLibrary() {
     const gen = ++scanGen.current;
     setScanning(true);
     setScanProgress(0);
-    // report the running document count, ignoring superseded scans
+    // Report the running document count, ignoring superseded scans. Throttled
+    // because this fires once per file found: at full rate it re-rendered the
+    // whole library screen hundreds of times a second, which stutters anything
+    // animating over it. The label only needs to look live, not be exact — the
+    // true total lands when the scan finishes.
+    let lastTick = 0;
     const onTick = (found: number) => {
-      if (gen === scanGen.current) setScanProgress(found);
+      if (gen !== scanGen.current) return;
+      const now = Date.now();
+      if (now - lastTick < SCAN_TICK_MS) return;
+      lastTick = now;
+      setScanProgress(found);
     };
     // let the tab paint before hitting the filesystem
     setTimeout(async () => {
@@ -208,7 +220,7 @@ export function useDeviceLibrary() {
           "app",
           nextDocs,
           nextFolders,
-          onTick,
+          onTick
         );
       } catch {
         // no document directory on this platform (web)
@@ -220,7 +232,7 @@ export function useDeviceLibrary() {
             "device",
             nextDocs,
             nextFolders,
-            onTick,
+            onTick
           );
         } catch {
           // storage root unreadable — treat as no access
@@ -233,7 +245,7 @@ export function useDeviceLibrary() {
             "device",
             nextDocs,
             nextFolders,
-            onTick,
+            onTick
           );
         } catch {
           // picked folder no longer accessible — user can pick again

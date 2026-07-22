@@ -29,9 +29,8 @@ export default function TabLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        {/* Settings hangs off the left-hand header icon, so it enters from
-            the left. `ios_from_left` mirrors the interactive dismiss gesture
-            too — you swipe it back out to the left. */}
+        {/* The library screen shows Settings as a left drawer; this route is
+            the deep-link fallback, so it still enters from the left to match. */}
         <Stack.Screen
           name="settings"
           options={{ animation: "ios_from_left" }}

@@ -3,11 +3,11 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackHandler, RefreshControl, ScrollView } from "react-native";
+import { Drawer } from "react-native-drawer-layout";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
-  EdgeSwipe,
   HeaderButton,
   IconBrain,
   IconSearch,
@@ -19,6 +19,7 @@ import {
   Text,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
+import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
@@ -51,6 +52,8 @@ export default function LibraryScreen() {
   const [openShelf, setOpenShelf] = useState<CollectionId | null>(null);
   // the document whose "add to collection" sheet is open, if any
   const [filing, setFiling] = useState<FilableDoc | null>(null);
+  // whether the Settings drawer is showing
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // pull-to-refresh: re-scan the device for documents. `refreshing` is
   // derived rather than stored, so the spinner clears itself when the scan
@@ -73,6 +76,10 @@ export default function LibraryScreen() {
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       const onBack = () => {
+        if (settingsOpen) {
+          setSettingsOpen(false);
+          return true;
+        }
         if (filing) {
           setFiling(null);
           return true;
@@ -105,7 +112,16 @@ export default function LibraryScreen() {
         clearTimeout(timer);
         exitArmed.current = false;
       };
-    }, [filing, searching, tab, openFolderUri, openShelf, showToast, tr])
+    }, [
+      settingsOpen,
+      filing,
+      searching,
+      tab,
+      openFolderUri,
+      openShelf,
+      showToast,
+      tr,
+    ])
   );
 
   // ask for device-wide storage access once, on first open of the library
@@ -124,8 +140,16 @@ export default function LibraryScreen() {
     { key: "vocab" as const, label: tr("tabItems.vocab") },
   ];
 
-  // shared by the header icon and the left-edge swipe
-  const openSettings = useCallback(() => router.push("/settings"), []);
+  // Settings rides in as a left drawer rather than a pushed route, so the
+  // swipe can track the finger. Shared by the header icon and the edge swipe.
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  // stable identity, so the memoised panel is genuinely skipped when this
+  // screen re-renders mid-drag rather than being rebuilt each time
+  const renderSettings = useCallback(
+    () => <SettingsPanel onClose={closeSettings} />,
+    [closeSettings]
+  );
 
   const openReader = () => router.push("/reader");
   // Open formats that have a native reader. Other indexed formats remain
@@ -175,7 +199,17 @@ export default function LibraryScreen() {
   );
 
   return (
-    <EdgeSwipe onSwipe={openSettings}>
+    <Drawer
+      drawerStyle={{ width: "100%" }}
+      // `slide` moves the library along with the panel, so you watch it leave
+      // as you pull Settings in — the panel still lands full-screen at rest.
+      drawerType="slide"
+      onClose={closeSettings}
+      onOpen={openSettings}
+      open={settingsOpen}
+      renderDrawerContent={renderSettings}
+      swipeEdgeWidth={40}
+    >
       <ProtoScreen>
         {/* top icon row */}
         <Box
@@ -345,6 +379,6 @@ export default function LibraryScreen() {
           <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
         ) : null}
       </ProtoScreen>
-    </EdgeSwipe>
+    </Drawer>
   );
 }
