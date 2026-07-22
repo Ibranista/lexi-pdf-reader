@@ -23,6 +23,8 @@ import { useToastStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
 const NOTE_DEFAULT_COLOR: HighlightColor = "amber";
+const NOTE_MIN_HEIGHT = 88;
+const NOTE_MAX_HEIGHT = 200;
 
 export function AnnotateBar({
   onBookmark,
@@ -46,6 +48,7 @@ export function AnnotateBar({
 
   const [noteFor, setNoteFor] = useState<boolean>(false);
   const [draft, setDraft] = useState("");
+  const [draftHeight, setDraftHeight] = useState(NOTE_MIN_HEIGHT);
 
   const dismissComposer = () => {
     Keyboard.dismiss();
@@ -135,10 +138,20 @@ export function AnnotateBar({
                 fontSize={14}
                 multiline
                 onChangeText={setDraft}
+                onContentSizeChange={(e) =>
+                  setDraftHeight(e.nativeEvent.contentSize.height)
+                }
                 placeholder="What did you make of it?"
                 placeholderTextColor={t.faint}
                 rounded={12}
-                style={{ minHeight: 88, textAlignVertical: "top" }}
+                scrollEnabled={draftHeight > NOTE_MAX_HEIGHT}
+                style={{
+                  height: Math.min(
+                    NOTE_MAX_HEIGHT,
+                    Math.max(NOTE_MIN_HEIGHT, draftHeight),
+                  ),
+                  textAlignVertical: "top",
+                }}
                 textColor={t.ink}
                 value={draft}
               />

@@ -3,13 +3,14 @@ import { useMemo, useState } from "react";
 import { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from "@/components/atoms";
+import { Box, TextInput } from "@/components/atoms";
 import {
   Card,
   HeaderButton,
   IconBack,
   IconBookmark,
   IconCards,
+  IconClose,
   IconGraph,
   IconHighlighter,
   IconPencil,
@@ -22,6 +23,7 @@ import {
   HIGHLIGHT_FILL,
   useAnnotationsStore,
 } from "@/stores/annotations-store";
+import { CenterModal } from "@/components/modals";
 import { useReaderJumpStore, useToastStore } from "@/stores/app-store";
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -35,6 +37,9 @@ const TAB_ITEMS: { key: NotesTab; label: string }[] = [
 ];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const PASSAGE_LINES = 4;
+const NOTE_LINES = 3;
 
 function whenLabel(ms: number): string {
   const days = Math.floor((Date.now() - ms) / DAY_MS);
@@ -57,9 +62,14 @@ export default function NotesScreen() {
     uri?: string;
   }>();
   const [tab, setTab] = useState<NotesTab>("high");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [clipped, setClipped] = useState<Record<string, boolean>>({});
 
   const all = useAnnotationsStore((s) => s.items);
   const remove = useAnnotationsStore((s) => s.remove);
+  const setNote = useAnnotationsStore((s) => s.setNote);
   const requestJump = useReaderJumpStore((s) => s.request);
 
   const doc = useRecentsStore((s) => s.recents.find((r) => r.uri === uri));
@@ -78,6 +88,19 @@ export default function NotesScreen() {
     router.back();
     showToast(`Jumped to page ${p}`);
   };
+
+  const noteLayout =
+    (id: string, source: string) =>
+    (event: { nativeEvent: { lines: { text: string }[] } }) => {
+      const shown = event.nativeEvent.lines
+        .map((l) => l.text)
+        .join("")
+        .replaceAll(/\s/gu, "").length;
+      if (shown >= source.replaceAll(/\s/gu, "").length) return;
+      setClipped((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+    };
+
+  const openEntry = annotations.find((a) => a.id === expanded) ?? null;
 
   const empty = (message: string) => (
     <Box align="center" gap={10} paddingX={24} paddingY={48}>
@@ -237,7 +260,13 @@ export default function NotesScreen() {
                       paddingLeft: 12,
                     }}
                   >
-                    <Text lh={22} serif size={14}>
+                    <Text
+                      lh={22}
+                      numberOfLines={PASSAGE_LINES}
+                      onTextLayout={noteLayout(a.id, a.text)}
+                      serif
+                      size={14}
+                    >
                       {a.text}
                     </Text>
                   </Box>
@@ -250,15 +279,42 @@ export default function NotesScreen() {
                       paddingY={10}
                       rounded={10}
                     >
-                      <Box paddingTop={2}>
-                        <IconPencil color={t.accentText} size={13} />
-                      </Box>
+                      <Tap
+                        onPress={() => {
+                          setEditDraft(a.note);
+                          setEditing(a.id);
+                        }}
+                        scale={0.9}
+                      >
+                        <Box
+                          align="center"
+                          height={40}
+                          justify="center"
+                          style={{ marginLeft: -8, marginVertical: -8 }}
+                          width={40}
+                        >
+                          <IconPencil color={t.accentText} size={16} />
+                        </Box>
+                      </Tap>
                       <Box flex={1}>
-                        <Text color={t.sub} lh={19} size={12.5}>
+                        <Text
+                          color={t.sub}
+                          lh={19}
+                          numberOfLines={NOTE_LINES}
+                          onTextLayout={noteLayout(a.id, a.note)}
+                          size={12.5}
+                        >
                           {a.note}
                         </Text>
                       </Box>
                     </Box>
+                  ) : null}
+                  {clipped[a.id] ? (
+                    <Tap onPress={() => setExpanded(a.id)} scale={0.97}>
+                      <Text color={t.accentText} size={12} weight="600">
+                        See more
+                      </Text>
+                    </Tap>
                   ) : null}
                 </Card>
               </Tap>
@@ -273,6 +329,151 @@ export default function NotesScreen() {
           </>
         )}
       </ScrollView>
+
+      <CenterModal
+        containerStyle={{
+          backgroundColor: t.card,
+          borderColor: t.line,
+          borderWidth: 1,
+          maxHeight: "78%",
+          padding: 0,
+        }}
+        marginHorizontal={4}
+        onClose={() => setExpanded(null)}
+        visible={openEntry !== null}
+      >
+        {openEntry ? (
+          <>
+            <Box
+              align="center"
+              direction="row"
+              gap={10}
+              paddingBottom={12}
+              paddingTop={18}
+              paddingX={18}
+            >
+              <Box flex={1}>
+                <Text color={t.faint} mono size={11} weight="600">
+                  PAGE {openEntry.page}
+                </Text>
+              </Box>
+              <Tap onPress={() => setExpanded(null)} scale={0.9}>
+                <IconClose color={t.sub} size={17} />
+              </Tap>
+            </Box>
+
+            <ScrollView
+              contentContainerStyle={{ padding: 18, paddingTop: 0, gap: 14 }}
+              style={{ flexGrow: 0 }}
+            >
+              <Box
+                style={{
+                  borderLeftWidth: 3,
+                  borderLeftColor: HIGHLIGHT_FILL[openEntry.color],
+                  paddingLeft: 12,
+                }}
+              >
+                <Text lh={23} serif size={14.5}>
+                  {openEntry.text}
+                </Text>
+              </Box>
+              {openEntry.note ? (
+                <Box
+                  bg={t.chip}
+                  direction="row"
+                  gap={8}
+                  paddingX={12}
+                  paddingY={12}
+                  rounded={10}
+                >
+                  <Box paddingTop={2}>
+                    <IconPencil color={t.accentText} size={13} />
+                  </Box>
+                  <Box flex={1}>
+                    <Text color={t.sub} lh={20} size={13}>
+                      {openEntry.note}
+                    </Text>
+                  </Box>
+                </Box>
+              ) : null}
+            </ScrollView>
+
+            <Box paddingBottom={18} paddingTop={4} paddingX={18}>
+              <Tap
+                onPress={() => {
+                  setExpanded(null);
+                  jump(openEntry.page);
+                }}
+                scale={0.97}
+              >
+                <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
+                  <Text color={t.onAccent} size={13.5} weight="600">
+                    Go to page {openEntry.page}
+                  </Text>
+                </Box>
+              </Tap>
+            </Box>
+          </>
+        ) : null}
+      </CenterModal>
+
+      <CenterModal
+        containerStyle={{
+          backgroundColor: t.card,
+          borderColor: t.line,
+          borderWidth: 1,
+          padding: 18,
+        }}
+        marginHorizontal={4}
+        onClose={() => setEditing(null)}
+        position="top"
+        visible={editing !== null}
+      >
+        <Box gap={12}>
+          <Box align="center" direction="row" gap={10}>
+            <IconPencil color={t.accentText} size={15} />
+            <Box flex={1}>
+              <Text size={14} weight="600">
+                Edit note
+              </Text>
+            </Box>
+            <Tap onPress={() => setEditing(null)} scale={0.9}>
+              <IconClose color={t.sub} size={17} />
+            </Tap>
+          </Box>
+
+          <TextInput
+            autoFocus
+            backgroundColor={t.chip}
+            borderColor={t.line}
+            borderWidth={1}
+            fontSize={14}
+            multiline
+            onChangeText={setEditDraft}
+            placeholder="What did you make of it?"
+            placeholderTextColor={t.faint}
+            rounded={12}
+            style={{ minHeight: 120, maxHeight: 220, textAlignVertical: "top" }}
+            textColor={t.ink}
+            value={editDraft}
+          />
+
+          <Tap
+            onPress={() => {
+              if (editing) setNote(editing, editDraft.trim());
+              setEditing(null);
+              showToast("Note updated");
+            }}
+            scale={0.97}
+          >
+            <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
+              <Text color={t.onAccent} size={13.5} weight="600">
+                Save
+              </Text>
+            </Box>
+          </Tap>
+        </Box>
+      </CenterModal>
     </ProtoScreen>
   );
 }
