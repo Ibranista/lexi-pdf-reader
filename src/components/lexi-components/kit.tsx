@@ -133,12 +133,14 @@ export function ScreenHeader({
   subtitle,
   title,
   titleSize = 20,
+  pb = 8,
 }: {
   onBack?: () => void;
   right?: ReactNode;
   subtitle?: string;
   title: string;
   titleSize?: number;
+  pb?: number;
 }) {
   const t = useProtoTheme();
   return (
@@ -149,6 +151,7 @@ export function ScreenHeader({
       paddingLeft={20}
       paddingRight={20}
       paddingTop={8}
+      paddingBottom={pb}
     >
       {onBack ? (
         <HeaderButton onPress={onBack}>
@@ -362,7 +365,7 @@ export function Cover({
           height: span * 2,
           transform: [{ rotate: "45deg" }],
         }}
-      />
+      />,
     );
   }
   return (
@@ -418,7 +421,7 @@ export function IndeterminateBar() {
         duration: 1100,
         easing: Easing.inOut(Easing.ease),
         useNativeDriver: false,
-      })
+      }),
     );
     loop.start();
     return () => loop.stop();
@@ -493,13 +496,13 @@ export function ProtoSlider({
       span <= 0
         ? 0
         : Math.min(1, Math.max(0, ((isLog ? Math.log(v) : v) - lo) / span)),
-    [isLog, lo, span]
+    [isLog, lo, span],
   );
 
   const tickVals = useMemo(() => (ticks ? [...ticks] : []), [ticks]);
   const tickPos = useMemo(
     () => tickVals.map((v) => posOf(v)),
-    [tickVals, posOf]
+    [tickVals, posOf],
   );
 
   /* Keep the thumb's position on the UI thread for the life of this mounted
@@ -536,7 +539,7 @@ export function ProtoSlider({
       // show the stepped position, so thumb and readout never disagree
       sliderPos.value = Math.min(
         1,
-        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span)
+        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span),
       );
       if (next !== lastSent.value) {
         lastSent.value = next;
@@ -567,7 +570,7 @@ export function ProtoSlider({
       Gesture.Tap()
         .maxDuration(400)
         .onEnd((e) => commit(e.x))
-        .onFinalize(finish)
+        .onFinalize(finish),
     );
     // The shared values are stable refs for the life of the component, and
     // listing them here trips the immutability rule for the writes above.
