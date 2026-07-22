@@ -29,7 +29,13 @@ export default function TabLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="settings" />
+        {/* Settings hangs off the left-hand header icon, so it enters from
+            the left. `ios_from_left` mirrors the interactive dismiss gesture
+            too — you swipe it back out to the left. */}
+        <Stack.Screen
+          name="settings"
+          options={{ animation: "ios_from_left" }}
+        />
         <Stack.Screen name="today" />
         <Stack.Screen name="brain" />
         <Stack.Screen name="reader" />

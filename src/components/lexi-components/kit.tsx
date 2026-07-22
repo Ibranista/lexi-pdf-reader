@@ -95,6 +95,72 @@ export function ProtoScreen({
   );
 }
 
+/**
+ * Wraps a screen so that dragging in from the left edge fires `onSwipe` —
+ * used to pull Settings in without reaching for the header icon.
+ *
+ * The pan is manually activated: until the touch clears both thresholds the
+ * gesture stays idle and taps/scrolls underneath behave normally. Only a
+ * drag that *starts* within `EDGE_WIDTH` of the left edge and is decidedly
+ * horizontal takes over.
+ */
+const EDGE_WIDTH = 28;
+const EDGE_COMMIT_X = 14;
+const EDGE_CANCEL_Y = 16;
+
+export function EdgeSwipe({
+  children,
+  onSwipe,
+}: {
+  children: ReactNode;
+  onSwipe: () => void;
+}) {
+  const startX = useSharedValue(0);
+  const startY = useSharedValue(0);
+  const fired = useSharedValue(false);
+
+  // built per render rather than memoised: GestureDetector diffs the config
+  // itself, and memoising would mean listing the shared values as deps, which
+  // the compiler's immutability rule forbids mutating afterwards.
+  const gesture = Gesture.Pan()
+    .manualActivation(true)
+    .onTouchesDown((e, manager) => {
+      const touch = e.allTouches[0];
+      if (!touch) return;
+      if (touch.absoluteX > EDGE_WIDTH) {
+        manager.fail();
+        return;
+      }
+      startX.value = touch.absoluteX;
+      startY.value = touch.absoluteY;
+      fired.value = false;
+    })
+    .onTouchesMove((e, manager) => {
+      const touch = e.allTouches[0];
+      if (!touch || fired.value) return;
+      const dx = touch.absoluteX - startX.value;
+      const dy = Math.abs(touch.absoluteY - startY.value);
+      // a mostly-vertical drag belongs to the list underneath
+      if (dy > EDGE_CANCEL_Y && dy > dx) {
+        manager.fail();
+        return;
+      }
+      if (dx > EDGE_COMMIT_X) {
+        fired.value = true;
+        manager.activate();
+        // push on commit rather than on release, so the screen tracks the
+        // finger instead of snapping in after it lifts
+        runOnJS(onSwipe)();
+      }
+    });
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Box flex={1}>{children}</Box>
+    </GestureDetector>
+  );
+}
+
 /** 40×40 rounded icon button on a card surface. */
 export function HeaderButton({
   children,
@@ -362,7 +428,7 @@ export function Cover({
           height: span * 2,
           transform: [{ rotate: "45deg" }],
         }}
-      />,
+      />
     );
   }
   return (
@@ -418,7 +484,7 @@ export function IndeterminateBar() {
         duration: 1100,
         easing: Easing.inOut(Easing.ease),
         useNativeDriver: false,
-      }),
+      })
     );
     loop.start();
     return () => loop.stop();
@@ -493,13 +559,13 @@ export function ProtoSlider({
       span <= 0
         ? 0
         : Math.min(1, Math.max(0, ((isLog ? Math.log(v) : v) - lo) / span)),
-    [isLog, lo, span],
+    [isLog, lo, span]
   );
 
   const tickVals = useMemo(() => (ticks ? [...ticks] : []), [ticks]);
   const tickPos = useMemo(
     () => tickVals.map((v) => posOf(v)),
-    [tickVals, posOf],
+    [tickVals, posOf]
   );
 
   /* Keep the thumb's position on the UI thread for the life of this mounted
@@ -536,7 +602,7 @@ export function ProtoSlider({
       // show the stepped position, so thumb and readout never disagree
       sliderPos.value = Math.min(
         1,
-        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span),
+        Math.max(0, ((isLog ? Math.log(next) : next) - lo) / span)
       );
       if (next !== lastSent.value) {
         lastSent.value = next;
@@ -567,7 +633,7 @@ export function ProtoSlider({
       Gesture.Tap()
         .maxDuration(400)
         .onEnd((e) => commit(e.x))
-        .onFinalize(finish),
+        .onFinalize(finish)
     );
     // The shared values are stable refs for the life of the component, and
     // listing them here trips the immutability rule for the writes above.

@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
+  EdgeSwipe,
   HeaderButton,
   IconBrain,
   IconSearch,
@@ -104,7 +105,7 @@ export default function LibraryScreen() {
         clearTimeout(timer);
         exitArmed.current = false;
       };
-    }, [filing, searching, tab, openFolderUri, openShelf, showToast, tr]),
+    }, [filing, searching, tab, openFolderUri, openShelf, showToast, tr])
   );
 
   // ask for device-wide storage access once, on first open of the library
@@ -123,13 +124,19 @@ export default function LibraryScreen() {
     { key: "vocab" as const, label: tr("tabItems.vocab") },
   ];
 
+  // shared by the header icon and the left-edge swipe
+  const openSettings = useCallback(() => router.push("/settings"), []);
+
   const openReader = () => router.push("/reader");
   // Open formats that have a native reader. Other indexed formats remain
   // visible in the library until their readers are added.
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
     if (doc.ext === "PDF") {
       // the reader records the open itself, so every entry point counts
-      router.push({ pathname: "/pdf", params: { uri: doc.uri, name: doc.name } });
+      router.push({
+        pathname: "/pdf",
+        params: { uri: doc.uri, name: doc.name },
+      });
       return;
     }
     if (doc.ext === "TXT" || doc.ext === "MD" || doc.ext === "DOCX") {
@@ -168,174 +175,176 @@ export default function LibraryScreen() {
   );
 
   return (
-    <ProtoScreen>
-      {/* top icon row */}
-      <Box
-        align="center"
-        direction="row"
-        justify="between"
-        paddingLeft={20}
-        paddingRight={20}
-        paddingTop={8}
-      >
-        <HeaderButton onPress={() => router.push("/settings")}>
-          <IconSliders bg={t.bg} color={t.ink} size={20} />
-        </HeaderButton>
-        <Box direction="row" gap={10}>
-          <HeaderButton onPress={() => router.push("/today")}>
-            <IconSun color={t.ink} size={19} />
-          </HeaderButton>
-          <HeaderButton onPress={() => router.push("/brain")}>
-            <IconBrain color={t.ink} size={19} />
-          </HeaderButton>
-          <HeaderButton
-            bg={t.accentSoft}
-            noBorder
-            onPress={() =>
-              showToast(tr("library.signedInAs", { name: "Selam B." }))
-            }
-          >
-            <Text color={t.accentText} size={14} weight="600">
-              SB
-            </Text>
-          </HeaderButton>
-        </Box>
-      </Box>
-
-      {searching ? (
+    <EdgeSwipe onSwipe={openSettings}>
+      <ProtoScreen>
+        {/* top icon row */}
         <Box
           align="center"
           direction="row"
-          gap={10}
+          justify="between"
           paddingLeft={20}
           paddingRight={20}
-          paddingTop={14}
+          paddingTop={8}
         >
-          <Box
-            align="center"
-            bg={t.card}
-            borderColor={t.line}
-            borderWidth={1}
-            direction="row"
-            flex={1}
-            gap={9}
-            paddingX={14}
-            rounded={12}
-          >
-            <IconSearch color={t.sub} size={16} />
-            <TextInput
-              autoFocus
-              backgroundColor="transparent"
-              borderColor="transparent"
-              borderWidth={0}
-              fontSize={14.5}
-              onChangeText={setQuery}
-              placeholder={tr("library.searchPlaceholder")}
-              placeholderTextColor={t.faint}
-              pl={0}
-              py={12}
-              rounded={0}
-              style={{ flex: 1, height: undefined }}
-              textColor={t.ink}
-              value={query}
-            />
-          </Box>
-          <Tap
-            onPress={() => {
-              setSearching(false);
-              setQuery("");
-            }}
-          >
-            <Text color={t.accentText} size={14} weight="500">
-              {tr("library.cancel")}
-            </Text>
-          </Tap>
-        </Box>
-      ) : (
-        <>
-          {/* title row */}
-          <Box
-            align="center"
-            direction="row"
-            justify="between"
-            paddingLeft={20}
-            paddingRight={20}
-            paddingTop={18}
-          >
-            <Text ls={-0.3} serif size={30} weight="600">
-              {tr("library.title")}
-            </Text>
-            <HeaderButton onPress={() => setSearching(true)}>
-              <IconSearch color={t.ink} size={19} />
+          <HeaderButton onPress={openSettings}>
+            <IconSliders bg={t.bg} color={t.ink} size={20} />
+          </HeaderButton>
+          <Box direction="row" gap={10}>
+            <HeaderButton onPress={() => router.push("/today")}>
+              <IconSun color={t.ink} size={19} />
+            </HeaderButton>
+            <HeaderButton onPress={() => router.push("/brain")}>
+              <IconBrain color={t.ink} size={19} />
+            </HeaderButton>
+            <HeaderButton
+              bg={t.accentSoft}
+              noBorder
+              onPress={() =>
+                showToast(tr("library.signedInAs", { name: "Selam B." }))
+              }
+            >
+              <Text color={t.accentText} size={14} weight="600">
+                SB
+              </Text>
             </HeaderButton>
           </Box>
+        </Box>
 
-          {/* tabs */}
-          <Box marginTop={14} paddingLeft={20} paddingRight={20}>
-            <Segmented items={TAB_ITEMS} onChange={setTab} value={tab} />
+        {searching ? (
+          <Box
+            align="center"
+            direction="row"
+            gap={10}
+            paddingLeft={20}
+            paddingRight={20}
+            paddingTop={14}
+          >
+            <Box
+              align="center"
+              bg={t.card}
+              borderColor={t.line}
+              borderWidth={1}
+              direction="row"
+              flex={1}
+              gap={9}
+              paddingX={14}
+              rounded={12}
+            >
+              <IconSearch color={t.sub} size={16} />
+              <TextInput
+                autoFocus
+                backgroundColor="transparent"
+                borderColor="transparent"
+                borderWidth={0}
+                fontSize={14.5}
+                onChangeText={setQuery}
+                placeholder={tr("library.searchPlaceholder")}
+                placeholderTextColor={t.faint}
+                pl={0}
+                py={12}
+                rounded={0}
+                style={{ flex: 1, height: undefined }}
+                textColor={t.ink}
+                value={query}
+              />
+            </Box>
+            <Tap
+              onPress={() => {
+                setSearching(false);
+                setQuery("");
+              }}
+            >
+              <Text color={t.accentText} size={14} weight="500">
+                {tr("library.cancel")}
+              </Text>
+            </Tap>
           </Box>
-        </>
-      )}
+        ) : (
+          <>
+            {/* title row */}
+            <Box
+              align="center"
+              direction="row"
+              justify="between"
+              paddingLeft={20}
+              paddingRight={20}
+              paddingTop={18}
+            >
+              <Text ls={-0.3} serif size={30} weight="600">
+                {tr("library.title")}
+              </Text>
+              <HeaderButton onPress={() => setSearching(true)}>
+                <IconSearch color={t.ink} size={19} />
+              </HeaderButton>
+            </Box>
 
-      {/* Search, All and Files own their scroller — a FlashList can't be
+            {/* tabs */}
+            <Box marginTop={14} paddingLeft={20} paddingRight={20}>
+              <Segmented items={TAB_ITEMS} onChange={setTab} value={tab} />
+            </Box>
+          </>
+        )}
+
+        {/* Search, All and Files own their scroller — a FlashList can't be
           nested in a ScrollView, and those are the views long enough to need
           one. The short, fixed-length tabs stay on a plain ScrollView. */}
-      {searching ? (
-        <SearchLibraryResults
-          contentPad={contentPad}
-          lib={lib}
-          openCollections={openCollections}
-          openDoc={openDoc}
-          query={query}
-          refreshControl={renderRefresh()}
-        />
-      ) : tab === "all" ? (
-        <AllLibraryTab
-          contentPad={contentPad}
-          lib={lib}
-          openCollections={openCollections}
-          openDoc={openDoc}
-          refreshControl={renderRefresh()}
-        />
-      ) : tab === "files" ? (
-        <FilesLibraryTab
-          contentPad={contentPad}
-          lib={lib}
-          openCollections={openCollections}
-          openDoc={openDoc}
-          openUri={openFolderUri}
-          refreshControl={renderRefresh()}
-          setOpenUri={setOpenFolderUri}
-        />
-      ) : (
-        <ScrollView
-          contentContainerStyle={contentPad}
-          refreshControl={renderRefresh()}
-          style={{ flex: 1 }}
-        >
-          {tab === "recent" ? (
-            <RecentLibraryTab
-              openCollections={openCollections}
-              openDoc={openDoc}
-            />
-          ) : tab === "coll" ? (
-            <CollectionsTab
-              openCollection={setOpenShelf}
-              openCollections={openCollections}
-              openDemo={openDemo}
-              openDoc={openDoc}
-              openReader={openReader}
-              shelf={openShelf}
-            />
-          ) : (
-            <VocabLibraryTab openReader={openReader} />
-          )}
-        </ScrollView>
-      )}
+        {searching ? (
+          <SearchLibraryResults
+            contentPad={contentPad}
+            lib={lib}
+            openCollections={openCollections}
+            openDoc={openDoc}
+            query={query}
+            refreshControl={renderRefresh()}
+          />
+        ) : tab === "all" ? (
+          <AllLibraryTab
+            contentPad={contentPad}
+            lib={lib}
+            openCollections={openCollections}
+            openDoc={openDoc}
+            refreshControl={renderRefresh()}
+          />
+        ) : tab === "files" ? (
+          <FilesLibraryTab
+            contentPad={contentPad}
+            lib={lib}
+            openCollections={openCollections}
+            openDoc={openDoc}
+            openUri={openFolderUri}
+            refreshControl={renderRefresh()}
+            setOpenUri={setOpenFolderUri}
+          />
+        ) : (
+          <ScrollView
+            contentContainerStyle={contentPad}
+            refreshControl={renderRefresh()}
+            style={{ flex: 1 }}
+          >
+            {tab === "recent" ? (
+              <RecentLibraryTab
+                openCollections={openCollections}
+                openDoc={openDoc}
+              />
+            ) : tab === "coll" ? (
+              <CollectionsTab
+                openCollection={setOpenShelf}
+                openCollections={openCollections}
+                openDemo={openDemo}
+                openDoc={openDoc}
+                openReader={openReader}
+                shelf={openShelf}
+              />
+            ) : (
+              <VocabLibraryTab openReader={openReader} />
+            )}
+          </ScrollView>
+        )}
 
-      {filing ? (
-        <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
-      ) : null}
-    </ProtoScreen>
+        {filing ? (
+          <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
+        ) : null}
+      </ProtoScreen>
+    </EdgeSwipe>
   );
 }
