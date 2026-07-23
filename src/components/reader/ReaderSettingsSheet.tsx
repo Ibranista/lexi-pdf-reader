@@ -26,9 +26,11 @@ import {
   type BottomSheetModalReference,
 } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import type {
+  Contrast,
   FocusSensitivity,
   FontFam,
   LineSpacing,
+  ReadWidth,
 } from "@/stores/app-store";
 import { useAppStore } from "@/stores/app-store";
 import { dysFamily, hankenFamily } from "@/theme/app-fonts";
@@ -66,6 +68,20 @@ const SPACING_ITEMS: SegmentItem<LineSpacing>[] = [
   { key: "comfy", label: "Comfy" },
   { key: "airy", label: "Airy" },
 ];
+
+const WIDTH_ITEMS: SegmentItem<ReadWidth>[] = [
+  { key: "narrow", label: "Narrow" },
+  { key: "comfort", label: "Comfort" },
+  { key: "full", label: "Full" },
+];
+
+const CONTRAST_ITEMS: SegmentItem<Contrast>[] = [
+  { key: "soft", label: "Soft" },
+  { key: "std", label: "Standard" },
+];
+
+const BRIGHT_MIN = 40;
+const BRIGHT_MAX = 100;
 
 const SENS_ITEMS: SegmentItem<FocusSensitivity>[] = [
   { key: "relaxed", label: "Relaxed" },
@@ -250,11 +266,12 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           paddingHorizontal: 20,
           paddingBottom: insets.bottom + 24,
         }}
+        enableDynamicSizing={false}
         handleIndicatorStyle={{ backgroundColor: t.faint }}
         onClose={onClose}
         ref={ref}
         scrollable
-        snapPoints={["68%"]}
+        snapPoints={["65%"]}
       >
         <Box paddingBottom={6}>
           <Text serif size={19} weight="600">
@@ -311,69 +328,121 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           value={themeMode}
         />
 
-        <Box paddingBottom={8} paddingTop={18}>
-          <SectionLabel size={11}>Reflow text</SectionLabel>
-          <Text color={t.sub} size={11.5} style={{ marginTop: 3 }}>
-            Applies only in Reflow view, not the original PDF page view.
-          </Text>
-        </Box>
-        <Box align="center" direction="row" gap={10}>
-          <Box flex={1}>
-            <Segmented
-              items={FAM_ITEMS}
-              onChange={(key) => app.set({ fontFam: key })}
-              size={12.5}
-              value={app.fontFam}
-            />
-          </Box>
+        <Box paddingBottom={10} paddingTop={18}>
           <Box
-            align="center"
-            bg={t.chip}
             direction="row"
-            gap={2}
-            padding={3}
-            rounded={12}
+            justify="between"
+            style={{ alignItems: "baseline" }}
           >
-            <Tap onPress={() => stepText(-1)} scale={0.9}>
-              <Box align="center" paddingY={8} width={36}>
-                <Text
-                  color={app.textSize <= MIN_TEXT ? t.faint : t.ink}
-                  size={15}
-                  weight="600"
-                >
-                  −
-                </Text>
-              </Box>
-            </Tap>
-            <Box align="center" width={30}>
-              <Text color={t.sub} size={12.5} weight="600">
-                {app.textSize}
-              </Text>
-            </Box>
-            <Tap onPress={() => stepText(1)} scale={0.9}>
-              <Box align="center" paddingY={8} width={36}>
-                <Text
-                  color={app.textSize >= MAX_TEXT ? t.faint : t.ink}
-                  size={15}
-                  weight="600"
-                >
-                  +
-                </Text>
-              </Box>
-            </Tap>
+            <SectionLabel size={11}>Page brightness</SectionLabel>
+            <Text color={t.accentText} size={14} weight="600">
+              {app.bright}%
+            </Text>
           </Box>
         </Box>
-
-        <Box paddingBottom={8} paddingTop={18}>
-          <SectionLabel size={11}>Line spacing · Reflow only</SectionLabel>
-        </Box>
-        <Segmented
-          items={SPACING_ITEMS}
-          onChange={(key) => app.set({ lineSp: key })}
-          value={app.lineSp}
+        <ProtoSlider
+          max={BRIGHT_MAX}
+          min={BRIGHT_MIN}
+          onChange={(v) => app.set({ bright: v })}
+          step={5}
+          value={app.bright}
         />
 
         <SmartZoomControl />
+
+        {viewMode === "reflow" ? (
+          <>
+            <Box paddingBottom={8} paddingTop={20}>
+              <SectionLabel size={11}>Reflow text</SectionLabel>
+            </Box>
+            <Box align="center" direction="row" gap={10}>
+              <Box flex={1}>
+                <Segmented
+                  items={FAM_ITEMS}
+                  onChange={(key) => app.set({ fontFam: key })}
+                  size={12.5}
+                  value={app.fontFam}
+                />
+              </Box>
+              <Box
+                align="center"
+                bg={t.chip}
+                direction="row"
+                gap={2}
+                padding={3}
+                rounded={12}
+              >
+                <Tap onPress={() => stepText(-1)} scale={0.9}>
+                  <Box align="center" paddingY={8} width={36}>
+                    <Text
+                      color={app.textSize <= MIN_TEXT ? t.faint : t.ink}
+                      size={15}
+                      weight="600"
+                    >
+                      −
+                    </Text>
+                  </Box>
+                </Tap>
+                <Box align="center" width={30}>
+                  <Text color={t.sub} size={12.5} weight="600">
+                    {app.textSize}
+                  </Text>
+                </Box>
+                <Tap onPress={() => stepText(1)} scale={0.9}>
+                  <Box align="center" paddingY={8} width={36}>
+                    <Text
+                      color={app.textSize >= MAX_TEXT ? t.faint : t.ink}
+                      size={15}
+                      weight="600"
+                    >
+                      +
+                    </Text>
+                  </Box>
+                </Tap>
+              </Box>
+            </Box>
+
+            <Box paddingBottom={8} paddingTop={18}>
+              <SectionLabel size={11}>Line spacing</SectionLabel>
+            </Box>
+            <Segmented
+              items={SPACING_ITEMS}
+              onChange={(key) => app.set({ lineSp: key })}
+              value={app.lineSp}
+            />
+
+            <Box paddingBottom={8} paddingTop={18}>
+              <SectionLabel size={11}>Reading width</SectionLabel>
+            </Box>
+            <Segmented
+              items={WIDTH_ITEMS}
+              onChange={(key) => app.set({ readWidth: key })}
+              value={app.readWidth}
+            />
+
+            <Box paddingBottom={8} paddingTop={18}>
+              <SectionLabel size={11}>Contrast</SectionLabel>
+            </Box>
+            <Segmented
+              items={CONTRAST_ITEMS}
+              onChange={(key) => app.set({ contrast: key })}
+              value={app.contrast}
+            />
+          </>
+        ) : (
+          <Box
+            bg={t.chip}
+            marginTop={20}
+            paddingX={14}
+            paddingY={12}
+            rounded={12}
+          >
+            <Text color={t.sub} size={12} style={{ lineHeight: 17 }}>
+              Font, size, spacing, width & contrast adjust the reflowed text.
+              Switch to Reflow view to use them.
+            </Text>
+          </Box>
+        )}
 
         <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>

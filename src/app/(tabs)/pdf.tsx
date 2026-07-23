@@ -77,6 +77,7 @@ export default function PdfViewerScreen() {
   const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
+  const bright = useAppStore((s) => s.bright);
   const setApp = useAppStore((s) => s.set);
   const bookmarks = useRecentsStore(
     (s) => s.recents.find((r) => r.uri === uri)?.bookmarks ?? EMPTY_BOOKMARKS,
@@ -597,6 +598,22 @@ export default function PdfViewerScreen() {
           </Box>
         ) : null}
       </Box>
+
+      {bright < 100 ? (
+        <Box
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 8,
+            backgroundColor: "#000",
+            opacity: ((100 - bright) / 100) * 0.7,
+          }}
+        />
+      ) : null}
 
       <Animated.View
         pointerEvents={immersive ? "none" : "auto"}

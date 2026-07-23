@@ -37,7 +37,14 @@ interface Settings {
   bg: string;
   faint: string;
   hl: string;
+  px: number;
 }
+
+const READ_WIDTH_PX: Record<string, number> = {
+  narrow: 40,
+  comfort: 22,
+  full: 12,
+};
 
 function isDark(color: string): boolean {
   const hex = color.replace("#", "");
@@ -53,6 +60,31 @@ function isDark(color: string): boolean {
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
   return 0.299 * r + 0.587 * g + 0.114 * b < 128;
+}
+
+function hexToRgb(color: string): [number, number, number] | null {
+  const hex = color.replace("#", "");
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex;
+  if (full.length < 6) return null;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if ([r, g, b].some((n) => Number.isNaN(n))) return null;
+  return [r, g, b];
+}
+
+function softInk(ink: string, page: string, amount: number): string {
+  const a = hexToRgb(ink);
+  const b = hexToRgb(page);
+  if (!a || !b) return ink;
+  const mix = (i: number) => Math.round(a[i] + (b[i] - a[i]) * amount);
+  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }
 
 function fontStack(fam: string): string {
@@ -83,6 +115,7 @@ function buildHtml(
     --faint: ${s.faint};
     --hl: ${s.hl};
     --ff: ${s.fontFamily};
+    --px: ${s.px}px;
   }
   /* Saved highlights. Alpha rather than a flat fill so the reader's own text
      colour still carries the contrast — a solid pastel behind light text in
@@ -101,7 +134,7 @@ function buildHtml(
   html, body { margin: 0; background: var(--bg); }
   body {
     color: var(--fg);
-    padding: 0 22px 96px;
+    padding: 0 var(--px) 96px;
     font-family: var(--ff);
     -webkit-user-select: text;
     user-select: text;
@@ -242,6 +275,7 @@ function buildHtml(
     r.setProperty('--faint', s.faint);
     r.setProperty('--hl', s.hl);
     r.setProperty('--ff', s.fontFamily);
+    r.setProperty('--px', s.px + 'px');
   };
 
   window.setChromeOffset = function(px){
@@ -1728,6 +1762,8 @@ export function PdfReflowView({
   const zoom = useAppStore((s) => s.zoom);
   const lineSp = useAppStore((s) => s.lineSp);
   const fontFam = useAppStore((s) => s.fontFam);
+  const readWidth = useAppStore((s) => s.readWidth);
+  const contrast = useAppStore((s) => s.contrast);
 
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -1740,12 +1776,24 @@ export function PdfReflowView({
       zoomedFs: Math.round((textSize * zoom) / 100),
       lh: LINE_SPACING[lineSp] ?? 1.75,
       fontFamily: fontStack(fontFam),
-      fg: t.readerInk,
+      fg: contrast === "soft" ? softInk(t.readerInk, t.page, 0.16) : t.readerInk,
       bg: t.page,
       faint: t.faint,
       hl: t.hl,
+      px: READ_WIDTH_PX[readWidth] ?? READ_WIDTH_PX.comfort,
     }),
-    [textSize, zoom, lineSp, fontFam, t.readerInk, t.page, t.faint, t.hl],
+    [
+      textSize,
+      zoom,
+      lineSp,
+      fontFam,
+      readWidth,
+      contrast,
+      t.readerInk,
+      t.page,
+      t.faint,
+      t.hl,
+    ],
   );
 
   const settingsRef = useRef<Settings>(settings);
