@@ -87,6 +87,7 @@ export default function PdfViewerScreen() {
   const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
+  const bright = useAppStore((s) => s.bright);
   const setApp = useAppStore((s) => s.set);
   // Bookmarks live on the document, not the app: the app-store's list belongs
   // to the demo book in /reader, so every real PDF was showing its pages.
@@ -695,6 +696,25 @@ export default function PdfViewerScreen() {
           </Box>
         ) : null}
       </Box>
+
+      {/* Page brightness — dims the reading area (both Page and Reflow), while
+          the toolbar and controls (higher zIndex) stay at full brightness.
+          Never intercepts touches. Skipped entirely at 100%. */}
+      {bright < 100 ? (
+        <Box
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 8,
+            backgroundColor: "#000",
+            opacity: ((100 - bright) / 100) * 0.7,
+          }}
+        />
+      ) : null}
 
       {/* floating toolbar */}
       <Animated.View
