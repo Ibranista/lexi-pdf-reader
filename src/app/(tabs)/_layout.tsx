@@ -29,11 +29,17 @@ export default function TabLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="settings" />
+        {/* The library screen shows Settings as a left drawer; this route is
+            the deep-link fallback, so it still enters from the left to match. */}
+        <Stack.Screen
+          name="settings"
+          options={{ animation: "ios_from_left" }}
+        />
         <Stack.Screen name="today" />
         <Stack.Screen name="brain" />
         <Stack.Screen name="reader" />
         <Stack.Screen name="pdf" />
+        <Stack.Screen name="text" />
         <Stack.Screen name="notes" />
         <Stack.Screen name="review" />
         <Stack.Screen name="graph" />

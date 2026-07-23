@@ -1,24 +1,40 @@
-import { router } from "expo-router";
-import { useState } from "react";
+/**
+ * My Notes — highlights, notes and bookmarks for one document.
+ *
+ * Reached from the reader's pencil button, which passes the document it's
+ * showing. Highlights and notes are two views of the same annotation list (a
+ * note is a highlight with something written on it); bookmarks come from the
+ * document's own entry in recents. Tapping any row sends the reader back to
+ * that page via the jump store.
+ */
+import { router, useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
 import { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from "@/components/atoms";
+import { Box, TextInput } from "@/components/atoms";
 import {
   Card,
-  Cover,
   HeaderButton,
   IconBack,
+  IconBookmark,
   IconCards,
+  IconClose,
   IconGraph,
+  IconHighlighter,
   IconPencil,
   ProtoScreen,
-  Text,
   Segmented,
   Tap,
+  Text,
 } from "@/components/lexi-components";
-import { BOOK_TITLE, chapterOf } from "@/constants/library";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import {
+  HIGHLIGHT_FILL,
+  useAnnotationsStore,
+} from "@/stores/annotations-store";
+import { CenterModal } from "@/components/modals";
+import { useReaderJumpStore, useToastStore } from "@/stores/app-store";
+import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type NotesTab = "bm" | "high" | "notes";
@@ -29,27 +45,100 @@ const TAB_ITEMS: { key: NotesTab; label: string }[] = [
   { key: "bm", label: "Bookmarks" },
 ];
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Lines shown on a card before it's cut off behind "See more". */
+const PASSAGE_LINES = 4;
+const NOTE_LINES = 3;
+
+/** "Today" / "Yesterday" / a date — matches the prototype's `when` line. */
+function whenLabel(ms: number): string {
+  const days = Math.floor((Date.now() - ms) / DAY_MS);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function NotesScreen() {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const showToast = useToastStore((s) => s.showToast);
-  const items = useAppStore((s) => s.items);
-  const bookmarks = useAppStore((s) => s.bookmarks);
-  const page = useAppStore((s) => s.page);
-  const setPage = useAppStore((s) => s.setPage);
+  const { focus, name, uri } = useLocalSearchParams<{
+    focus?: string;
+    name?: string;
+    uri?: string;
+  }>();
   const [tab, setTab] = useState<NotesTab>("high");
+  // The entry opened in full; null when nothing is expanded.
+  const [expanded, setExpanded] = useState<string | null>(null);
+  // The note being edited, and its working copy.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  /**
+   * Ids whose text didn't fit. Measured rather than estimated from character
+   * counts — the first version guessed at ~42 chars a line and was wrong
+   * often enough that "See more" simply never appeared.
+   */
+  const [clipped, setClipped] = useState<Record<string, boolean>>({});
 
-  const hlColor = (color: "amber" | "green") =>
-    color === "green" ? "#8FD9BE" : t.dark ? "#8A6A4F" : "#EFC9A0";
+  const all = useAnnotationsStore((s) => s.items);
+  const remove = useAnnotationsStore((s) => s.remove);
+  const setNote = useAnnotationsStore((s) => s.setNote);
+  const requestJump = useReaderJumpStore((s) => s.request);
+
+  const doc = useRecentsStore((s) => s.recents.find((r) => r.uri === uri));
+  const bookmarks = useMemo(() => doc?.bookmarks ?? [], [doc?.bookmarks]);
+  const page = doc?.page ?? 1;
+
+  // Ordered by page rather than by when they were made, so the list reads
+  // like the document instead of like an activity log.
+  const annotations = useMemo(
+    () => all.filter((a) => a.uri === uri).sort((a, b) => a.page - b.page),
+    [all, uri],
+  );
+  const noteList =
+    tab === "notes" ? annotations.filter((a) => a.note.trim()) : annotations;
 
   const jump = (p: number) => {
-    setPage(p);
+    if (uri) requestJump(uri, p);
     router.back();
     showToast(`Jumped to page ${p}`);
   };
 
-  const noteList = tab === "notes" ? items.filter((n) => !!n.note) : items;
-  const bms = [...bookmarks].sort((a, b) => a - b);
+  /**
+   * Flags an id as clipped when fewer characters were laid out than the
+   * source holds — which is exactly what truncation means, on either
+   * platform, without a second off-screen copy to measure against.
+   */
+  const noteLayout =
+    (id: string, source: string) =>
+    (event: { nativeEvent: { lines: { text: string }[] } }) => {
+      const shown = event.nativeEvent.lines
+        .map((l) => l.text)
+        .join("")
+        .replaceAll(/\s/gu, "").length;
+      if (shown >= source.replaceAll(/\s/gu, "").length) return;
+      setClipped((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+    };
+
+  const openEntry = annotations.find((a) => a.id === expanded) ?? null;
+
+  const empty = (message: string) => (
+    <Box align="center" gap={10} paddingX={24} paddingY={48}>
+      {tab === "bm" ? (
+        <IconBookmark color={t.faint} size={24} />
+      ) : (
+        <IconHighlighter color={t.faint} size={24} />
+      )}
+      <Text align="center" color={t.sub} lh={20} size={13}>
+        {message}
+      </Text>
+    </Box>
+  );
 
   return (
     <ProtoScreen>
@@ -64,15 +153,14 @@ export default function NotesScreen() {
         <HeaderButton onPress={() => router.back()}>
           <IconBack color={t.ink} size={18} />
         </HeaderButton>
-        <Box>
+        <Box flex={1}>
           <Text serif size={20} weight="600">
             My Notes
           </Text>
-          <Text color={t.sub} size={12}>
-            {BOOK_TITLE}
+          <Text color={t.sub} numberOfLines={1} size={12}>
+            {name ?? "This document"}
           </Text>
         </Box>
-        <Box flex={1} />
         <HeaderButton onPress={() => router.push("/review")}>
           <IconCards color={t.ink} size={18} />
         </HeaderButton>
@@ -96,9 +184,8 @@ export default function NotesScreen() {
       >
         {tab === "bm" ? (
           <>
-            {bms.map((p) => {
+            {bookmarks.map((p) => {
               const current = p === page;
-              const ch = chapterOf(p);
               return (
                 <Tap key={p} onPress={() => jump(p)}>
                   <Box align="center" direction="row" gap={16}>
@@ -116,16 +203,6 @@ export default function NotesScreen() {
                       bg={current ? t.accent : t.faint}
                       height={8}
                       rounded={4}
-                      style={
-                        current
-                          ? {
-                              shadowColor: t.accent,
-                              shadowOpacity: 0.4,
-                              shadowRadius: 4,
-                              elevation: 2,
-                            }
-                          : undefined
-                      }
                       width={8}
                     />
                     <Box flex={1}>
@@ -136,13 +213,17 @@ export default function NotesScreen() {
                         borderWidth={1}
                         direction="row"
                         gap={12}
-                        padding={12}
+                        padding={14}
                         rounded={14}
                       >
-                        <Cover height={52} label="page" width={40} />
+                        <IconBookmark
+                          color={t.accent}
+                          fill={t.accent}
+                          size={15}
+                        />
                         <Box flex={1}>
                           <Text size={13.5} weight="600">
-                            Ch. {ch.n} · {ch.t}
+                            Page {p}
                           </Text>
                           <Text
                             color={current ? t.accentText : t.sub}
@@ -150,7 +231,7 @@ export default function NotesScreen() {
                             style={{ marginTop: 3 }}
                           >
                             {current
-                              ? "Current page"
+                              ? "Where you left off"
                               : `${Math.abs(p - page)} pages ${p < page ? "back" : "ahead"}`}
                           </Text>
                         </Box>
@@ -160,61 +241,272 @@ export default function NotesScreen() {
                 </Tap>
               );
             })}
-            {bms.length === 0 ? (
-              <Box paddingX={20} paddingY={40}>
-                <Text align="center" color={t.sub} size={13}>
-                  No bookmarks yet — tap the bookmark icon while reading.
-                </Text>
-              </Box>
-            ) : null}
+            {bookmarks.length === 0
+              ? empty("No bookmarks yet — tap the bookmark icon while reading.")
+              : null}
           </>
         ) : (
-          noteList.map((n, i) => (
-            <Tap key={`${n.p}-${i}`} onPress={() => jump(n.p)} scale={0.985}>
-              <Card gap={10}>
-                <Box align="center" direction="row" justify="between">
-                  <Text color={t.faint} mono size={11} weight="600">
-                    PAGE {n.p} · CH. {n.ch}
-                  </Text>
-                  <Text color={t.faint} size={11}>
-                    {n.when}
-                  </Text>
-                </Box>
-                <Box
-                  style={{
-                    borderLeftWidth: 3,
-                    borderLeftColor: hlColor(n.color),
-                    paddingLeft: 12,
-                  }}
+          <>
+            {noteList.map((a) => (
+              <Tap key={a.id} onPress={() => jump(a.page)} scale={0.985}>
+                {/* The one you tapped in the text is ringed, so arriving here
+                    from a highlight doesn't mean hunting for it in the list. */}
+                <Card
+                  gap={10}
+                  style={
+                    a.id === focus
+                      ? { borderColor: t.accent, borderWidth: 1.5 }
+                      : undefined
+                  }
                 >
-                  <Text lh={22} serif size={14}>
-                    {n.text}
-                  </Text>
-                </Box>
-                {n.note ? (
-                  <Box
-                    bg={t.chip}
-                    direction="row"
-                    gap={8}
-                    paddingX={12}
-                    paddingY={10}
-                    rounded={10}
-                  >
-                    <Box paddingTop={2}>
-                      <IconPencil color={t.accentText} size={13} />
-                    </Box>
-                    <Box flex={1}>
-                      <Text color={t.sub} lh={19} size={12.5}>
-                        {n.note}
+                  <Box align="center" direction="row" justify="between">
+                    <Text color={t.faint} mono size={11} weight="600">
+                      PAGE {a.page}
+                    </Text>
+                    <Box align="center" direction="row" gap={12}>
+                      <Text color={t.faint} size={11}>
+                        {whenLabel(a.createdAt)}
                       </Text>
+                      <Tap
+                        onPress={() => {
+                          remove(a.id);
+                          showToast("Removed");
+                        }}
+                        scale={0.86}
+                      >
+                        <Text color={t.faint} size={14}>
+                          ✕
+                        </Text>
+                      </Tap>
                     </Box>
                   </Box>
-                ) : null}
-              </Card>
-            </Tap>
-          ))
+                  <Box
+                    style={{
+                      borderLeftWidth: 3,
+                      borderLeftColor: HIGHLIGHT_FILL[a.color],
+                      paddingLeft: 12,
+                    }}
+                  >
+                    <Text
+                      lh={22}
+                      numberOfLines={PASSAGE_LINES}
+                      onTextLayout={noteLayout(a.id, a.text)}
+                      serif
+                      size={14}
+                    >
+                      {a.text}
+                    </Text>
+                  </Box>
+                  {a.note ? (
+                    <Box
+                      bg={t.chip}
+                      direction="row"
+                      gap={8}
+                      paddingX={12}
+                      paddingY={10}
+                      rounded={10}
+                    >
+                      {/* A 40px target rather than a 13px glyph — this is the
+                          only way in to editing a note. */}
+                      <Tap
+                        onPress={() => {
+                          setEditDraft(a.note);
+                          setEditing(a.id);
+                        }}
+                        scale={0.9}
+                      >
+                        <Box
+                          align="center"
+                          height={40}
+                          justify="center"
+                          style={{ marginLeft: -8, marginVertical: -8 }}
+                          width={40}
+                        >
+                          <IconPencil color={t.accentText} size={16} />
+                        </Box>
+                      </Tap>
+                      <Box flex={1}>
+                        <Text
+                          color={t.sub}
+                          lh={19}
+                          numberOfLines={NOTE_LINES}
+                          onTextLayout={noteLayout(a.id, a.note)}
+                          size={12.5}
+                        >
+                          {a.note}
+                        </Text>
+                      </Box>
+                    </Box>
+                  ) : null}
+                  {clipped[a.id] ? (
+                    <Tap onPress={() => setExpanded(a.id)} scale={0.97}>
+                      <Text color={t.accentText} size={12} weight="600">
+                        See more
+                      </Text>
+                    </Tap>
+                  ) : null}
+                </Card>
+              </Tap>
+            ))}
+            {noteList.length === 0
+              ? empty(
+                  tab === "notes"
+                    ? "No notes yet — highlight a passage in Reflow, then choose Note."
+                    : "No highlights yet — select text in Reflow to highlight it.",
+                )
+              : null}
+          </>
         )}
       </ScrollView>
+
+      {/* CenterModal paints its own white card, so the surface is restyled to
+          the reader's theme rather than left light in dark mode. */}
+      <CenterModal
+        containerStyle={{
+          backgroundColor: t.card,
+          borderColor: t.line,
+          borderWidth: 1,
+          maxHeight: "78%",
+          padding: 0,
+        }}
+        marginHorizontal={4}
+        onClose={() => setExpanded(null)}
+        visible={openEntry !== null}
+      >
+        {openEntry ? (
+          <>
+            <Box
+              align="center"
+              direction="row"
+              gap={10}
+              paddingBottom={12}
+              paddingTop={18}
+              paddingX={18}
+            >
+              <Box flex={1}>
+                <Text color={t.faint} mono size={11} weight="600">
+                  PAGE {openEntry.page}
+                </Text>
+              </Box>
+              <Tap onPress={() => setExpanded(null)} scale={0.9}>
+                <IconClose color={t.sub} size={17} />
+              </Tap>
+            </Box>
+
+            <ScrollView
+              contentContainerStyle={{ padding: 18, paddingTop: 0, gap: 14 }}
+              style={{ flexGrow: 0 }}
+            >
+              <Box
+                style={{
+                  borderLeftWidth: 3,
+                  borderLeftColor: HIGHLIGHT_FILL[openEntry.color],
+                  paddingLeft: 12,
+                }}
+              >
+                <Text lh={23} serif size={14.5}>
+                  {openEntry.text}
+                </Text>
+              </Box>
+              {openEntry.note ? (
+                <Box
+                  bg={t.chip}
+                  direction="row"
+                  gap={8}
+                  paddingX={12}
+                  paddingY={12}
+                  rounded={10}
+                >
+                  <Box paddingTop={2}>
+                    <IconPencil color={t.accentText} size={13} />
+                  </Box>
+                  <Box flex={1}>
+                    <Text color={t.sub} lh={20} size={13}>
+                      {openEntry.note}
+                    </Text>
+                  </Box>
+                </Box>
+              ) : null}
+            </ScrollView>
+
+            <Box paddingBottom={18} paddingTop={4} paddingX={18}>
+              <Tap
+                onPress={() => {
+                  setExpanded(null);
+                  jump(openEntry.page);
+                }}
+                scale={0.97}
+              >
+                <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
+                  <Text color={t.onAccent} size={13.5} weight="600">
+                    Go to page {openEntry.page}
+                  </Text>
+                </Box>
+              </Tap>
+            </Box>
+          </>
+        ) : null}
+      </CenterModal>
+
+      {/* Anchored to the top so the keyboard has somewhere to go — a centred
+          card with a focused input ends up half-covered on a short screen. */}
+      <CenterModal
+        containerStyle={{
+          backgroundColor: t.card,
+          borderColor: t.line,
+          borderWidth: 1,
+          padding: 18,
+        }}
+        marginHorizontal={4}
+        onClose={() => setEditing(null)}
+        position="top"
+        visible={editing !== null}
+      >
+        <Box gap={12}>
+          <Box align="center" direction="row" gap={10}>
+            <IconPencil color={t.accentText} size={15} />
+            <Box flex={1}>
+              <Text size={14} weight="600">
+                Edit note
+              </Text>
+            </Box>
+            <Tap onPress={() => setEditing(null)} scale={0.9}>
+              <IconClose color={t.sub} size={17} />
+            </Tap>
+          </Box>
+
+          <TextInput
+            autoFocus
+            backgroundColor={t.chip}
+            borderColor={t.line}
+            borderWidth={1}
+            fontSize={14}
+            multiline
+            onChangeText={setEditDraft}
+            placeholder="What did you make of it?"
+            placeholderTextColor={t.faint}
+            rounded={12}
+            style={{ minHeight: 120, maxHeight: 220, textAlignVertical: "top" }}
+            textColor={t.ink}
+            value={editDraft}
+          />
+
+          <Tap
+            onPress={() => {
+              if (editing) setNote(editing, editDraft.trim());
+              setEditing(null);
+              showToast("Note updated");
+            }}
+            scale={0.97}
+          >
+            <Box align="center" bg={t.accent} paddingY={12} rounded={12}>
+              <Text color={t.onAccent} size={13.5} weight="600">
+                Save
+              </Text>
+            </Box>
+          </Tap>
+        </Box>
+      </CenterModal>
     </ProtoScreen>
   );
 }

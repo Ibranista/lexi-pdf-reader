@@ -9,7 +9,7 @@
 import { Directory, File, Paths } from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useAppStore } from "@/stores/app-store";
+import { type LibrarySort, useAppStore } from "@/stores/app-store";
 import {
   DEVICE_STORAGE_ROOT,
   hasStorageAccess,
@@ -61,6 +61,28 @@ export interface DeviceFolder {
   /** Root of the device's shared storage. */
   isDeviceRoot: boolean;
   docCount: number;
+  /** Combined size of the documents directly in this folder. */
+  size: number;
+  /** Newest document modification time in this folder, for date sorting. */
+  modifiedAt: number | null;
+}
+
+/**
+ * Orders documents or folders by the library's sort choice. Missing dates and
+ * sizes sort as 0, so unreadable metadata sinks to the bottom of a descending
+ * list rather than jumping to the top.
+ */
+export function sortByLibrarySort<
+  T extends { name: string; size: number; modifiedAt: number | null }
+>(entries: T[], { key, dir }: LibrarySort): T[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...entries].sort((a, b) => {
+    if (key === "name") {
+      return sign * a.name.localeCompare(b.name, undefined, { numeric: true });
+    }
+    if (key === "size") return sign * (a.size - b.size);
+    return sign * ((a.modifiedAt ?? 0) - (b.modifiedAt ?? 0));
+  });
 }
 
 const yieldFrame = () => new Promise<void>((r) => setTimeout(r, 0));
@@ -74,7 +96,7 @@ async function scanTree(
   kind: "app" | "device",
   docs: DeviceDoc[],
   folders: DeviceFolder[],
-  onTick: (found: number) => void,
+  onTick: (found: number) => void
 ) {
   const stack: { dir: Directory; depth: number }[] = [{ dir: root, depth: 0 }];
   let visited = 0;
@@ -93,6 +115,8 @@ async function scanTree(
     }
 
     let count = 0;
+    let folderSize = 0;
+    let folderModified: number | null = null;
     for (const entry of entries) {
       // `instanceof Directory` is unreliable across the expo-file-system
       // bundle; a directory's uri always ends in a trailing slash.
@@ -107,9 +131,9 @@ async function scanTree(
       // uri check above already established this is a file, not a Directory
       const file = entry as File;
       const ext = file.name.match(DOC_EXT_RE)?.[1];
-      if (__DEV__) {
-        console.log("file:", file.name, "| ext:", ext ?? "none");
-      }
+      // if (__DEV__) {
+      //   console.log("file:", file.name, "| ext:", ext ?? "none");
+      // }
       if (!ext) continue;
 
       count += 1;
@@ -120,6 +144,10 @@ async function scanTree(
         modifiedAt = file.lastModified;
       } catch {
         // metadata unavailable — keep the file anyway
+      }
+      folderSize += size;
+      if (modifiedAt !== null && modifiedAt > (folderModified ?? 0)) {
+        folderModified = modifiedAt;
       }
       docs.push({
         uri: file.uri,
@@ -138,10 +166,15 @@ async function scanTree(
         isAppStorage: kind === "app" && depth === 0,
         isDeviceRoot: kind === "device" && depth === 0,
         docCount: count,
+        size: folderSize,
+        modifiedAt: folderModified,
       });
     }
   }
 }
+
+/** Minimum gap between scan-progress updates, in ms. */
+const SCAN_TICK_MS = 150;
 
 export function useDeviceLibrary() {
   const libRootUri = useAppStore((s) => s.libRootUri);
@@ -151,7 +184,7 @@ export function useDeviceLibrary() {
   /** Live count of documents found so far during the current scan. */
   const [scanProgress, setScanProgress] = useState(0);
   const [access, setAccess] = useState<StorageAccess>(
-    storageAccessSupported() ? "denied" : "unavailable",
+    storageAccessSupported() ? "denied" : "unavailable"
   );
   const scanGen = useRef(0);
 
@@ -159,9 +192,18 @@ export function useDeviceLibrary() {
     const gen = ++scanGen.current;
     setScanning(true);
     setScanProgress(0);
-    // report the running document count, ignoring superseded scans
+    // Report the running document count, ignoring superseded scans. Throttled
+    // because this fires once per file found: at full rate it re-rendered the
+    // whole library screen hundreds of times a second, which stutters anything
+    // animating over it. The label only needs to look live, not be exact — the
+    // true total lands when the scan finishes.
+    let lastTick = 0;
     const onTick = (found: number) => {
-      if (gen === scanGen.current) setScanProgress(found);
+      if (gen !== scanGen.current) return;
+      const now = Date.now();
+      if (now - lastTick < SCAN_TICK_MS) return;
+      lastTick = now;
+      setScanProgress(found);
     };
     // let the tab paint before hitting the filesystem
     setTimeout(async () => {
@@ -178,7 +220,7 @@ export function useDeviceLibrary() {
           "app",
           nextDocs,
           nextFolders,
-          onTick,
+          onTick
         );
       } catch {
         // no document directory on this platform (web)
@@ -190,7 +232,7 @@ export function useDeviceLibrary() {
             "device",
             nextDocs,
             nextFolders,
-            onTick,
+            onTick
           );
         } catch {
           // storage root unreadable — treat as no access
@@ -203,7 +245,7 @@ export function useDeviceLibrary() {
             "device",
             nextDocs,
             nextFolders,
-            onTick,
+            onTick
           );
         } catch {
           // picked folder no longer accessible — user can pick again
@@ -311,3 +353,5 @@ export function formatWhen(ms: number | null): string {
     day: "numeric",
   });
 }
+
+export type DeviceLibrary = ReturnType<typeof useDeviceLibrary>;

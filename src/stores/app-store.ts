@@ -18,6 +18,15 @@ export type Contrast = 'soft' | 'std';
 export type ExplainStyle = 'advanced' | 'balanced' | 'simple';
 export type FocusSensitivity = 'balanced' | 'frequent' | 'relaxed';
 export type PaywallPlan = 'annual' | 'monthly';
+/** What the library's sort control orders by, and in which direction. */
+export type SortKey = 'date' | 'name' | 'size';
+export type SortDir = 'asc' | 'desc';
+export interface LibrarySort {
+  key: SortKey;
+  dir: SortDir;
+}
+/** Grid of covers, or a swipeable list of rows. */
+export type LibraryView = 'grid' | 'list';
 
 export interface VocabEntry {
   word: string;
@@ -116,6 +125,10 @@ interface AppState {
   libRootName: string | null;
   /** Whether we already auto-asked for device storage access on first open. */
   storageAsked: boolean;
+  /** How the All and Files tabs order documents and folders. */
+  librarySort: LibrarySort;
+  /** Whether documents render as a cover grid or as rows. */
+  libraryView: LibraryView;
 
   setPage: (page: number) => void;
   toggleBookmark: (page: number) => void;
@@ -161,6 +174,9 @@ export const useAppStore = create<AppState>()(
       libRootUri: null,
       libRootName: null,
       storageAsked: false,
+      // newest first — matches how the scan already presents documents
+      librarySort: { key: 'date', dir: 'desc' },
+      libraryView: 'grid',
 
       setPage: (page) => set({ page }),
 
@@ -204,5 +220,30 @@ export const useToastStore = create<ToastState>()((set) => ({
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast: message });
     toastTimer = setTimeout(() => set({ toast: '' }), 1700);
+  },
+}));
+
+/**
+ * A page the reader should jump to when it next comes into focus — how the
+ * Notes screen sends you back to a highlight or bookmark.
+ *
+ * Ephemeral and consumed once: the reader clears it on arrival, so returning
+ * to the reader later by any other route doesn't re-trigger the jump. Carries
+ * the uri so a stale request can't move a different document.
+ */
+interface ReaderJumpState {
+  pending: { uri: string; page: number } | null;
+  request: (uri: string, page: number) => void;
+  consume: (uri: string) => number | null;
+}
+
+export const useReaderJumpStore = create<ReaderJumpState>()((set, get) => ({
+  pending: null,
+  request: (uri, page) => set({ pending: { uri, page } }),
+  consume: (uri) => {
+    const { pending } = get();
+    if (!pending || pending.uri !== uri) return null;
+    set({ pending: null });
+    return pending.page;
   },
 }));

@@ -24,6 +24,13 @@ import { Box, Text } from "@/components/atoms";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
+export interface PdfOutlineEntry {
+  title: string;
+  page: number;
+  /** 0 = top level, 1 = nested (embedded outlines only). */
+  level: number;
+}
+
 export interface PdfSearchResult {
   page: number;
   before: string;
@@ -109,6 +116,19 @@ function buildHtml(
     --hl: ${s.hl};
     --ff: ${s.fontFamily};
   }
+  /* Saved highlights. Alpha rather than a flat fill so the reader's own text
+     colour still carries the contrast — a solid pastel behind light text in
+     dark mode is unreadable. */
+  mark.lexi-hl {
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+    background: rgba(239,197,126,.42);
+  }
+  mark.lexi-hl[data-c="sage"] { background: rgba(180,212,180,.42); }
+  mark.lexi-hl[data-c="sky"]  { background: rgba(174,203,232,.42); }
+  mark.lexi-hl[data-c="rose"] { background: rgba(232,184,180,.42); }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); }
   body {
@@ -124,7 +144,20 @@ function buildHtml(
     height: ${topInset + 16}px;
     transition: height 380ms cubic-bezier(0.33, 0.01, 0.2, 1);
   }
-  section { scroll-margin-top: 12px; }
+  /* This is what makes pinching drag. --fs lives on :root, so every change
+     invalidates layout for every paragraph in the book at once — a 300-page
+     PDF is tens of thousands of them, re-wrapped on every frame of the
+     gesture. content-visibility lets the engine skip layout entirely for
+     sections that aren't near the viewport, so a pinch only re-wraps what you
+     can actually see. The "auto" in contain-intrinsic-size makes a section
+     remember its real height once measured, so the scrollbar settles instead
+     of drifting as you move through the document.
+     (No-op on WebKit before iOS 18 — degrades to today's behaviour.) */
+  section {
+    scroll-margin-top: 12px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 1200px;
+  }
   #content p {
     font-size: var(--fs);
     line-height: var(--lh);
@@ -132,10 +165,42 @@ function buildHtml(
     word-break: break-word;
     overflow-wrap: break-word;
   }
+  #content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: var(--fs);
+    line-height: var(--lh);
+    color: var(--fg);
+    table-layout: fixed;
+  }
+  #content th, #content td {
+    border: 1px solid var(--faint);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  #content th {
+    font-weight: 600;
+    background: rgba(128,128,128,0.08);
+  }
+  #content tr:nth-child(even) {
+    background: rgba(128,128,128,0.04);
+  }
+  /* Each figure carries an inline width — its size on the page, not its pixel
+     count — so a small mark keeps its size instead of being blown up to the
+     column and turning to mush. Height stays auto and both caps only shrink;
+     for a replaced element that means the ratio is held on the way down, so a
+     figure taller than the screen loses width to match rather than squashing.
+     Setting width:auto here would defeat all of it: author styles outrank the
+     size attribute, and the figure would resolve to its bitmap width. */
   #content img {
     display: block;
-    max-width: 100%;
     height: auto;
+    max-width: 100%;
+    max-height: 78vh;
     margin: 1.2em auto;
     border-radius: 4px;
   }
@@ -184,7 +249,12 @@ function buildHtml(
   var BASE_FS = ${s.baseFs};
   var ZOOM_FS = ${s.zoomedFs};
   var INITIAL_PAGE = ${initialPage};
-  var RENDER_SCALE = 1.0;
+  /* Geometry (paragraph spans, search boxes) is measured at 1x — those are all
+     ratios, so density buys nothing. Figures are a different story: cropping
+     them out of a 1x raster and then letting CSS stretch them to the column
+     lands them at roughly a third of the screen's real pixels. Pages carrying
+     images rasterize at device density instead. */
+  var IMG_SCALE = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
   var DARK_BG = ${isDark(s.bg) ? "true" : "false"};
   var zoomed = false;
 
@@ -361,18 +431,28 @@ function buildHtml(
   var focusOn = false;
   var litEl = null;
   function updateSpotlight(){
-    if (!focusOn) return;
-    var blocks = document.querySelectorAll('#content p, #content img');
-    if (!blocks.length) return;
+    if (!focusOn || (pinch && pinch.active)) return;
+    // Measure per section, not per paragraph: the old sweep took a rect off
+    // every block in the document on every scroll frame, which in a long PDF
+    // is tens of thousands of reads to find one winner that was always within
+    // a screen of the beam. Sections are in document order, so we can walk to
+    // the viewport and stop at the far edge.
+    var secs = document.querySelectorAll('#content section');
     var beam = window.innerHeight * 0.45;
     var best = null, bestD = Infinity;
-    for (var i = 0; i < blocks.length; i++){
-      var r = blocks[i].getBoundingClientRect();
-      if (r.bottom < 0 || r.top > window.innerHeight) continue;  // off-screen
-      var d = (r.top <= beam && r.bottom >= beam)
-        ? 0
-        : Math.min(Math.abs(r.top - beam), Math.abs(r.bottom - beam));
-      if (d < bestD) { bestD = d; best = blocks[i]; }
+    for (var i = 0; i < secs.length; i++){
+      var sr = secs[i].getBoundingClientRect();
+      if (sr.bottom < 0) continue;
+      if (sr.top > window.innerHeight) break;
+      var blocks = secs[i].children;
+      for (var j = 0; j < blocks.length; j++){
+        var r = blocks[j].getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) continue;  // off-screen
+        var d = (r.top <= beam && r.bottom >= beam)
+          ? 0
+          : Math.min(Math.abs(r.top - beam), Math.abs(r.bottom - beam));
+        if (d < bestD) { bestD = d; best = blocks[j]; }
+      }
     }
     if (!best || best === litEl) return;
     if (litEl) litEl.classList.remove('f-lit');
@@ -412,6 +492,26 @@ function buildHtml(
   var pinch = null;
   var fsRaf = false, pendingFs = 0;
 
+  /* A font change resizes the pages above you as well as the one you're on, so
+     the whole document slides under your fingers while you pinch — which reads
+     as the gesture sticking and fighting back. Pin the block at the reading
+     line and put the scroll position back after the reflow, so the text grows
+     around where you're looking instead of running away from it. */
+  function anchorAt(beam){
+    var secs = document.querySelectorAll('#content section');
+    for (var i = 0; i < secs.length; i++){
+      var sr = secs[i].getBoundingClientRect();
+      if (sr.bottom < beam) continue;
+      if (sr.top > beam) break;               // sections are in document order
+      var kids = secs[i].children;
+      for (var j = 0; j < kids.length; j++){
+        var r = kids[j].getBoundingClientRect();
+        if (r.bottom >= beam) return { el: kids[j], top: r.top };
+      }
+    }
+    return null;
+  }
+
   // batched via rAF so continuous pinching reflows at frame rate, not
   // once per touchmove event
   function setFs(v){
@@ -424,7 +524,12 @@ function buildHtml(
       fsRaf = true;
       requestAnimationFrame(function(){
         fsRaf = false;
+        var a = anchorAt(window.innerHeight * 0.4);
         document.documentElement.style.setProperty('--fs', pendingFs + 'px');
+        if (a) {
+          var drift = a.el.getBoundingClientRect().top - a.top;
+          if (drift) window.scrollBy(0, drift);
+        }
       });
     }
   }
@@ -479,6 +584,17 @@ function buildHtml(
     if (moved) return;                              // was a scroll/drag
     if (Date.now() - startT > TAP_TIME) return;     // was a long press
     if (window.getSelection().toString() !== '') return;
+    // A tap on a saved highlight opens it, rather than toggling the chrome.
+    // Taken before the double-tap timer so it responds on the first tap.
+    var onMark = e.target && e.target.closest
+      ? e.target.closest('mark.lexi-hl')
+      : null;
+    if (onMark) {
+      if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+      e.preventDefault();
+      post({ type: 'highlighttap', id: onMark.getAttribute('data-id') || '' });
+      return;
+    }
     var now = Date.now();
     if (now - lastTap < DBL_WINDOW) {
       if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
@@ -515,6 +631,134 @@ function buildHtml(
     });
   }, { passive: true });
 
+  /* Selection → RN, so the reader can offer highlight/note on it. Reported on
+     settle rather than on every change: Android fires selectionchange for each
+     handle movement, and the action bar shouldn't flicker while you drag. */
+  var selTimer = null;
+  var lastSel = '';
+  document.addEventListener('selectionchange', function(){
+    clearTimeout(selTimer);
+    selTimer = setTimeout(function(){
+      var sel = window.getSelection();
+      var text = sel ? sel.toString().trim() : '';
+      if (text === lastSel) return;
+      lastSel = text;
+      if (!text) { post({ type: 'selection', text: '' }); return; }
+      // page comes from the section the selection starts in, so a passage
+      // spanning a page break is filed on the page it began
+      var node = sel.anchorNode;
+      var el = node && (node.nodeType === 1 ? node : node.parentElement);
+      var sec = el && el.closest ? el.closest('section[data-page]') : null;
+      post({
+        type: 'selection',
+        text: text,
+        page: sec ? parseInt(sec.getAttribute('data-page'), 10) : 0,
+      });
+    }, 320);
+  });
+
+  /* ===== saved highlights =====
+     Re-found by text rather than stored as offsets: reflow rebuilds the DOM
+     whenever the typeface or size changes, so any offset we recorded would go
+     stale. Matching the passage again survives all of that. */
+
+  /* Whitespace-collapsed copy of a string, plus a map back to the original
+     indices — reflow's text nodes carry the PDF's own line breaks, which the
+     selected string doesn't. */
+  function normMap(s){
+    var out = '', map = [], ws = false;
+    for (var i = 0; i < s.length; i++){
+      var ch = s[i];
+      // ch <= ' ' catches space, newline, tab and carriage return without
+      // escape sequences, which inside this template literal would need
+      // double-escaping to survive into the page.
+      if (ch <= ' ') {
+        if (ws) continue;
+        out += ' '; map.push(i); ws = true;
+      } else {
+        out += ch; map.push(i); ws = false;
+      }
+    }
+    return { text: out, map: map };
+  }
+
+  function textNodesOf(root){
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var nodes = [], n;
+    while ((n = w.nextNode())) nodes.push(n);
+    return nodes;
+  }
+
+  /* Wraps one passage. Works per text node so a passage crossing paragraphs
+     still marks — surroundContents throws on a range that straddles elements,
+     but never on one confined to a single text node. */
+  function markPassage(sec, needle, color, id){
+    var nodes = textNodesOf(sec);
+    if (!nodes.length) return false;
+    var full = '', starts = [];
+    for (var i = 0; i < nodes.length; i++){
+      starts.push(full.length);
+      full += nodes[i].nodeValue;
+    }
+    var nm = normMap(full);
+    var want = normMap(needle).text.trim();
+    if (!want) return false;
+    var at = nm.text.indexOf(want);
+    if (at < 0) return false;
+    var from = nm.map[at], to = nm.map[at + want.length - 1] + 1;
+
+    for (var j = 0; j < nodes.length; j++){
+      var ns = starts[j], ne = ns + nodes[j].nodeValue.length;
+      var s = Math.max(from, ns), e = Math.min(to, ne);
+      if (s >= e) continue;
+      try {
+        var r = document.createRange();
+        r.setStart(nodes[j], s - ns);
+        r.setEnd(nodes[j], e - ns);
+        var m = document.createElement('mark');
+        m.className = 'lexi-hl';
+        m.setAttribute('data-c', color);
+        if (id) m.setAttribute('data-id', id);
+        r.surroundContents(m);
+      } catch (err) { /* node vanished mid-pass — skip it */ }
+    }
+    return true;
+  }
+
+  var savedHighlights = [];
+
+  function clearHighlights(){
+    var marks = document.querySelectorAll('mark.lexi-hl');
+    for (var i = 0; i < marks.length; i++){
+      var m = marks[i], parent = m.parentNode;
+      if (!parent) continue;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();   // re-join, or the next match sees a split string
+    }
+  }
+
+  window.applyHighlights = function(list){
+    if (list) savedHighlights = list;
+    clearHighlights();
+    for (var i = 0; i < savedHighlights.length; i++){
+      var h = savedHighlights[i];
+      var sec = document.querySelector('section[data-page="' + h.page + '"]');
+      if (!sec) continue;
+      // A passage can run past its own page break; the next section is the
+      // only other place it can be.
+      if (!markPassage(sec, h.text, h.color, h.id) && sec.nextElementSibling) {
+        markPassage(sec.nextElementSibling, h.text, h.color, h.id);
+      }
+    }
+  };
+
+  window.clearTextSelection = function(){
+    try { window.getSelection().removeAllRanges(); } catch (e) {}
+    lastSel = '';
+    post({ type: 'selection', text: '' });
+  };
+
   function b64ToBytes(b64){
     var bin = atob(b64);
     var bytes = new Uint8Array(bin.length);
@@ -543,9 +787,15 @@ function buildHtml(
       else if (fn === OPS.setFillCMYKColor) {
         if (args[0] > 0.1 || args[1] > 0.1 || args[2] > 0.1) hasColor = true;
       }
+      // The object name matters as much as the placement: it's the handle to
+      // the image's own bitmap, which beats anything croppable off the page.
       else if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject ||
-               fn === OPS.paintInlineImageXObject) {
-        images.push(ctm.slice());
+               fn === OPS.paintImageXObjectRepeat) {
+        images.push({ ctm: ctm.slice(), name: args[0] });
+      }
+      else if (fn === OPS.paintInlineImageXObject) {
+        // inline images carry their pixels in the operand, not the object store
+        images.push({ ctm: ctm.slice(), name: null });
       }
     }
     return { images: images, hasColor: hasColor };
@@ -566,6 +816,147 @@ function buildHtml(
       w: Math.max.apply(null, xs) - Math.min.apply(null, xs),
       h: Math.max.apply(null, ys) - Math.min.apply(null, ys)
     };
+  }
+
+  /* Publishers routinely emit one figure as a stack of strips — scanner output,
+     sliced exports, gradient tiles. Left alone each strip becomes its own
+     <img> with margins between them and the figure arrives shredded, so union
+     placements that touch or overlap before anything gets cropped. */
+  function mergeBoxes(entries, viewport){
+    var boxes = [];
+    for (var i = 0; i < entries.length; i++){
+      var b = boxOf(entries[i].ctm, viewport);
+      b.parts = [entries[i]];
+      boxes.push(b);
+    }
+    var joined = true;
+    while (joined) {
+      joined = false;
+      for (var a = 0; a < boxes.length && !joined; a++){
+        for (var c = a + 1; c < boxes.length && !joined; c++){
+          var p = boxes[a], q = boxes[c];
+          // touching counts, not just overlapping — strips usually abut exactly
+          var gapX = Math.max(p.x, q.x) - Math.min(p.x + p.w, q.x + q.w);
+          var gapY = Math.max(p.y, q.y) - Math.min(p.y + p.h, q.y + q.h);
+          if (gapX > 2 || gapY > 2) continue;
+          var x0 = Math.min(p.x, q.x), y0 = Math.min(p.y, q.y);
+          var x1 = Math.max(p.x + p.w, q.x + q.w);
+          var y1 = Math.max(p.y + p.h, q.y + q.h);
+          boxes[a] = { x: x0, y: y0, w: x1 - x0, h: y1 - y0,
+                       parts: p.parts.concat(q.parts) };
+          boxes.splice(c, 1);
+          joined = true;
+        }
+      }
+    }
+    return boxes;
+  }
+
+  /* Page-local XObjects live on the page, ones shared across pages on the
+     document, and the naming that tells them apart has moved between pdf.js
+     releases — so ask both. Either store throws rather than waits if the
+     worker hasn't resolved the object yet, hence the guards; a miss is not a
+     failure, it just means we crop instead. The objects exist by now only
+     because the page render above forced them to resolve. */
+  function imageSource(pdf, page, name){
+    if (!name) return null;
+    var stores = [page.objs, pdf.commonObjs];
+    for (var i = 0; i < stores.length; i++){
+      try {
+        if (stores[i] && stores[i].has(name)) return stores[i].get(name);
+      } catch (e) { /* not resolved in this store — try the next */ }
+    }
+    return null;
+  }
+
+  /* pdf.js hands back either a decoded ImageBitmap or a raw pixel buffer
+     tagged with its ImageKind. Unpack whichever arrived into a canvas at the
+     image's own resolution. */
+  function toCanvas(obj){
+    if (!obj) return null;
+    var cv = document.createElement('canvas');
+    if (obj.bitmap) {
+      cv.width = obj.bitmap.width; cv.height = obj.bitmap.height;
+      cv.getContext('2d').drawImage(obj.bitmap, 0, 0);
+      return cv;
+    }
+    var w = obj.width, h = obj.height, src = obj.data;
+    if (!src || !w || !h || w * h > 3e7) return null;
+    cv.width = w; cv.height = h;
+    var c = cv.getContext('2d');
+    var id = c.createImageData(w, h);
+    var out = id.data;
+    var K = pdfjsLib.ImageKind || {};
+    if (obj.kind === K.RGBA_32BPP || src.length === w * h * 4) {
+      out.set(src.subarray(0, w * h * 4));
+    }
+    else if (obj.kind === K.RGB_24BPP || src.length === w * h * 3) {
+      for (var i = 0, j = 0; i < w * h; i++, j += 3){
+        out[i*4] = src[j]; out[i*4+1] = src[j+1];
+        out[i*4+2] = src[j+2]; out[i*4+3] = 255;
+      }
+    }
+    else if (obj.kind === K.GRAYSCALE_1BPP) {
+      // rows are byte-aligned and a set bit is white (pdf.js' packing)
+      var rowBytes = (w + 7) >> 3;
+      for (var y = 0; y < h; y++){
+        for (var x = 0; x < w; x++){
+          var v = (src[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1 ? 255 : 0;
+          var o = (y * w + x) * 4;
+          out[o] = out[o+1] = out[o+2] = v; out[o+3] = 255;
+        }
+      }
+    }
+    else return null;
+    c.putImageData(id, 0, 0);
+    return cv;
+  }
+
+  /* Redraw the bitmap through its own CTM into a buffer shaped like its
+     on-page box. Going through the transform rather than a plain blit means
+     rotation and mirroring land exactly as the page has them, and any stretch
+     the PDF itself applies is reproduced — that's the document's design. What
+     we never do is add a stretch of our own. */
+  function redraw(src, entry, viewport, box){
+    var Util = pdfjsLib.Util;
+    // don't manufacture pixels the source doesn't have
+    var fit = Math.sqrt((src.width * src.height) / Math.max(1, box.w * box.h));
+    var k = Math.min(1, fit);
+    var w = Math.max(1, Math.round(box.w * k));
+    var h = Math.max(1, Math.round(box.h * k));
+    if (w * h > 1.6e7) return null;
+    var out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    var c = out.getContext('2d');
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    var m = Util.transform(viewport.transform, entry.ctm);           // unit → page
+    m = Util.transform([k, 0, 0, k, -box.x * k, -box.y * k], m);     // page → box
+    m = Util.transform(m, [1/src.width, 0, 0, -1/src.height, 0, 1]); // bitmap → unit
+    c.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    c.drawImage(src, 0, 0);
+    return out;
+  }
+
+  /* JPEG rings badly around the hard edges in diagrams, charts and
+     screenshots, and it has no alpha at all, so a logo on a transparent
+     background comes back as a black brick. Sample the result: transparency or
+     a small palette means line art, which wants PNG. Everything else is
+     photographic, where JPEG is smaller and indistinguishable. */
+  function encode(cv){
+    var alpha = false, flat = true;
+    try {
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      var px = cv.width * cv.height;
+      var step = Math.max(1, Math.floor(px / 4096)) * 4;
+      var seen = {}, n = 0;
+      for (var i = 0; i < d.length; i += step){
+        if (d[i+3] < 250) { alpha = true; break; }
+        var key = (d[i] >> 4) + '|' + (d[i+1] >> 4) + '|' + (d[i+2] >> 4);
+        if (!seen[key]) { seen[key] = 1; if (++n > 48) { flat = false; break; } }
+      }
+      return cv.toDataURL(alpha || flat ? 'image/png' : 'image/jpeg', 0.92);
+    } catch (e) { return null; }   // tainted canvas
   }
 
   /* Neutral (black/gray) text inherits the theme color — otherwise body text
@@ -634,6 +1025,193 @@ function buildHtml(
     return lines;
   }
 
+  /* ── table detection ───────────────────────────────────────────────
+     PDF has no table markup — tables are just positioned text with lines.
+     We reverse-engineer them by looking for items that fall into consistent
+     vertical columns across multiple rows. */
+  function detectTable(items, ops, viewport) {
+    if (items.length < 6) return null;
+
+    // Signal 1: does the page draw ruled paths/rectangles at all?
+    var hasRuleSignal = false;
+    var OPS = pdfjsLib.OPS;
+    for (var oi = 0; oi < ops.fnArray.length; oi++) {
+      var fn = ops.fnArray[oi];
+      var args = ops.argsArray[oi];
+      if (fn === OPS.rectangle) { hasRuleSignal = true; break; }
+      if (fn === OPS.constructPath && args && args[0] && args[0].length) {
+        hasRuleSignal = true;
+      }
+    }
+
+    var source = [];
+    for (var si = 0; si < items.length; si++) if (items[si] && items[si].transform) source.push(items[si]);
+    if (source.length < 6) return null;
+
+    // Sort top→bottom in PDF coordinates (higher y first).
+    source.sort(function(a, b) { return b.transform[5] - a.transform[5]; });
+
+    // Segment page into vertical bands so headers/footers/body don't pollute one cluster.
+    var bandBreak = Math.max(18, viewport.height * 0.045);
+    var bands = [];
+    var curBand = [source[0]];
+    for (var bi = 1; bi < source.length; bi++) {
+      var prevY = source[bi - 1].transform[5];
+      var y = source[bi].transform[5];
+      if (Math.abs(prevY - y) > bandBreak) {
+        bands.push(curBand);
+        curBand = [source[bi]];
+      } else {
+        curBand.push(source[bi]);
+      }
+    }
+    if (curBand.length) bands.push(curBand);
+
+    function clusterRows(bandItems, yTol) {
+      var rows = [];
+      for (var i = 0; i < bandItems.length; i++) {
+        var it = bandItems[i];
+        var y = it.transform[5];
+        var hit = -1;
+        for (var r = 0; r < rows.length; r++) {
+          if (Math.abs(rows[r].y - y) <= yTol) { hit = r; break; }
+        }
+        if (hit < 0) {
+          rows.push({ y: y, count: 1, items: [it] });
+        } else {
+          var row = rows[hit];
+          var n = row.count;
+          row.y = (row.y * n + y) / (n + 1);
+          row.count = n + 1;
+          row.items.push(it);
+        }
+      }
+      rows.sort(function(a, b) { return b.y - a.y; });
+      return rows;
+    }
+
+    function evalBand(bandItems) {
+      if (bandItems.length < 6) return null;
+      var yTol = Math.max(2, viewport.height * 0.0065);
+      var rows = clusterRows(bandItems, yTol).filter(function(r) { return r.items.length >= 2; });
+      if (rows.length < 3) return null;
+
+      var allXs = [];
+      for (var ri = 0; ri < rows.length; ri++) {
+        for (var ii = 0; ii < rows[ri].items.length; ii++) {
+          var it = rows[ri].items[ii];
+          allXs.push({ x: it.transform[4], width: it.width || 0 });
+        }
+      }
+      if (allXs.length < 6) return null;
+      allXs.sort(function(a, b) { return a.x - b.x; });
+
+      var xTol = Math.max(4, viewport.width * 0.012);
+      var cols = [];
+      for (var xi = 0; xi < allXs.length; xi++) {
+        var item = allXs[xi];
+        var merged = false;
+        for (var c = 0; c < cols.length; c++) {
+          if (Math.abs(cols[c].x - item.x) <= xTol) {
+            var n = cols[c].count;
+            cols[c].x = (cols[c].x * n + item.x) / (n + 1);
+            cols[c].count = n + 1;
+            merged = true;
+            break;
+          }
+        }
+        if (!merged) cols.push({ x: item.x, count: 1 });
+      }
+      if (cols.length < 2 || cols.length > 10) return null;
+      cols.sort(function(a, b) { return a.x - b.x; });
+
+      // Column consistency per row.
+      var consistentRows = 0;
+      for (var rj = 0; rj < rows.length; rj++) {
+        var rowXs = rows[rj].items.map(function(it) { return it.transform[4]; });
+        var matchedCols = 0;
+        for (var cj = 0; cj < cols.length; cj++) {
+          for (var rx = 0; rx < rowXs.length; rx++) {
+            if (Math.abs(rowXs[rx] - cols[cj].x) <= xTol) { matchedCols++; break; }
+          }
+        }
+        if (matchedCols >= Math.max(2, cols.length * 0.6)) consistentRows++;
+      }
+      var structure = consistentRows / rows.length;
+
+      // Row-spacing regularity helps reject prose.
+      var gaps = [];
+      for (var g = 1; g < rows.length; g++) gaps.push(Math.abs(rows[g - 1].y - rows[g].y));
+      var regularity = 0;
+      if (gaps.length >= 2) {
+        var mean = gaps.reduce(function(a, b) { return a + b; }, 0) / gaps.length;
+        if (mean > 0) {
+          var variance = 0;
+          for (var gv = 0; gv < gaps.length; gv++) {
+            var d = gaps[gv] - mean;
+            variance += d * d;
+          }
+          variance /= gaps.length;
+          var cv = Math.sqrt(variance) / mean;
+          regularity = Math.max(0, 1 - Math.min(1, cv));
+        }
+      }
+
+      var density = Math.min(1, allXs.length / Math.max(1, rows.length * cols.length));
+      var score = structure * 0.62 + regularity * 0.23 + density * 0.15 + (hasRuleSignal ? 0.08 : 0);
+
+      // Accept if very table-like, or reasonably table-like with ruling signal.
+      if (!(score >= 0.68 || (hasRuleSignal && score >= 0.56 && structure >= 0.45))) return null;
+
+      var grid = [];
+      var tableItems = [];
+      for (var rk = 0; rk < rows.length; rk++) {
+        var row = rows[rk];
+        row.items.sort(function(a, b) { return a.transform[4] - b.transform[4]; });
+        var rowCells = [];
+        var rowUsed = [];
+        for (var ck = 0; ck < cols.length; ck++) {
+          var colX = cols[ck].x;
+          var cellBits = [];
+          for (var ik = 0; ik < row.items.length; ik++) {
+            var rit = row.items[ik];
+            if (Math.abs(rit.transform[4] - colX) <= xTol) {
+              var txt = (rit.str || '').trim();
+              if (txt) cellBits.push(txt);
+              rowUsed.push(rit);
+            }
+          }
+          rowCells.push(cellBits.join(' ').trim());
+        }
+        var hasContent = rowCells.some(function(c2) { return c2.length > 0; });
+        if (hasContent) {
+          grid.push(rowCells);
+          tableItems = tableItems.concat(rowUsed);
+        }
+      }
+
+      if (grid.length < 2) return null;
+      var header = false;
+      if (grid.length > 1) {
+        var firstShort = grid[0].every(function(c3) { return c3.length < 36; });
+        var secondHasData = grid[1].some(function(c4) { return c4.length >= 8; });
+        header = firstShort && secondHasData;
+      }
+      return { rows: grid, header: header, tableItems: tableItems, score: score };
+    }
+
+    var best = null;
+    for (var b = 0; b < bands.length; b++) {
+      if (bands[b].length < 6) continue;
+      var cand = evalBand(bands[b]);
+      if (!cand) continue;
+      if (!best || cand.score > best.score) best = cand;
+    }
+
+    if (!best) return null;
+    return { rows: best.rows, header: best.header, tableItems: best.tableItems };
+  }
+
   /* Merge lines into paragraphs, carrying color. */
   function toParagraphs(lines){
     var gaps = [];
@@ -689,56 +1267,187 @@ function buildHtml(
 
   async function processPage(pdf, pageNo, content){
     var page = await pdf.getPage(pageNo);
-    var viewport = page.getViewport({ scale: RENDER_SCALE });
+    // All geometry stays in 1x page space; only the raster gets scaled up.
+    var viewport = page.getViewport({ scale: 1 });
     var ops = await page.getOperatorList();
     var info = scanOps(ops);
 
-    // Only rasterize when we actually need pixels (images or colored text).
+    // Only rasterize when we actually need pixels (images or colored text),
+    // and only pay for device density when there are figures to keep sharp.
+    var imgScale = info.images.length ? IMG_SCALE : 1;
+    var rv = page.getViewport({ scale: imgScale });
     var canvas = null, ctx = null;
     if (info.images.length || info.hasColor) {
       canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
+      canvas.width = Math.ceil(rv.width);
+      canvas.height = Math.ceil(rv.height);
       ctx = canvas.getContext('2d', { willReadFrequently: true });
-      await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport: rv }).promise;
     }
 
     var tc = await page.getTextContent();
-    var lines = toLines(tc.items);
+
+    // ── try tables first ──────────────────────────────────────────
+    // Pass the operator list so we can detect ruling lines
+    var tableInfo = detectTable(tc.items, ops, viewport);
+    var tableEl = null;
+    var tableItemIds = new Set(); // Use a set for O(1) lookup
+
+    if (tableInfo && tableInfo.rows.length >= 2) {
+      tableEl = document.createElement('table');
+      tableEl.style.cssText =
+        'width:100%;border-collapse:collapse;margin:1.2em 0;font-size:var(--fs);line-height:var(--lh);color:var(--fg);table-layout:fixed;';
+      for (var trIdx = 0; trIdx < tableInfo.rows.length; trIdx++) {
+        var tr = document.createElement('tr');
+        var isHeader = tableInfo.header && trIdx === 0;
+        for (var tdIdx = 0; tdIdx < tableInfo.rows[trIdx].length; tdIdx++) {
+          var td = document.createElement(isHeader ? 'th' : 'td');
+          td.textContent = tableInfo.rows[trIdx][tdIdx];
+          td.style.cssText =
+            'border:1px solid var(--faint);padding:5px 8px;text-align:left;vertical-align:top;overflow-wrap:break-word;word-break:break-word;';
+          if (isHeader) td.style.fontWeight = '600';
+          // Distribute columns somewhat evenly
+          td.style.width = 100 / tableInfo.rows[trIdx].length + '%';
+          tr.appendChild(td);
+        }
+        tableEl.appendChild(tr);
+      }
+
+      // Mark table items for exclusion
+      for (var ti = 0; ti < tableInfo.tableItems.length; ti++) {
+        // Use object reference or create a weak key
+        // Since we can't use WeakSet easily, filter by checking if item
+        // is in the tableItemSet by reference
+        tableItemIds.add(tableInfo.tableItems[ti]);
+      }
+    }
+
+    // Filter: exclude items that are in the table set
+    // We use a simple approach: check if item's y matches a table row
+    // AND x matches a table column
+    var nonTableItems = tc.items;
+    if (tableInfo && tableInfo.tableItems.length > 0) {
+      var tableYs = [];
+      var tableXs = [];
+      var tTol = Math.max(3, viewport.height * 0.008);
+      var xTol2 = Math.max(4, viewport.width * 0.015);
+
+      // Get unique row Ys and col Xs from table items
+      for (var tj = 0; tj < tableInfo.tableItems.length; tj++) {
+        var ty = tableInfo.tableItems[tj].transform[5];
+        var tx = tableInfo.tableItems[tj].transform[4];
+        var hasY = false, hasX = false;
+        for (var yy = 0; yy < tableYs.length; yy++) {
+          if (Math.abs(tableYs[yy] - ty) < tTol) {
+            hasY = true;
+            break;
+          }
+        }
+        for (var xx = 0; xx < tableXs.length; xx++) {
+          if (Math.abs(tableXs[xx] - tx) < xTol2) {
+            hasX = true;
+            break;
+          }
+        }
+        if (!hasY) tableYs.push(ty);
+        if (!hasX) tableXs.push(tx);
+      }
+
+      nonTableItems = tc.items.filter(function(it) {
+        if (!it.transform) return true;
+        if (tableItemIds.has(it)) return false;
+        var iy = it.transform[5];
+        var ix = it.transform[4];
+        var inTableY = false;
+        for (var vy = 0; vy < tableYs.length; vy++) {
+          if (Math.abs(tableYs[vy] - iy) < tTol) {
+            inTableY = true;
+            break;
+          }
+        }
+        if (!inTableY) return true;
+        var inTableX = false;
+        for (var vx = 0; vx < tableXs.length; vx++) {
+          if (Math.abs(tableXs[vx] - ix) < xTol2) {
+            inTableX = true;
+            break;
+          }
+        }
+        return !inTableX; // keep if not in table x-range
+      });
+    }
+
+    var lines = toLines(nonTableItems);
 
     // sample one color per line from the rendered page
     if (ctx) {
       for (var i = 0; i < lines.length; i++){
         var it = lines[i].item;
         if (!it || !it.transform) continue;
-        var pt = pdfjsLib.Util.applyTransform([it.transform[4], it.transform[5]], viewport.transform);
-        var hgt = Math.max(4, (it.height || 10) * RENDER_SCALE);
-        var wid = Math.max(4, (it.width || 40) * RENDER_SCALE);
+        var pt = pdfjsLib.Util.applyTransform([it.transform[4], it.transform[5]], rv.transform);
+        var hgt = Math.max(4, (it.height || 10) * imgScale);
+        var wid = Math.max(4, (it.width || 40) * imgScale);
         lines[i].color = sampleColor(ctx, canvas, { x: pt[0], y: pt[1] - hgt, w: wid, h: hgt });
       }
     }
 
     var paras = toParagraphs(lines);
 
-    // crop images out of the rendered page
+    // lift the figures off the page
     var imgs = [];
-    if (ctx) {
-      for (var m = 0; m < info.images.length; m++){
-        var box = boxOf(info.images[m], viewport);
-        if (box.w < 24 || box.h < 24) continue; // skip rules/bullets/artifacts
-        var sx = Math.max(0, Math.floor(box.x));
-        var sy = Math.max(0, Math.floor(box.y));
-        var sw = Math.min(canvas.width - sx, Math.ceil(box.w));
-        var sh = Math.min(canvas.height - sy, Math.ceil(box.h));
-        if (sw <= 0 || sh <= 0) continue;
-        var c2 = document.createElement('canvas');
-        c2.width = sw; c2.height = sh;
-        c2.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-        try {
-          imgs.push({ top: box.y, src: c2.toDataURL('image/jpeg', 0.85), w: sw, h: sh });
-        } catch (e) { /* tainted canvas — skip */ }
+    if (ctx && info.images.length) {
+      var textLen = 0;
+      for (var t = 0; t < lines.length; t++) textLen += (lines[t].text || '').length;
+      var pageArea = rv.width * rv.height;
+      var boxes = mergeBoxes(info.images, rv);
+
+      for (var m = 0; m < boxes.length; m++){
+        var box = boxes[m];
+        var minSide = 24 * imgScale;
+        if (box.w < minSide || box.h < minSide) continue;  // rules, bullets
+        // extreme aspect ratios are borders and dividers, not figures
+        var aspect = box.w / box.h;
+        if (aspect > 25 || aspect < 0.04) continue;
+        // A page-sized image sitting behind real text is a scan backdrop or a
+        // watermark. Emitting it would stack a picture of the whole page on
+        // top of that same page's text.
+        if (box.w * box.h > pageArea * 0.8 && textLen > 200) continue;
+
+        var out = null;
+        // Preferred path: the image's own bitmap, redrawn under its own CTM.
+        // Cropping the composited page cost us two things — the figure came
+        // out at page-raster density, and whatever the page drew over it
+        // (captions, rules, watermarks) came along for the ride.
+        if (box.parts.length === 1) {
+          var native = toCanvas(imageSource(pdf, page, box.parts[0].name));
+          if (native) out = redraw(native, box.parts[0], rv, box);
+        }
+        if (!out) {
+          // Inline images, soft-masked art, merged strips: crop the raster.
+          var sx = Math.max(0, Math.floor(box.x));
+          var sy = Math.max(0, Math.floor(box.y));
+          var sw = Math.min(canvas.width - sx, Math.ceil(box.w));
+          var sh = Math.min(canvas.height - sy, Math.ceil(box.h));
+          if (sw <= 0 || sh <= 0) continue;
+          out = document.createElement('canvas');
+          out.width = sw; out.height = sh;
+          out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+        }
+
+        var data = encode(out);
+        if (!data) continue;
+        // Display size is the figure's size on the page, in CSS pixels — the
+        // extra pixels live in the backing store, where they belong. Sizing
+        // from the bitmap instead would blow a high-res icon up to a banner.
+        imgs.push({
+          top: box.y / imgScale,
+          src: data,
+          w: Math.max(1, Math.round(box.w / imgScale)),
+          h: Math.max(1, Math.round(box.h / imgScale))
+        });
       }
     }
+    if (canvas) { canvas.width = 0; canvas.height = 0; }  // release early
 
     // merge text + images in visual order (device y, top-down)
     var blocks = [];
@@ -754,6 +1463,10 @@ function buildHtml(
 
     var section = document.createElement('section');
     section.setAttribute('data-page', String(pageNo));
+
+    // If we detected a table, prepend it before the text blocks
+    if (tableEl) section.appendChild(tableEl);
+
     for (var q = 0; q < blocks.length; q++){
       if (blocks[q].kind === 'p') {
         var pEl = paragraphEl(blocks[q].data);
@@ -773,7 +1486,7 @@ function buildHtml(
           if (gl && len) {
             var g0 = pdfjsLib.Util.applyTransform([gl.x0, gl.y], viewport.transform);
             var g1 = pdfjsLib.Util.applyTransform([gl.x1, gl.y], viewport.transform);
-            var gh = Math.max(6, gl.h);   // device px at RENDER_SCALE 1
+            var gh = Math.max(6, gl.h);   // 1x page space, same as viewport
             geo.push({
               o: off, l: len,
               x0: +(g0[0] / viewport.width).toFixed(4),
@@ -790,13 +1503,118 @@ function buildHtml(
       else {
         var im = document.createElement('img');
         im.src = blocks[q].data.src;
-        im.width = blocks[q].data.w;
-        im.height = blocks[q].data.h;
+        // inline width, so nothing in the sheet can quietly outrank it
+        im.style.width = blocks[q].data.w + 'px';
+        im.setAttribute('width', blocks[q].data.w);
+        im.setAttribute('height', blocks[q].data.h);
+        im.decoding = 'async';
         section.appendChild(im);
       }
     }
     content.appendChild(section);
     page.cleanup();
+    return (tc.items || []).map(function(item){ return item.str || ''; }).join(' ').trim().split(/\s+/).filter(Boolean).length;
+  }
+
+  /* ---- outline ----
+     Preferred source is the PDF's embedded outline (real destinations, so
+     page numbers are exact). Failing that — most PDFs have none — look for a
+     printed "Contents" page among the opening pages and parse its rows. */
+  async function embeddedOutline(pdf){
+    var out = [];
+    var ol = await pdf.getOutline();
+    if (!ol || !ol.length) return out;
+    async function walk(items, level){
+      for (var i = 0; i < items.length; i++){
+        var it = items[i];
+        var title = (it.title || '').replace(/\\s+/g, ' ').trim();
+        var pageNo = null;
+        try {
+          var dest = it.dest;
+          if (typeof dest === 'string') dest = await pdf.getDestination(dest);
+          if (dest && dest[0]) pageNo = (await pdf.getPageIndex(dest[0])) + 1;
+        } catch (e) { /* unresolvable destination — skip the row */ }
+        if (title && pageNo) out.push({ title: title, page: pageNo, level: level });
+        // one level of nesting is plenty for a reading drawer
+        if (it.items && it.items.length && level < 1) await walk(it.items, level + 1);
+      }
+    }
+    await walk(ol, 0);
+    return out;
+  }
+
+  /* Rows look like "Chapter 1  Fire and Tallow ......... 3" — title, then a
+     leader of dots/spaces, then the printed page number. */
+  function parseContentsRows(texts, startIdx){
+    var rows = [];
+    for (var j = startIdx; j < texts.length; j++){
+      var line = texts[j];
+      if (!line || line.length > 120) continue;
+      var m = line.match(/^(.*?)[\\s.·—–-]{2,}(\\d{1,4})$/) ||
+              line.match(/^(.+?)\\s+(\\d{1,4})$/);
+      if (!m) continue;
+      var title = m[1].replace(/[.\\s·—–-]+$/, '').trim();
+      var num = parseInt(m[2], 10);
+      if (!title || title.length < 2 || !num) continue;
+      if (/^(page|contents)$/i.test(title)) continue;
+      rows.push({ title: title, page: num, level: 0 });
+    }
+    return rows;
+  }
+
+  /* Note: no page.cleanup() in here. This runs concurrently with the main
+     extraction loop, which holds the same page proxies — cleaning up under
+     it would discard a render it's still using. It cleans up its own pages. */
+  async function printedOutline(pdf){
+    var limit = Math.min(pdf.numPages, 12);
+    for (var p = 1; p <= limit; p++){
+      var pg = await pdf.getPage(p);
+      var tc = await pg.getTextContent();
+      var texts = toLines(tc.items).map(function(l){
+        return (l.text || '').replace(/\\s+/g, ' ').trim();
+      });
+      var headIdx = -1;
+      for (var i = 0; i < Math.min(texts.length, 8); i++){
+        if (/^(table of contents|contents)$/i.test(texts[i])) { headIdx = i; break; }
+      }
+      if (headIdx < 0) continue;
+
+      var rows = parseContentsRows(texts, headIdx + 1);
+      // a contents list can run onto the next page or two
+      for (var k = p + 1; k <= Math.min(pdf.numPages, p + 2); k++){
+        var pg2 = await pdf.getPage(k);
+        var tc2 = await pg2.getTextContent();
+        var texts2 = toLines(tc2.items).map(function(l){
+          return (l.text || '').replace(/\\s+/g, ' ').trim();
+        });
+        var more = parseContentsRows(texts2, 0);
+        if (more.length < 2) break;   // no longer a contents list
+        rows = rows.concat(more);
+      }
+      if (rows.length >= 2) return rows;
+    }
+    return [];
+  }
+
+  async function buildOutline(pdf){
+    var entries = [], source = 'embedded';
+    try { entries = await embeddedOutline(pdf); } catch (e) { entries = []; }
+    if (!entries.length) {
+      source = 'printed';
+      try { entries = await printedOutline(pdf); } catch (e) { entries = []; }
+      // Printed numbers are the book's own, which front matter can offset
+      // from the PDF's page order — drop anything out of range and keep the
+      // list monotonic so taps never jump backwards.
+      var clean = [], last = 0;
+      for (var i = 0; i < entries.length; i++){
+        var e = entries[i];
+        if (e.page < 1 || e.page > pdf.numPages || e.page < last) continue;
+        last = e.page;
+        clean.push(e);
+      }
+      entries = clean;
+    }
+    if (entries.length) post({ type: 'outline', entries: entries, source: source });
   }
 
   function run(){
@@ -810,18 +1628,21 @@ function buildHtml(
     var firstPaint = false;
 
     pdfjsLib.getDocument({ data: b64ToBytes('${b64}') }).promise.then(async function(pdf){
+      var wordCounts = [];
       for (var p = 1; p <= pdf.numPages; p++){
-        try { await processPage(pdf, p, content); }
+        try { wordCounts[p - 1] = await processPage(pdf, p, content); }
         catch (e) { /* skip unreadable page */ }
         if (!firstPaint && content.childNodes.length) {
           firstPaint = true;
           document.getElementById('status').className = 'hidden';
           post({ type: 'firstpaint' });
+          // not awaited — the outline arrives while pages keep extracting
+          buildOutline(pdf);
         }
         post({ type: 'progress', page: p, total: pdf.numPages });
         if (p === INITIAL_PAGE) window.scrollToPage(INITIAL_PAGE);
       }
-      post({ type: 'done', pages: pdf.numPages });
+      post({ type: 'done', pages: pdf.numPages, wordCounts: wordCounts });
       if (INITIAL_PAGE > 1) window.scrollToPage(INITIAL_PAGE);
     }).catch(function(err){
       document.getElementById('status').textContent = 'Could not extract text from this PDF.';
@@ -917,8 +1738,20 @@ interface Props {
   onPageChange?: (page: number) => void;
   onSearchResults?: (results: PdfSearchResult[]) => void;
   onSingleTap?: () => void;
+  /** Text selected in the reflowed page, '' when cleared. */
+  onSelection?: (text: string, page: number) => void;
+  /** Bump to drop the page's own selection; seq-based like `gotoPage`. */
+  clearSelectionSeq?: number;
+  /** Saved highlights to paint into the text. */
+  highlights?: { id: string; page: number; text: string; color: string }[];
+  /** A saved highlight was tapped in the page. */
+  onHighlightPress?: (id: string) => void;
   /** Fires once every page has been extracted — search is then complete. */
   onIndexed?: () => void;
+  /** The document's outline, embedded or parsed off a contents page. */
+  onOutline?: (entries: PdfOutlineEntry[]) => void;
+  /** Word counts extracted per PDF page, used for time-based progress. */
+  onWordCounts?: (counts: number[]) => void;
 }
 
 export function PdfReflowView({
@@ -930,10 +1763,16 @@ export function PdfReflowView({
   searchQuery,
   highlight,
   focusMode = false,
+  clearSelectionSeq = 0,
+  highlights,
+  onHighlightPress,
   onPageChange,
   onSearchResults,
+  onSelection,
   onSingleTap,
   onIndexed,
+  onOutline,
+  onWordCounts,
 }: Props) {
   const t = useProtoTheme();
   const textSize = useAppStore((s) => s.textSize);
@@ -944,6 +1783,9 @@ export function PdfReflowView({
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("reading");
+  // Bumped when extraction finishes, so highlights get a second pass once
+  // every page is in the DOM.
+  const [extractedSeq, setExtractedSeq] = useState(0);
 
   const settings: Settings = useMemo(
     () => ({
@@ -1042,6 +1884,29 @@ export function PdfReflowView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, status, indexSeq]);
 
+  /**
+   * Repaint saved highlights whenever they change, and again once extraction
+   * finishes — pages arrive progressively, so a highlight on a later page has
+   * nothing to attach to on the first pass.
+   */
+  useEffect(() => {
+    if (status !== "ready") return;
+    webRef.current?.injectJavaScript(
+      `window.applyHighlights && window.applyHighlights(${JSON.stringify(
+        highlights ?? [],
+      )}); true;`,
+    );
+  }, [highlights, status, extractedSeq]);
+
+  // Drop the selection when the reader dismisses the annotate bar, so the
+  // handles go away and a stale selection can't re-open it.
+  useEffect(() => {
+    if (status !== "ready" || !clearSelectionSeq) return;
+    webRef.current?.injectJavaScript(
+      `window.clearTextSelection && window.clearTextSelection(); true;`,
+    );
+  }, [clearSelectionSeq, status]);
+
   // toggle the focus-mode spotlight in the live page
   useEffect(() => {
     if (status !== "ready") return;
@@ -1090,19 +1955,32 @@ export function PdfReflowView({
             try {
               const msg = JSON.parse(e.nativeEvent.data) as {
                 type: string;
+                id?: string;
                 page?: number;
                 total?: number;
+                text?: string;
                 results?: PdfSearchResult[];
+                entries?: PdfOutlineEntry[];
+                wordCounts?: number[];
               };
               if (msg.type === "firstpaint") setStatus("ready");
               else if (msg.type === "page" && msg.page)
                 onPageChange?.(msg.page);
+              else if (msg.type === "highlighttap")
+                onHighlightPress?.(msg.id ?? "");
+              else if (msg.type === "selection")
+                onSelection?.(msg.text ?? "", msg.page ?? 0);
               else if (msg.type === "tap") onSingleTap?.();
               else if (msg.type === "error") setStatus("error");
               else if (msg.type === "searchresults")
                 onSearchResults?.(msg.results ?? []);
+              else if (msg.type === "outline" && msg.entries?.length)
+                onOutline?.(msg.entries);
               else if (msg.type === "done") {
                 onIndexed?.();
+                onWordCounts?.(msg.wordCounts ?? []);
+                // every page exists now, so highlights on later ones can land
+                setExtractedSeq((n) => n + 1);
                 if (queryRef.current) setIndexSeq((n) => n + 1);
               } else if (msg.type === "progress") {
                 // refresh an in-flight search every few pages, not every page

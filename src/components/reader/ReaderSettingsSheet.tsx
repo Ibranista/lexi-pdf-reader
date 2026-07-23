@@ -5,11 +5,21 @@
  * into the page without re-extracting). "Focus mode" is screen state rather
  * than a stored setting, so it comes in as a prop from the viewer.
  */
-import { forwardRef } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box } from "@/components/atoms";
 import {
+  Divider,
+  IconChevron,
+  IconStar,
   ProtoSlider,
   SectionLabel,
   Segmented,
@@ -36,6 +46,18 @@ type ViewMode = "page" | "reflow";
 
 const MIN_TEXT = 13;
 const MAX_TEXT = 23;
+
+/**
+ * Smart zoom is a multiplier on the reading size, so it wants a ratio scale:
+ * 50% is as far below neutral as 200% is above it. On a log track that puts
+ * 100% exactly halfway, marked with a detent rather than a label — the live
+ * readout above already says the number, and the mark is what you actually
+ * aim at. The old 100–200% range couldn't express "smaller than normal" at
+ * all, which is why the readout looked stuck at 100%.
+ */
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 200;
+const ZOOM_TICKS = [100];
 
 const THEME_ITEMS: SegmentItem<ThemeMode>[] = [
   { key: "light", label: "Light" },
@@ -93,10 +115,131 @@ function Row({
   );
 }
 
+/** A Row nested under its parent setting, marked by a soft vertical rail. */
+function SubRow({
+  children,
+  sub,
+  title,
+}: {
+  children: React.ReactNode;
+  sub: string;
+  title: string;
+}) {
+  const t = useProtoTheme();
+  return (
+    <Box align="center" direction="row" gap={12} paddingLeft={14} paddingY={8}>
+      <Box
+        bg={t.calmLine}
+        rounded={2}
+        style={{ alignSelf: "stretch" }}
+        width={3}
+      />
+      <Box flex={1}>
+        <Text size={13} weight="600">
+          {title}
+        </Text>
+        <Text color={t.sub} size={11.5} style={{ marginTop: 1 }}>
+          {sub}
+        </Text>
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+/**
+ * Previews changes no more than once per frame and persists only the final
+ * value. The readout follows the thumb live without queuing a long sequence of
+ * React/store updates that could continue after release.
+ */
+const SmartZoomControl = memo(function SmartZoomControl() {
+  const t = useProtoTheme();
+  const storedZoom = useAppStore((s) => s.zoom);
+  const setApp = useAppStore((s) => s.set);
+  const [displayZoom, setDisplayZoom] = useState(storedZoom);
+  const pendingZoom = useRef(storedZoom);
+  const previewFrame = useRef<ReturnType<typeof requestAnimationFrame> | null>(
+    null,
+  );
+
+  const showZoom = useCallback((next: number) => {
+    pendingZoom.current = next;
+    if (previewFrame.current !== null) return;
+
+    previewFrame.current = requestAnimationFrame(() => {
+      previewFrame.current = null;
+      setDisplayZoom((current) =>
+        current === pendingZoom.current ? current : pendingZoom.current,
+      );
+    });
+  }, []);
+
+  const handleChange = useCallback(
+    (next: number) => {
+      pendingZoom.current = next;
+      if (previewFrame.current !== null) {
+        cancelAnimationFrame(previewFrame.current);
+        previewFrame.current = null;
+      }
+      setDisplayZoom((current) => (current === next ? current : next));
+      setApp({ zoom: next });
+    },
+    [setApp],
+  );
+
+  useEffect(
+    () => () => {
+      if (previewFrame.current !== null) {
+        cancelAnimationFrame(previewFrame.current);
+      }
+    },
+    [],
+  );
+
+  return (
+    <>
+      <Box paddingBottom={10} paddingTop={18}>
+        <Box
+          direction="row"
+          justify="between"
+          style={{ alignItems: "baseline" }}
+        >
+          <SectionLabel size={11}>Smart zoom level</SectionLabel>
+          <Text color={t.accentText} size={14} weight="600">
+            {displayZoom}%
+          </Text>
+        </Box>
+      </Box>
+      <ProtoSlider
+        curve="log"
+        max={ZOOM_MAX}
+        min={ZOOM_MIN}
+        onChange={showZoom}
+        onChangeEnd={handleChange}
+        step={5}
+        ticks={ZOOM_TICKS}
+        value={storedZoom}
+      />
+      <Box direction="row" justify="between" paddingTop={4}>
+        <Text color={t.faint} size={11}>
+          {ZOOM_MIN}%
+        </Text>
+        <Text color={t.faint} size={11}>
+          {ZOOM_MAX}%
+        </Text>
+      </Box>
+    </>
+  );
+});
+
 interface Props {
+  /** Whether the open document is filed on any shelf. */
+  filed?: boolean;
   /** Distraction-free reading mode — viewer state, not a stored setting. */
   focusMode?: boolean;
   onClose?: () => void;
+  /** Opens the collection picker for the document being read. */
+  onOpenCollections?: () => void;
   onToggleFocusMode?: () => void;
   onViewModeChange?: (mode: ViewMode) => void;
   viewMode?: ViewMode;
@@ -105,8 +248,10 @@ interface Props {
 export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
   (
     {
+      filed = false,
       focusMode = false,
       onClose,
+      onOpenCollections,
       onToggleFocusMode,
       onViewModeChange,
       viewMode = "page",
@@ -142,6 +287,41 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
             Reading settings
           </Text>
         </Box>
+
+        {/* Acts on the document rather than on how it reads, so it sits above
+            the settings proper. It lives here because the toolbar is full:
+            HeaderButton is a fixed 40px and a seventh one squeezed the title
+            out of the header entirely. */}
+        {onOpenCollections ? (
+          <Tap onPress={onOpenCollections} scale={0.98}>
+            <Box
+              align="center"
+              bg={filed ? t.accentSoft : t.chip}
+              direction="row"
+              gap={10}
+              marginTop={10}
+              paddingX={14}
+              paddingY={12}
+              rounded={12}
+            >
+              <IconStar
+                color={filed ? t.accentText : t.ink}
+                fill={filed ? t.accentText : "none"}
+                size={17}
+              />
+              <Box flex={1}>
+                <Text
+                  color={filed ? t.accentText : t.ink}
+                  size={14}
+                  weight="600"
+                >
+                  {filed ? "In your collections" : "Add to collection"}
+                </Text>
+              </Box>
+              <IconChevron color={filed ? t.accentText : t.faint} size={15} />
+            </Box>
+          </Tap>
+        ) : null}
 
         <Box paddingBottom={8} paddingTop={10}>
           <SectionLabel size={11}>View</SectionLabel>
@@ -223,58 +403,11 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           value={app.lineSp}
         />
 
-        <Box paddingBottom={10} paddingTop={18}>
-          <Box
-            direction="row"
-            justify="between"
-            style={{ alignItems: "baseline" }}
-          >
-            <SectionLabel size={11}>Smart zoom level</SectionLabel>
-            <Text color={t.accentText} size={14} weight="600">
-              {app.zoom}%
-            </Text>
-          </Box>
-        </Box>
-        <ProtoSlider
-          max={200}
-          min={100}
-          onChange={(v) => app.set({ zoom: v })}
-          step={5}
-          value={app.zoom}
-        />
+        <SmartZoomControl />
 
         <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>
         </Box>
-
-        <Row
-          sub="Spotlight your paragraph and tuck the chrome away"
-          title="Focus mode"
-        >
-          <Toggle on={focusMode} onToggle={() => onToggleFocusMode?.()} />
-        </Row>
-
-        {focusMode ? (
-          <Row
-            sub="Keep time & suggest breaks — or focus without the clock"
-            title="Session timer"
-          >
-            <Toggle
-              on={app.fmTimer}
-              onToggle={() => app.set({ fmTimer: !app.fmTimer })}
-            />
-          </Row>
-        ) : null}
-
-        <Row
-          sub="Keep text wrapped to the screen while zooming"
-          title="Flow reading"
-        >
-          <Toggle
-            on={app.flowRead}
-            onToggle={() => app.set({ flowRead: !app.flowRead })}
-          />
-        </Row>
 
         <Row sub="Gentle nudges to keep your momentum" title="Focus reminder">
           <Toggle
@@ -284,14 +417,46 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         </Row>
 
         {app.focusRem ? (
-          <Box paddingBottom={4} paddingTop={6}>
+          <Box paddingBottom={4} paddingTop={2}>
             <Segmented
               items={SENS_ITEMS}
               onChange={(key) => app.set({ focusSens: key })}
-              size={12.5}
+              size={12}
               value={app.focusSens}
             />
           </Box>
+        ) : null}
+
+        <Divider />
+
+        <Row
+          sub="Offer a short summary when a section loops"
+          title="Flow reading"
+        >
+          <Toggle
+            on={app.flowRead}
+            onToggle={() => app.set({ flowRead: !app.flowRead })}
+          />
+        </Row>
+
+        <Divider />
+
+        <Row sub="Spotlight the paragraph you're reading" title="Focus mode">
+          <Toggle on={focusMode} onToggle={() => onToggleFocusMode?.()} />
+        </Row>
+
+        {/* Session timer belongs to the focus session, so it nests under
+            Focus mode behind a rail rather than reading as a peer setting. */}
+        {focusMode ? (
+          <SubRow
+            sub="Keep time & suggest breaks — or focus without the clock"
+            title="Session timer"
+          >
+            <Toggle
+              on={app.fmTimer}
+              onToggle={() => app.set({ fmTimer: !app.fmTimer })}
+            />
+          </SubRow>
         ) : null}
 
         <Row

@@ -1,16 +1,22 @@
 import * as NavigationBar from "expo-navigation-bar";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  AppState,
   Dimensions,
   Easing,
   Platform,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Pdf from "react-native-pdf";
+import Reanimated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, Text } from "@/components/atoms";
@@ -25,21 +31,55 @@ import {
   IconSpark,
   Tap,
 } from "@/components/lexi-components";
+import { CollectionPicker } from "@/components/library/CollectionPicker";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import {
+  AnnotateBar,
   FocusChrome,
   LexiBubble,
   LexiSheet,
+  PdfOutlineDrawer,
   PdfSearchPanel,
   SummarizeSheet,
 } from "@/components/reader";
+import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useAnnotationsStore } from "@/stores/annotations-store";
+import {
+  useAppStore,
+  useReaderJumpStore,
+  useToastStore,
+} from "@/stores/app-store";
+import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
+import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
+import { expectedReadingMs } from "@/utils/reading-progress";
 
 type ViewMode = "page" | "reflow";
+
+/** Stable empty list, so the bookmark selector doesn't return a new array
+ *  every render and re-render the whole reader. */
+const EMPTY_BOOKMARKS: number[] = [];
+
+/** Eases the title/controls trade when the title is opened out. */
+const TITLE_SWAP = LinearTransition.duration(260);
+
+/**
+ * Page this document was last left on, or 1 for a document never opened.
+ *
+ * Persistence is MMKV-backed and therefore synchronous, so this is already
+ * hydrated during the first render — which is what lets the reader open
+ * *at* the saved page instead of jumping there after a frame.
+ */
+function savedPageFor(uri: string | undefined): number {
+  if (!uri) return 1;
+  const saved = useRecentsStore
+    .getState()
+    .recents.find((r) => r.uri === uri)?.page;
+  return saved && saved > 0 ? saved : 1;
+}
 
 export default function PdfViewerScreen() {
   const t = useProtoTheme();
@@ -47,10 +87,31 @@ export default function PdfViewerScreen() {
   const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
-  const bookmarks = useAppStore((s) => s.bookmarks);
   const setApp = useAppStore((s) => s.set);
-  const toggleBookmark = useAppStore((s) => s.toggleBookmark);
+  // Bookmarks live on the document, not the app: the app-store's list belongs
+  // to the demo book in /reader, so every real PDF was showing its pages.
+  const bookmarks = useRecentsStore(
+    (s) => s.recents.find((r) => r.uri === uri)?.bookmarks ?? EMPTY_BOOKMARKS,
+  );
+  const toggleBookmark = (target: number) =>
+    useRecentsStore.getState().toggleBookmark(uri, target);
   const showToast = useToastStore((s) => s.showToast);
+
+  // Tapping the title opens it out to its full length; the controls shrink
+  // to make room, then everything settles back on its own.
+  const [titleOpen, setTitleOpen] = useState(false);
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const toggleTitle = () => {
+    clearTimeout(titleTimer.current);
+    setTitleOpen((open) => {
+      if (open) return false;
+      titleTimer.current = setTimeout(() => setTitleOpen(false), 4000);
+      return true;
+    });
+  };
+  useEffect(() => () => clearTimeout(titleTimer.current), []);
 
   // Focus session lives in its own store; the screen only starts/exits it.
   const focusOn = useFocusStore((s) => s.active);
@@ -58,8 +119,13 @@ export default function PdfViewerScreen() {
   const exitFocus = useFocusStore((s) => s.exit);
 
   const [mode, setMode] = useState<ViewMode>("page");
-  const [page, setPage] = useState(1);
+  // Resume where this document was left off. Read as a lazy initializer, not
+  // in an effect — the progress recorder below would otherwise fire first
+  // with page 1 and overwrite the very position we're restoring.
+  const [page, setPage] = useState(() => savedPageFor(uri));
   const [pageCount, setPageCount] = useState(0);
+  const readingVisit = useRef({ uri, page: savedPageFor(uri), startedAt: 0 });
+  const appIsActive = useRef(AppState.currentState === "active");
   const [error, setError] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -81,10 +147,36 @@ export default function PdfViewerScreen() {
   const [pageDims, setPageDims] = useState<{ w: number; h: number } | null>(
     null,
   );
-  // The PDF's own outline (top-level entries), used like the prototype's
-  // chapter list: the header subtitle names the chapter the reader is in.
-  const [chapters, setChapters] = useState<{ title: string; page: number }[]>(
-    [],
+  // The PDF's own outline, used like the prototype's chapter list: it names
+  // the chapter in the header and fills the Contents drawer. The native
+  // viewer only reports an embedded outline, so the reflow extractor's
+  // version (which also parses a printed contents page) wins when richer.
+  const [nativeOutline, setNativeOutline] = useState<PdfOutlineEntry[]>([]);
+  const [reflowOutline, setReflowOutline] = useState<PdfOutlineEntry[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const outline =
+    reflowOutline.length > nativeOutline.length ? reflowOutline : nativeOutline;
+  // Text selected in Reflow, and the page it started on. Page view has no
+  // text layer to select from, so this only ever fills in Reflow.
+  const [selection, setSelection] = useState<{
+    text: string;
+    page: number;
+  } | null>(null);
+  // Bumped to tell the reflow page to drop its own selection.
+  const [clearSelSeq, setClearSelSeq] = useState(0);
+  // True while the note composer has the passage. Focusing its input pulls
+  // focus out of the WebView, which drops the selection there and would
+  // otherwise unmount the composer the instant the keyboard began to open.
+  const [composing, setComposing] = useState(false);
+  // Saved highlights, painted back into the reflowed text. Narrowed to what
+  // the page needs so an unrelated edit (a note's wording) doesn't repaint.
+  const annotations = useAnnotationsStore((s) => s.items);
+  const highlights = useMemo(
+    () =>
+      annotations
+        .filter((a) => a.uri === uri)
+        .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
+    [annotations, uri],
   );
   const [pageMarker, setPageMarker] = useState<{
     page: number;
@@ -93,6 +185,49 @@ export default function PdfViewerScreen() {
     boxes: { x0: number; y0: number; x1: number; y1: number }[];
     seq: number;
   } | null>(null);
+
+  const recordCurrentReadingTime = useCallback(() => {
+    const current = readingVisit.current;
+    if (!current.uri) return;
+    const now = Date.now();
+    if (!current.startedAt) {
+      current.startedAt = now;
+      return;
+    }
+    const elapsed = now - current.startedAt;
+    if (elapsed > 0) {
+      useRecentsStore
+        .getState()
+        .recordReadingTime(current.uri, current.page, elapsed);
+    }
+    readingVisit.current.startedAt = now;
+  }, []);
+
+  useEffect(() => {
+    if (
+      readingVisit.current.uri === uri &&
+      readingVisit.current.page !== page
+    ) {
+      recordCurrentReadingTime();
+    }
+    readingVisit.current = { uri, page, startedAt: Date.now() };
+  }, [uri, page, recordCurrentReadingTime]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        appIsActive.current = true;
+        readingVisit.current.startedAt = Date.now();
+      } else if (appIsActive.current) {
+        recordCurrentReadingTime();
+        appIsActive.current = false;
+      }
+    });
+    return () => {
+      subscription.remove();
+      if (appIsActive.current) recordCurrentReadingTime();
+    };
+  }, [recordCurrentReadingTime]);
   const [markerFade] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (!pageMarker) return;
@@ -115,6 +250,12 @@ export default function PdfViewerScreen() {
     // markerFade is a stable Animated.Value — only the marker drives this
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageMarker]);
+  // Filing the open document into a collection, without going back to the
+  // library to long-press it there.
+  const [filingOpen, setFilingOpen] = useState(false);
+  const filedSomewhere = useCollectionsStore((s) =>
+    Object.values(s.items).some((shelf) => shelf.some((d) => d.uri === uri)),
+  );
   const [lexiOpen, setLexiOpen] = useState(false);
   const [summary, setSummary] = useState<"closed" | "done" | "loading">(
     "closed",
@@ -123,9 +264,13 @@ export default function PdfViewerScreen() {
     undefined,
   );
 
-  // Page view opens at whatever page reflow left off on, and vice versa.
-  const [pdfPage, setPdfPage] = useState(1);
-  const [reflowGoto, setReflowGoto] = useState({ page: 1, seq: 0 });
+  // Page view opens at whatever page reflow left off on, and vice versa —
+  // both start from the saved position so either view resumes correctly.
+  const [pdfPage, setPdfPage] = useState(() => savedPageFor(uri));
+  const [reflowGoto, setReflowGoto] = useState(() => ({
+    page: savedPageFor(uri),
+    seq: 0,
+  }));
   // Reflow is always mounted so text extraction runs in the background even
   // in Page view — this lets search work regardless of the active view mode.
   const [reflowMounted] = useState(true);
@@ -171,6 +316,22 @@ export default function PdfViewerScreen() {
   // never leave a session ticking after the reader unmounts
   useEffect(() => () => useFocusStore.getState().exit(), []);
 
+  // Recents are recorded here rather than at the library tap, so every way
+  // into the reader (library, files, a deep link) lands on the shelf.
+  useEffect(() => {
+    if (!uri) return;
+    useRecentsStore
+      .getState()
+      .recordOpen({ uri, name: name ?? "Document", ext: "PDF" });
+  }, [uri, name]);
+
+  useEffect(() => {
+    if (!uri) return;
+    useRecentsStore
+      .getState()
+      .recordProgress(uri, page, pageCount || undefined);
+  }, [uri, page, pageCount]);
+
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
     if (next === "page") {
@@ -189,6 +350,33 @@ export default function PdfViewerScreen() {
     setSearchQuery("");
     setSearchResults([]);
   };
+
+  /** Plain page jump, in whichever view is active. */
+  const goToPage = (requestedPage: number) => {
+    const nextPage = clampPage(requestedPage);
+    setPage(nextPage);
+    setApp({ page: nextPage });
+    if (mode === "page") {
+      setPdfPage(nextPage);
+    } else {
+      setReflowGoto((current) => ({ page: nextPage, seq: current.seq + 1 }));
+    }
+  };
+
+  /**
+   * Notes and bookmarks navigate by leaving a request behind rather than by
+   * passing a param, because they return here with `router.back()` — there is
+   * no navigation to attach a param to. Consumed on arrival so it fires once.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      const target = useReaderJumpStore.getState().consume(uri);
+      if (target) goToPage(target);
+      // goToPage closes over view state that changes every render; the store
+      // read is the part that must happen exactly once, on focus.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [uri]),
+  );
 
   // Jump to a result, staying in whichever view the reader is already in.
   // Reflow marks the exact word; page view flashes a locator band where the
@@ -246,9 +434,9 @@ export default function PdfViewerScreen() {
   const smartScale = Math.max(1.25, zoom / 100);
 
   // The chapter the reader is in: the last outline entry starting at or
-  // before the current page (chapters is sorted by page).
-  let chapter: { title: string; page: number } | null = null;
-  for (const c of chapters) {
+  // before the current page (the outline is sorted by page).
+  let chapter: PdfOutlineEntry | null = null;
+  for (const c of outline) {
     if (c.page > page) break;
     chapter = c;
   }
@@ -278,6 +466,24 @@ export default function PdfViewerScreen() {
     .activeOffsetY([-20, 20])
     .onEnd((e) => {
       if (e.translationY < -30) setSettingsOpen(true);
+    });
+
+  // Swipe in from the left edge opens Contents, mirroring the search panel
+  // on the right. Only armed when the document actually has an outline.
+  const swipeFromLeftEdge = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX > 30) setOutlineOpen(true);
+    });
+
+  // Mirror on the right: swipe in to search. No handle tab here — the
+  // toolbar's search button already advertises it.
+  const swipeFromRightEdge = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX < -30) setSearchOpen(true);
     });
 
   if (!uri) {
@@ -326,11 +532,12 @@ export default function PdfViewerScreen() {
                 if (size?.width && size?.height)
                   setPageDims({ w: size.width, h: size.height });
                 if (toc?.length) {
-                  setChapters(
+                  setNativeOutline(
                     toc
                       .map((c) => ({
                         title: (c.title ?? "").trim(),
                         page: (c.pageIdx ?? 0) + 1,
+                        level: 0,
                       }))
                       .filter((c) => c.title)
                       .sort((a, b) => a.page - b.page),
@@ -444,17 +651,42 @@ export default function PdfViewerScreen() {
                 focus animation that moves the native PDF surface. */}
             <PdfReflowView
               chromeOffset={immersive ? 0 : barH}
+              clearSelectionSeq={clearSelSeq}
+              highlights={highlights}
+              onHighlightPress={(id) =>
+                router.push({
+                  pathname: "/notes",
+                  params: { uri, name: name ?? "Document", focus: id },
+                })
+              }
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
               initialPage={reflowGoto.page}
               key={uri}
               onPageChange={(nextPage) => {
+                // While reflow is the hidden background view, its own
+                // scrolling (extraction, the initial jump) is not the
+                // reader's position — only the visible view sets that.
+                if (mode !== "reflow") return;
                 setPage(nextPage);
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
+              onOutline={setReflowOutline}
+              onWordCounts={(counts) => {
+                useRecentsStore.getState().setReadingPlan(
+                  uri,
+                  counts.map((count) => expectedReadingMs(count || 275)),
+                );
+              }}
               onSearchResults={setSearchResults}
+              onSelection={(text, selPage) => {
+                // The composer owns the passage once it's open; the WebView
+                // losing its selection is expected, not a dismissal.
+                if (composing) return;
+                setSelection(text ? { text, page: selPage || page } : null);
+              }}
               onSingleTap={() => setImmersive((v) => !v)}
               searchQuery={searchQuery}
               topInset={insets.top}
@@ -502,59 +734,96 @@ export default function PdfViewerScreen() {
           <HeaderButton onPress={() => router.back()}>
             <IconBack color={t.ink} size={18} />
           </HeaderButton>
-          <Box flex={1}>
-            <Text numberOfLines={1} serif size={16} weight="600">
-              {name ?? "Document"}
-            </Text>
-            {chapter ? (
+          {/* Layout transitions animate the give-and-take between the title
+              and the controls, so neither has to be measured by hand. */}
+          <Reanimated.View layout={TITLE_SWAP} style={{ flex: 1 }}>
+            <Tap onPress={toggleTitle} scale={0.99}>
               <Text
-                color={t.sub}
-                numberOfLines={1}
-                size={12}
-                style={{ marginTop: 2 }}
+                numberOfLines={titleOpen ? 4 : 1}
+                serif
+                size={16}
+                weight="600"
               >
-                {chapter.title}
+                {name ?? "Document"}
               </Text>
-            ) : null}
-          </Box>
-          <Box direction="row" gap={2}>
-            <HeaderButton
-              onPress={() => switchTo(mode === "reflow" ? "page" : "reflow")}
+              {chapter ? (
+                <Text
+                  color={t.sub}
+                  numberOfLines={titleOpen ? 2 : 1}
+                  size={12}
+                  style={{ marginTop: 2 }}
+                >
+                  {chapter.title}
+                </Text>
+              ) : null}
+            </Tap>
+          </Reanimated.View>
+          {/* Controls step aside while the title is open, then fade back. */}
+          {titleOpen ? null : (
+            <Reanimated.View
+              entering={FadeIn.duration(180)}
+              exiting={FadeOut.duration(140)}
+              layout={TITLE_SWAP}
             >
-              <IconReflow
-                color={mode === "reflow" ? t.accent : t.ink}
-                size={18}
-              />
-            </HeaderButton>
-            <HeaderButton onPress={openSummary}>
-              <IconSpark color={t.accent} size={18} />
-            </HeaderButton>
-            <HeaderButton onPress={toggleFocus}>
-              <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
-            </HeaderButton>
-            <HeaderButton onPress={() => setSearchOpen(true)}>
-              <IconSearch color={t.ink} size={18} />
-            </HeaderButton>
-            <HeaderButton onPress={() => router.push("/notes")}>
-              <IconPencil color={t.ink} size={18} />
-            </HeaderButton>
-            <HeaderButton
-              onPress={() => {
-                toggleBookmark(page);
-                showToast(
-                  bookmarks.includes(page)
-                    ? "Bookmark removed"
-                    : `Page ${page} bookmarked`,
-                );
-              }}
-            >
-              <IconBookmark
-                color={bookmarks.includes(page) ? t.accent : t.ink}
-                fill={bookmarks.includes(page) ? t.accent : "none"}
-                size={18}
-              />
-            </HeaderButton>
-          </Box>
+              <Box direction="row" gap={2}>
+                <HeaderButton
+                  onPress={() =>
+                    switchTo(mode === "reflow" ? "page" : "reflow")
+                  }
+                >
+                  <IconReflow
+                    color={mode === "reflow" ? t.accent : t.ink}
+                    size={18}
+                  />
+                </HeaderButton>
+                <HeaderButton
+                  onPress={() => {
+                    const next = !aiOn;
+                    setApp({ aiOn: next });
+                    showToast(next ? "AI companion on" : "AI companion off");
+                  }}
+                >
+                  <IconSpark color={aiOn ? t.accent : t.ink} size={18} />
+                </HeaderButton>
+                <HeaderButton onPress={toggleFocus}>
+                  <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
+                </HeaderButton>
+                <HeaderButton onPress={() => setSearchOpen(true)}>
+                  <IconSearch color={t.ink} size={18} />
+                </HeaderButton>
+                {/* Only in Reflow: highlights and notes come from selecting
+                    text, which Page view's bitmap can't do. */}
+                {mode === "reflow" ? (
+                  <HeaderButton
+                    onPress={() =>
+                      router.push({
+                        pathname: "/notes",
+                        params: { uri, name: name ?? "Document" },
+                      })
+                    }
+                  >
+                    <IconPencil color={t.ink} size={18} />
+                  </HeaderButton>
+                ) : null}
+                <HeaderButton
+                  onPress={() => {
+                    toggleBookmark(page);
+                    showToast(
+                      bookmarks.includes(page)
+                        ? "Bookmark removed"
+                        : `Page ${page} bookmarked`,
+                    );
+                  }}
+                >
+                  <IconBookmark
+                    color={bookmarks.includes(page) ? t.accent : t.ink}
+                    fill={bookmarks.includes(page) ? t.accent : "none"}
+                    size={18}
+                  />
+                </HeaderButton>
+              </Box>
+            </Reanimated.View>
+          )}
         </Box>
       </Animated.View>
 
@@ -589,6 +858,58 @@ export default function PdfViewerScreen() {
         </Tap>
       </Animated.View>
 
+      {/* Left-edge Contents affordance: a catcher for the swipe, plus the
+          example's handle tab so the gesture is discoverable. Both only
+          exist when the document has an outline to show. */}
+      {(outline.length || bookmarks.length) && !outlineOpen && !searchOpen ? (
+        <GestureDetector gesture={swipeFromLeftEdge}>
+          <Box
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              zIndex: 9,
+            }}
+          >
+            {!immersive ? (
+              <Tap
+                onPress={() => setOutlineOpen(true)}
+                style={{ position: "absolute", left: 0, top: "46%" }}
+              >
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  height={64}
+                  justify="center"
+                  roundedBottomRight={10}
+                  roundedTopRight={10}
+                  width={18}
+                >
+                  <Box bg={t.faint} height={26} rounded={2} width={3} />
+                </Box>
+              </Tap>
+            ) : null}
+          </Box>
+        </GestureDetector>
+      ) : null}
+
+      {!outlineOpen && !searchOpen ? (
+        <GestureDetector gesture={swipeFromRightEdge}>
+          <Box
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              zIndex: 9,
+            }}
+          />
+        </GestureDetector>
+      ) : null}
+
       {/* Always-on swipe-up catcher at the very bottom edge — works in
           distraction-free mode too, where the grabber is hidden. */}
       <GestureDetector gesture={swipeUpFromBottom}>
@@ -605,8 +926,14 @@ export default function PdfViewerScreen() {
       </GestureDetector>
 
       <ReaderSettingsSheet
+        filed={filedSomewhere}
         focusMode={focusOn}
         onClose={() => setSettingsOpen(false)}
+        onOpenCollections={() => {
+          sheetRef.current?.dismiss();
+          setSettingsOpen(false);
+          setFilingOpen(true);
+        }}
         onToggleFocusMode={toggleFocus}
         onViewModeChange={switchTo}
         ref={sheetRef}
@@ -616,15 +943,30 @@ export default function PdfViewerScreen() {
       {/* focus pill + break card; pill yields while the toolbar is out */}
       <FocusChrome onExit={toggleFocus} pillVisible={immersive} />
 
-      {!immersive && !focusOn && !searchOpen && summary === "closed" && !lexiOpen ? (
+      {!immersive &&
+      !focusOn &&
+      !searchOpen &&
+      summary === "closed" &&
+      !lexiOpen &&
+      aiOn ? (
         <LexiBubble
           onPress={() => {
-            if (!aiOn) {
-              showToast("AI is off — enable it in Reading settings");
-              return;
-            }
             setLexiOpen(true);
           }}
+        />
+      ) : null}
+      {outlineOpen ? (
+        <PdfOutlineDrawer
+          bookmarks={bookmarks}
+          entries={outline}
+          onClose={() => setOutlineOpen(false)}
+          onGoPage={(target) => {
+            setOutlineOpen(false);
+            goToPage(target);
+          }}
+          onRemoveBookmark={toggleBookmark}
+          page={page}
+          title={name ?? "Document"}
         />
       ) : null}
       {searchOpen ? (
@@ -642,7 +984,34 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
-      {lexiOpen ? <LexiSheet onClose={() => setLexiOpen(false)} /> : null}
+      {lexiOpen && aiOn ? (
+        <LexiSheet onClose={() => setLexiOpen(false)} />
+      ) : null}
+      {filingOpen ? (
+        <CollectionPicker
+          doc={{ uri, name: name ?? "Document", ext: "PDF" }}
+          onClose={() => setFilingOpen(false)}
+        />
+      ) : null}
+      {selection && mode === "reflow" ? (
+        <AnnotateBar
+          onBookmark={() => {
+            toggleBookmark(selection.page);
+            showToast(`Page ${selection.page} bookmarked`);
+          }}
+          onComposingChange={setComposing}
+          onClose={() => {
+            setComposing(false);
+            setSelection(null);
+            // Drop the WebView's own selection too, or the handles stay up
+            // and the next selectionchange re-opens the bar.
+            setClearSelSeq((n) => n + 1);
+          }}
+          page={selection.page}
+          text={selection.text}
+          uri={uri}
+        />
+      ) : null}
     </Box>
   );
 }
