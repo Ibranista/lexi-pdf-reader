@@ -9,7 +9,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Box, TextInput } from "@/components/atoms";
 import {
   HeaderButton,
-  IconBrain,
   IconSearch,
   IconSliders,
   IconSun,
@@ -226,9 +225,6 @@ export default function LibraryScreen() {
           <Box direction="row" gap={10}>
             <HeaderButton onPress={() => router.push("/today")}>
               <IconSun color={t.ink} size={19} />
-            </HeaderButton>
-            <HeaderButton onPress={() => router.push("/brain")}>
-              <IconBrain color={t.ink} size={19} />
             </HeaderButton>
             <HeaderButton
               bg={t.accentSoft}
