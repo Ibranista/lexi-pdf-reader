@@ -10,8 +10,6 @@ import {
   IconCheck,
   IconChevron,
   IconGlobe,
-  IconGradCap,
-  IconLeaf,
   IconSpark,
   IconSync,
   IconType,
@@ -65,7 +63,6 @@ export const SettingsPanel = memo(function SettingsPanel({
   const readerLabel = COLLECTIONS[readerType]?.label ?? "Student";
 
   const goTo = (pathname: "/plan" | "/reading-comfort" | "/ai-focus") => {
-    onClose();
     router.push(pathname);
   };
 
@@ -93,42 +90,6 @@ export const SettingsPanel = memo(function SettingsPanel({
               size={13}
               value={mode}
             />
-          </Card>
-
-          <Card gap={12}>
-            <SectionLabel>Personalization</SectionLabel>
-            <Box align="center" direction="row" gap={12}>
-              <Box
-                align="center"
-                bg={t.accentSoft}
-                height={34}
-                justify="center"
-                rounded={10}
-                width={34}
-              >
-                <IconGradCap color={t.accentText} size={17} />
-              </Box>
-              <Box flex={1}>
-                <Text size={14} weight="600">
-                  Reader profile
-                </Text>
-                <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
-                  {readerLabel} · shapes your collections
-                </Text>
-              </Box>
-              <Tap
-                onPress={() =>
-                  useOnboardingStore.setState({ hasCompletedOnboarding: false })
-                }
-                scale={0.95}
-              >
-                <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-                  <Text size={12} weight="600">
-                    Redo
-                  </Text>
-                </Box>
-              </Tap>
-            </Box>
           </Card>
 
           <Card gap={4}>
@@ -249,29 +210,6 @@ export const SettingsPanel = memo(function SettingsPanel({
                   </Box>
                 </Tap>
               ))}
-            </Box>
-          </Card>
-
-          <Card>
-            <Box align="center" direction="row" gap={12}>
-              <Box
-                align="center"
-                bg={t.calmSoft}
-                height={34}
-                justify="center"
-                rounded={10}
-                width={34}
-              >
-                <IconLeaf color={t.calm} size={17} />
-              </Box>
-              <Box flex={1}>
-                <Text size={14} weight="600">
-                  Reading style & focus
-                </Text>
-                <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
-                  Tap the page while reading — everything lives in one sheet
-                </Text>
-              </Box>
             </Box>
           </Card>
 
