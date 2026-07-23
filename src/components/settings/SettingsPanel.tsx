@@ -10,8 +10,6 @@ import {
   IconCheck,
   IconChevron,
   IconGlobe,
-  IconGradCap,
-  IconLeaf,
   IconSpark,
   IconSync,
   IconType,
@@ -76,10 +74,12 @@ export const SettingsPanel = memo(function SettingsPanel({
 
   const readerLabel = COLLECTIONS[readerType]?.label ?? "Student";
 
-  // Sub-pages push onto the stack underneath. Dismiss first, or the panel
-  // would sit open on top of the screen we just navigated to.
+  // Sub-pages push a full-screen route on top of the panel. We deliberately
+  // keep the panel open underneath (whether it's the drawer over the library
+  // or the `/settings` route) — the pushed page covers it while you're there,
+  // and popping back reveals Settings again rather than dumping you on the
+  // library home. Closing here would take Settings out of the back stack.
   const goTo = (pathname: "/plan" | "/reading-comfort" | "/ai-focus") => {
-    onClose();
     router.push(pathname);
   };
 
@@ -108,43 +108,6 @@ export const SettingsPanel = memo(function SettingsPanel({
               size={13}
               value={mode}
             />
-          </Card>
-
-          {/* Personalization */}
-          <Card gap={12}>
-            <SectionLabel>Personalization</SectionLabel>
-            <Box align="center" direction="row" gap={12}>
-              <Box
-                align="center"
-                bg={t.accentSoft}
-                height={34}
-                justify="center"
-                rounded={10}
-                width={34}
-              >
-                <IconGradCap color={t.accentText} size={17} />
-              </Box>
-              <Box flex={1}>
-                <Text size={14} weight="600">
-                  Reader profile
-                </Text>
-                <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
-                  {readerLabel} · shapes your collections
-                </Text>
-              </Box>
-              <Tap
-                onPress={() =>
-                  useOnboardingStore.setState({ hasCompletedOnboarding: false })
-                }
-                scale={0.95}
-              >
-                <Box bg={t.chip} paddingX={14} paddingY={9} rounded={11}>
-                  <Text size={12} weight="600">
-                    Redo
-                  </Text>
-                </Box>
-              </Tap>
-            </Box>
           </Card>
 
           {/* Plan & preferences */}
@@ -267,30 +230,6 @@ export const SettingsPanel = memo(function SettingsPanel({
                   </Box>
                 </Tap>
               ))}
-            </Box>
-          </Card>
-
-          {/* Reading style hint */}
-          <Card>
-            <Box align="center" direction="row" gap={12}>
-              <Box
-                align="center"
-                bg={t.calmSoft}
-                height={34}
-                justify="center"
-                rounded={10}
-                width={34}
-              >
-                <IconLeaf color={t.calm} size={17} />
-              </Box>
-              <Box flex={1}>
-                <Text size={14} weight="600">
-                  Reading style & focus
-                </Text>
-                <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
-                  Tap the page while reading — everything lives in one sheet
-                </Text>
-              </Box>
             </Box>
           </Card>
 
