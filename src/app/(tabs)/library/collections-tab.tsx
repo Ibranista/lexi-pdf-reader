@@ -16,7 +16,8 @@ import {
   type CollectionId,
   resolveCollectionColor,
 } from "@/constants/collections";
-import { BOOK_TITLE, COLLECTIONS } from "@/constants/library";
+import { COLLECTIONS } from "@/constants/library";
+import { SUGGESTION_COUNT, useBookSuggestions } from "@/hooks/use-book-suggestions";
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -24,19 +25,18 @@ import { useProtoTheme } from "@/theme/proto";
 import { DocRow, type OpenCollections } from "./shared";
 
 export function CollectionsTab({
+  openBook,
   openCollection,
   openCollections,
-  openDemo,
   openDoc,
-  openReader,
   shelf,
 }: {
+  /** Opens a suggested book's full text in the in-app web reader. */
+  openBook: (book: { url: string; title: string }) => void;
   /** Drills into a shelf, or back out with null. Lifted so hardware back works. */
   openCollection: (id: CollectionId | null) => void;
   openCollections: OpenCollections;
-  openDemo: (name: string) => void;
   openDoc: (doc: { uri: string; name: string; ext: string }) => void;
-  openReader: () => void;
   shelf: CollectionId | null;
 }) {
   const t = useProtoTheme();
@@ -44,6 +44,7 @@ export function CollectionsTab({
   const readerType = useOnboardingStore((s) => s.readerType);
   const items = useCollectionsStore((s) => s.items);
   const cd = COLLECTIONS[readerType] ?? COLLECTIONS.student;
+  const { suggestions, loading } = useBookSuggestions();
 
   if (shelf) {
     const docs = items[shelf] ?? [];
@@ -152,8 +153,9 @@ export function CollectionsTab({
         {tr("library.collections.howToFile")}
       </Text>
 
-      {/* Placeholder — the auto-filing suggestions aren't wired to anything
-          real yet, so this section still runs on the prototype's fixtures. */}
+      {/* Auto-filing is still simulated, but the suggestions themselves are
+          real books pulled from the Google Books API (with an Open Library
+          fallback) — see use-book-suggestions. */}
       <Box
         align="center"
         direction="row"
@@ -168,35 +170,59 @@ export function CollectionsTab({
         {tr("library.collections.basedOn", { label: cd.label })}
       </Text>
 
-      {cd.filed.map(([name, coll, kind]) => (
-        <Tap
-          key={name}
-          onPress={name === BOOK_TITLE ? openReader : () => openDemo(name)}
-        >
-          <Box
-            align="center"
-            direction="row"
-            gap={14}
-            paddingY={12}
-            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
-          >
-            <Cover height={58} width={44} />
-            <Box flex={1}>
-              <Text size={14} weight="600">
-                {name}
-              </Text>
-              <Text color={t.sub} size={12} style={{ marginTop: 3 }}>
-                {tr("library.collections.filedIn", { collection: coll })}
-              </Text>
+      {loading
+        ? Array.from({ length: SUGGESTION_COUNT }, (_, i) => (
+            <Box
+              align="center"
+              direction="row"
+              gap={14}
+              key={i}
+              paddingY={12}
+              style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+            >
+              <Cover height={58} width={44} />
+              <Box flex={1} gap={6}>
+                <Box bg={t.line} height={12} rounded={4} style={{ width: "70%" }} />
+                <Box bg={t.line} height={10} rounded={4} style={{ width: "45%" }} />
+              </Box>
             </Box>
-            <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
-              <Text color={t.accentText} size={11} weight="500">
-                {kind}
-              </Text>
-            </Box>
-          </Box>
-        </Tap>
-      ))}
+          ))
+        : suggestions.map((book) => (
+            <Tap
+              key={book.id}
+              onPress={() => openBook({ url: book.readUrl, title: book.title })}
+            >
+              <Box
+                align="center"
+                direction="row"
+                gap={14}
+                paddingY={12}
+                style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+              >
+                <Cover height={58} uri={book.coverUrl} width={44} />
+                <Box flex={1}>
+                  <Text numberOfLines={1} size={14} weight="600">
+                    {book.title}
+                  </Text>
+                  <Text color={t.sub} numberOfLines={1} size={12} style={{ marginTop: 3 }}>
+                    {book.author
+                      ? tr("library.collections.filedInBy", {
+                          author: book.author,
+                          collection: book.collection,
+                        })
+                      : tr("library.collections.filedIn", {
+                          collection: book.collection,
+                        })}
+                  </Text>
+                </Box>
+                <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
+                  <Text color={t.accentText} size={11} weight="500">
+                    {book.kind}
+                  </Text>
+                </Box>
+              </Box>
+            </Tap>
+          ))}
 
       <Text color={t.faint} size={12} style={{ paddingTop: 10 }}>
         {tr("library.collections.tapSuggestion")}

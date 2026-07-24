@@ -26,6 +26,7 @@ export default function TabLayout() {
         <Stack.Screen name="reader" />
         <Stack.Screen name="pdf" />
         <Stack.Screen name="text" />
+        <Stack.Screen name="book" />
         <Stack.Screen name="notes" />
         <Stack.Screen name="review" />
         <Stack.Screen name="graph" />

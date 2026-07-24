@@ -151,6 +151,12 @@ export default function LibraryScreen() {
   );
 
   const openReader = () => router.push("/reader");
+  // Opens a suggested book's full text in the in-app web reader.
+  const openBook = (book: { url: string; title: string }) =>
+    router.push({
+      pathname: "/book",
+      params: { url: book.url, title: book.title },
+    });
   // Open formats that have a native reader. Other indexed formats remain
   // visible in the library until their readers are added.
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
@@ -171,8 +177,6 @@ export default function LibraryScreen() {
     }
     showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
   };
-  const openDemo = (name: string) =>
-    showToast(tr("library.demoToast", { name }));
   // long-press anywhere a document is listed: file it into a collection
   const openCollections = (doc: FilableDoc) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -358,11 +362,10 @@ export default function LibraryScreen() {
               />
             ) : tab === "coll" ? (
               <CollectionsTab
+                openBook={openBook}
                 openCollection={setOpenShelf}
                 openCollections={openCollections}
-                openDemo={openDemo}
                 openDoc={openDoc}
-                openReader={openReader}
                 shelf={openShelf}
               />
             ) : (
