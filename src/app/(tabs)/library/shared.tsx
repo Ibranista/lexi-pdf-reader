@@ -21,6 +21,7 @@ import {
   Text,
 } from "@/components/lexi-components";
 import { FAVORITE_COLLECTION } from "@/constants/collections";
+import { bookCoverFromUri } from "@/hooks/use-book-suggestions";
 import { formatSize, formatWhen } from "@/hooks/use-device-library";
 import { usePdfThumbnail } from "@/hooks/use-pdf-thumbnail";
 import { type SortKey, useAppStore, useToastStore } from "@/stores/app-store";
@@ -53,6 +54,7 @@ export function PdfThumb({
 }) {
   const t = useProtoTheme();
   const thumb = usePdfThumbnail(doc.uri, doc.ext === "PDF");
+  const cover = thumb ?? bookCoverFromUri(doc.uri);
 
   return (
     <Box
@@ -64,10 +66,10 @@ export function PdfThumb({
       rounded={rounded}
       style={{ ...style, overflow: "hidden" }}
     >
-      {thumb ? (
+      {cover ? (
         <Image
           contentFit="cover"
-          source={{ uri: thumb }}
+          source={{ uri: cover }}
           style={{ width: "100%", height: "100%" }}
           transition={160}
         />

@@ -43,7 +43,7 @@ export function usePdfThumbnail(uri: string, isPdf: boolean): string | null {
     if (failed.has(uri)) return;
 
     let cancelled = false;
-    schedule(() => PdfPageImage.generate(uri, 1, 1))
+    schedule(() => PdfPageImage.generate(uri, 0, 1))
       .then((page) => {
         cache.set(uri, page.uri);
         if (!cancelled) setThumb(page.uri);

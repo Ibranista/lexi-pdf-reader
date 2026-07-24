@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { GestureResponderEvent, StyleProp, ViewStyle } from "react-native";
 
+import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Animated, Easing, Pressable, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -328,11 +329,13 @@ export function Cover({
   height,
   label,
   rounded = 6,
+  uri,
   width,
 }: {
   height: number;
   label?: string;
   rounded?: number;
+  uri?: string;
   width: number;
 }) {
   const t = useProtoTheme();
@@ -366,7 +369,14 @@ export function Cover({
       width={width}
     >
       {stripes}
-      {label ? (
+      {uri ? (
+        <Image
+          contentFit="cover"
+          source={{ uri }}
+          style={{ position: "absolute", width: "100%", height: "100%" }}
+          transition={200}
+        />
+      ) : label ? (
         <Text color={t.sub} mono size={8}>
           {label}
         </Text>

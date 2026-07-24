@@ -74,6 +74,7 @@
       "autoFilled": "Auto-filled for you",
       "basedOn": "Based on your onboarding · {{label}}",
       "filedIn": "Filed in {{collection}}",
+      "filedInBy": "{{author}} · Filed in {{collection}}",
       "tapSuggestion": "Tap a suggestion to move it — nothing files without you seeing it.",
       "names": {
         "studying": "Studying",
