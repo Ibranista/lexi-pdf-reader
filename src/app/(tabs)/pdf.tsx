@@ -84,7 +84,12 @@ function savedPageFor(uri: string | undefined): number {
 export default function PdfViewerScreen() {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
-  const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
+  const { uri, name, view } = useLocalSearchParams<{
+    uri: string;
+    name?: string;
+    /** Opens straight into this view — "reflow" when arriving from My Notes. */
+    view?: ViewMode;
+  }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
   const bright = useAppStore((s) => s.bright);
@@ -119,7 +124,10 @@ export default function PdfViewerScreen() {
   const startFocus = useFocusStore((s) => s.start);
   const exitFocus = useFocusStore((s) => s.exit);
 
-  const [mode, setMode] = useState<ViewMode>("page");
+  // Page view unless the caller asked otherwise. A highlight only exists in
+  // reflow — the page view is a bitmap with nothing to mark — so opening one
+  // from My Notes has to land in reflow or the passage isn't there to see.
+  const [mode, setMode] = useState<ViewMode>(view === "reflow" ? "reflow" : "page");
   // Resume where this document was left off. Read as a lazy initializer, not
   // in an effect — the progress recorder below would otherwise fire first
   // with page 1 and overwrite the very position we're restoring.
@@ -1028,6 +1036,9 @@ export default function PdfViewerScreen() {
             setClearSelSeq((n) => n + 1);
           }}
           page={selection.page}
+          // Kept on the annotation itself so My Notes can still name the
+          // document after it drops off the (capped) recents list.
+          source={name ?? "Document"}
           text={selection.text}
           uri={uri}
         />

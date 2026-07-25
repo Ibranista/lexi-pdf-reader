@@ -127,10 +127,11 @@
             }
         },
         "notes": {
-            "fromDocument": "From a document",
+            "fromDocument": "Saved while reading",
             "noteLabel": "Note",
             "emptyHighlights": "No highlights yet.\nSelect a passage while reading, then pick a colour.",
-            "emptyNotes": "No notes yet.\nSelect a passage while reading, then “Note”."
+            "emptyNotes": "No notes yet.\nSelect a passage while reading, then “Note”.",
+            "jumpedToast": "Jumped to page {{page}}"
         }
     },
     "hero": {
