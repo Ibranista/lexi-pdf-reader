@@ -26,6 +26,35 @@ export const SUGGESTION_COUNT = SEED.length;
 
 let cache: BookSuggestion[] | null = null;
 
+const COVER_PARAM = 'lexiCover';
+
+const COVER_RE = new RegExp(`[?&]${COVER_PARAM}=([^&]+)`);
+
+export function bookDocUri(
+  book: Pick<BookSuggestion, 'coverUrl' | 'readUrl'>,
+): string {
+  if (!book.coverUrl) return book.readUrl;
+  const sep = book.readUrl.includes('?') ? '&' : '?';
+  return `${book.readUrl}${sep}${COVER_PARAM}=${encodeURIComponent(book.coverUrl)}`;
+}
+
+export function bookReadUrl(uri: string): string {
+  const stripped = uri.replace(COVER_RE, (match) =>
+    match[0] === '?' ? '?' : '',
+  );
+  return stripped.replace('?&', '?').replace(/\?$/, '');
+}
+
+export function bookCoverFromUri(uri: string): string | undefined {
+  const match = COVER_RE.exec(uri);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
 function formatAuthor(name?: string): string {
   if (!name) return "";
   const m = name.match(/^([^,]+),\s*(.+)$/);

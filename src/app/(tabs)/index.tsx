@@ -20,6 +20,10 @@ import {
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
+import {
+  bookCoverFromUri,
+  bookReadUrl,
+} from "@/hooks/use-book-suggestions";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import type { FilableDoc } from "@/stores/collections-store";
@@ -134,12 +138,23 @@ export default function LibraryScreen() {
   );
 
   const openReader = () => router.push("/reader");
-  const openBook = (book: { url: string; title: string }) =>
+  const openBook = (book: { cover?: string; url: string; title: string }) =>
     router.push({
       pathname: "/book",
-      params: { url: book.url, title: book.title },
+      params: { cover: book.cover, url: book.url, title: book.title },
     });
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
+    if (doc.ext === "BOOK") {
+      router.push({
+        pathname: "/book",
+        params: {
+          cover: bookCoverFromUri(doc.uri),
+          title: doc.name,
+          url: bookReadUrl(doc.uri),
+        },
+      });
+      return;
+    }
     if (doc.ext === "PDF") {
       router.push({
         pathname: "/pdf",

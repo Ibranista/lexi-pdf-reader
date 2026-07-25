@@ -232,6 +232,8 @@ interface Props {
   onOpenCollections?: () => void;
   onToggleFocusMode?: () => void;
   onViewModeChange?: (mode: ViewMode) => void;
+  showViewModes?: boolean;
+  showSmartZoom?: boolean;
   viewMode?: ViewMode;
 }
 
@@ -244,6 +246,8 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
       onOpenCollections,
       onToggleFocusMode,
       onViewModeChange,
+      showSmartZoom = true,
+      showViewModes = true,
       viewMode = "page",
     },
     ref,
@@ -310,14 +314,18 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           </Tap>
         ) : null}
 
-        <Box paddingBottom={8} paddingTop={10}>
-          <SectionLabel size={11}>View</SectionLabel>
-        </Box>
-        <Segmented
-          items={VIEW_MODE_ITEMS}
-          onChange={(next) => onViewModeChange?.(next)}
-          value={viewMode}
-        />
+        {showViewModes ? (
+          <>
+            <Box paddingBottom={8} paddingTop={10}>
+              <SectionLabel size={11}>View</SectionLabel>
+            </Box>
+            <Segmented
+              items={VIEW_MODE_ITEMS}
+              onChange={(next) => onViewModeChange?.(next)}
+              value={viewMode}
+            />
+          </>
+        ) : null}
 
         <Box paddingBottom={8} paddingTop={10}>
           <SectionLabel size={11}>Theme</SectionLabel>
@@ -348,7 +356,7 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           value={app.bright}
         />
 
-        <SmartZoomControl />
+        {showSmartZoom ? <SmartZoomControl /> : null}
 
         {viewMode === "reflow" ? (
           <>

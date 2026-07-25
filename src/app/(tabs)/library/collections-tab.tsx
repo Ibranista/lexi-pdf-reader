@@ -31,7 +31,7 @@ export function CollectionsTab({
   openDoc,
   shelf,
 }: {
-  openBook: (book: { url: string; title: string }) => void;
+  openBook: (book: { cover?: string; url: string; title: string }) => void;
   openCollection: (id: CollectionId | null) => void;
   openCollections: OpenCollections;
   openDoc: (doc: { uri: string; name: string; ext: string }) => void;
@@ -185,7 +185,13 @@ export function CollectionsTab({
         : suggestions.map((book) => (
             <Tap
               key={book.id}
-              onPress={() => openBook({ url: book.readUrl, title: book.title })}
+              onPress={() =>
+                openBook({
+                  cover: book.coverUrl,
+                  title: book.title,
+                  url: book.readUrl,
+                })
+              }
             >
               <Box
                 align="center"
