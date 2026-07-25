@@ -22,9 +22,7 @@ import {
   Text,
   Toggle,
 } from "@/components/lexi-components";
-import { COLLECTIONS } from "@/constants/library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 import type { ThemeMode } from "@/theme/proto";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -61,7 +59,6 @@ export const SettingsPanel = memo(function SettingsPanel({
   const showToast = useToastStore((s) => s.showToast);
   const mode = useThemeModeStore((s) => s.mode);
   const setMode = useThemeModeStore((s) => s.setMode);
-  const readerType = useOnboardingStore((s) => s.readerType);
   // field-level selectors rather than `useAppStore()` — subscribing to the
   // whole store re-rendered the panel on every unrelated app-state change,
   // which shows up as stutter while the drawer is being dragged
@@ -71,8 +68,6 @@ export const SettingsPanel = memo(function SettingsPanel({
   const zoom = useAppStore((s) => s.zoom);
   const syncPos = useAppStore((s) => s.syncPos);
   const setApp = useAppStore((s) => s.set);
-
-  const readerLabel = COLLECTIONS[readerType]?.label ?? "Student";
 
   // Sub-pages push a full-screen route on top of the panel. We deliberately
   // keep the panel open underneath (whether it's the drawer over the library
