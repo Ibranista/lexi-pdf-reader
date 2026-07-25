@@ -20,6 +20,10 @@ import {
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
+import {
+  bookCoverFromUri,
+  bookReadUrl,
+} from "@/hooks/use-book-suggestions";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import type { FilableDoc } from "@/stores/collections-store";
@@ -151,15 +155,29 @@ export default function LibraryScreen() {
   );
 
   const openReader = () => router.push("/reader");
-  // Opens a suggested book's full text in the in-app web reader.
-  const openBook = (book: { url: string; title: string }) =>
+  // Opens a suggested book's full text in the in-app web reader. The cover
+  // rides along so the book can be filed on the Recent shelf with its art.
+  const openBook = (book: { cover?: string; url: string; title: string }) =>
     router.push({
       pathname: "/book",
-      params: { url: book.url, title: book.title },
+      params: { cover: book.cover, url: book.url, title: book.title },
     });
   // Open formats that have a native reader. Other indexed formats remain
   // visible in the library until their readers are added.
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
+    // A book filed from the suggestions shelf — its uri is the readable page
+    // with the cover packed on, so strip that back off before loading it.
+    if (doc.ext === "BOOK") {
+      router.push({
+        pathname: "/book",
+        params: {
+          cover: bookCoverFromUri(doc.uri),
+          title: doc.name,
+          url: bookReadUrl(doc.uri),
+        },
+      });
+      return;
+    }
     if (doc.ext === "PDF") {
       // the reader records the open itself, so every entry point counts
       router.push({

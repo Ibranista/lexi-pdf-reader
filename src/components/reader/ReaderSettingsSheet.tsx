@@ -258,6 +258,10 @@ interface Props {
   onOpenCollections?: () => void;
   onToggleFocusMode?: () => void;
   onViewModeChange?: (mode: ViewMode) => void;
+  /** Off for readers with no Page view to switch to (the web book reader). */
+  showViewModes?: boolean;
+  /** Off where there's no double-tap zoom for the setting to drive. */
+  showSmartZoom?: boolean;
   viewMode?: ViewMode;
 }
 
@@ -270,6 +274,8 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
       onOpenCollections,
       onToggleFocusMode,
       onViewModeChange,
+      showSmartZoom = true,
+      showViewModes = true,
       viewMode = "page",
     },
     ref,
@@ -343,14 +349,18 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           </Tap>
         ) : null}
 
-        <Box paddingBottom={8} paddingTop={10}>
-          <SectionLabel size={11}>View</SectionLabel>
-        </Box>
-        <Segmented
-          items={VIEW_MODE_ITEMS}
-          onChange={(next) => onViewModeChange?.(next)}
-          value={viewMode}
-        />
+        {showViewModes ? (
+          <>
+            <Box paddingBottom={8} paddingTop={10}>
+              <SectionLabel size={11}>View</SectionLabel>
+            </Box>
+            <Segmented
+              items={VIEW_MODE_ITEMS}
+              onChange={(next) => onViewModeChange?.(next)}
+              value={viewMode}
+            />
+          </>
+        ) : null}
 
         <Box paddingBottom={8} paddingTop={10}>
           <SectionLabel size={11}>Theme</SectionLabel>
@@ -384,7 +394,7 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
           value={app.bright}
         />
 
-        <SmartZoomControl />
+        {showSmartZoom ? <SmartZoomControl /> : null}
 
         {/* Text styling only affects the reflowed text — the original PDF page
             bitmap can't be restyled. Shown only in Reflow view so we never

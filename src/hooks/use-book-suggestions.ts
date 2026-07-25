@@ -50,6 +50,52 @@ export const SUGGESTION_COUNT = SEED.length;
 /** Resolved once per app session — the picks don't change between mounts. */
 let cache: BookSuggestion[] | null = null;
 
+/**
+ * Query parameter a suggested book's cover rides in on. A filed book is stored
+ * as a plain `{ uri, name, ext }` like any device document, so there's nowhere
+ * to keep a separate cover — packing it into the uri means the thumbnail can be
+ * rendered from the filed row alone, with no second lookup.
+ */
+const COVER_PARAM = 'lexiCover';
+
+const COVER_RE = new RegExp(`[?&]${COVER_PARAM}=([^&]+)`);
+
+/** The uri to file a suggested book under — its readable page plus its cover. */
+export function bookDocUri(
+  book: Pick<BookSuggestion, 'coverUrl' | 'readUrl'>,
+): string {
+  if (!book.coverUrl) return book.readUrl;
+  const sep = book.readUrl.includes('?') ? '&' : '?';
+  return `${book.readUrl}${sep}${COVER_PARAM}=${encodeURIComponent(book.coverUrl)}`;
+}
+
+/**
+ * The cover packed into a uri by `bookDocUri`, if there is one. Device
+ * documents (`file://…`) carry none, so callers fall back to a format badge.
+ */
+/** The readable page inside a uri built by `bookDocUri` — the cover stripped
+ *  back off, so what we hand the WebView is the book's own url. */
+export function bookReadUrl(uri: string): string {
+  // Keep the '?' when the cover was the first parameter, or a later one would
+  // be left dangling after the host; drop it if nothing follows.
+  const stripped = uri.replace(COVER_RE, (match) =>
+    match[0] === '?' ? '?' : '',
+  );
+  return stripped.replace('?&', '?').replace(/\?$/, '');
+}
+
+export function bookCoverFromUri(uri: string): string | undefined {
+  const match = COVER_RE.exec(uri);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    // malformed percent-encoding — treat it as no cover rather than throwing
+    // inside a render, which is what took the whole library down before.
+    return undefined;
+  }
+}
+
 /** Gutenberg lists authors "Last, First"; show them the way people say them. */
 function formatAuthor(name?: string): string {
   if (!name) return "";

@@ -32,7 +32,7 @@ export function CollectionsTab({
   shelf,
 }: {
   /** Opens a suggested book's full text in the in-app web reader. */
-  openBook: (book: { url: string; title: string }) => void;
+  openBook: (book: { cover?: string; url: string; title: string }) => void;
   /** Drills into a shelf, or back out with null. Lifted so hardware back works. */
   openCollection: (id: CollectionId | null) => void;
   openCollections: OpenCollections;
@@ -190,7 +190,13 @@ export function CollectionsTab({
         : suggestions.map((book) => (
             <Tap
               key={book.id}
-              onPress={() => openBook({ url: book.readUrl, title: book.title })}
+              onPress={() =>
+                openBook({
+                  cover: book.coverUrl,
+                  title: book.title,
+                  url: book.readUrl,
+                })
+              }
             >
               <Box
                 align="center"

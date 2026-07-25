@@ -23,6 +23,7 @@ import { WebView } from "react-native-webview";
 import { Box, Text } from "@/components/atoms";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
+import { fontStack, READ_WIDTH_PX, softInk } from "@/utils/reader-typography";
 
 export interface PdfOutlineEntry {
   title: string;
@@ -71,13 +72,6 @@ interface Settings {
   px: number;
 }
 
-/** Reading-width setting → body side padding. Narrow leaves more margin. */
-const READ_WIDTH_PX: Record<string, number> = {
-  narrow: 40,
-  comfort: 22,
-  full: 12,
-};
-
 /** Rough luminance test on a #rrggbb / #rgb theme color. */
 function isDark(color: string): boolean {
   const hex = color.replace("#", "");
@@ -93,48 +87,6 @@ function isDark(color: string): boolean {
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
   return 0.299 * r + 0.587 * g + 0.114 * b < 128;
-}
-
-/** #rrggbb / #rgb → [r,g,b], or null if it isn't a plain hex color. */
-function hexToRgb(color: string): [number, number, number] | null {
-  const hex = color.replace("#", "");
-  const full =
-    hex.length === 3
-      ? hex
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : hex;
-  if (full.length < 6) return null;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  if ([r, g, b].some((n) => Number.isNaN(n))) return null;
-  return [r, g, b];
-}
-
-/**
- * "Soft" contrast: blend the reader ink a fraction of the way toward the page
- * colour so text sits a touch lighter against the background. Done here rather
- * than with a CSS filter so images keep their full contrast and the sections'
- * `content-visibility` fast path is untouched. Falls back to the ink unchanged
- * if either colour isn't a plain hex.
- */
-function softInk(ink: string, page: string, amount: number): string {
-  const a = hexToRgb(ink);
-  const b = hexToRgb(page);
-  if (!a || !b) return ink;
-  const mix = (i: number) => Math.round(a[i] + (b[i] - a[i]) * amount);
-  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
-}
-
-/** Same family map as the prototype: Literata / Hanken Grotesk / Atkinson
- *  Hyperlegible, with system fallbacks while the webfonts load. */
-function fontStack(fam: string): string {
-  if (fam === "serif") return "'Literata', Georgia, 'Times New Roman', serif";
-  if (fam === "dys")
-    return "'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif";
-  return "'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 }
 
 function buildHtml(
