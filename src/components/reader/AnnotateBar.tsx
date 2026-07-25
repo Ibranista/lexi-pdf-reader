@@ -31,13 +31,15 @@ export function AnnotateBar({
   onClose,
   onComposingChange,
   page,
+  source,
   text,
   uri,
 }: {
-  onBookmark: () => void;
+  onBookmark?: () => void;
   onClose: () => void;
   onComposingChange?: (composing: boolean) => void;
   page: number;
+  source?: string;
   text: string;
   uri: string;
 }) {
@@ -59,7 +61,7 @@ export function AnnotateBar({
   };
 
   const save = (color: HighlightColor) =>
-    add({ uri, page, text, color, note: "" });
+    add({ uri, page, source, text, color, note: "" });
 
   const highlight = (color: HighlightColor) => {
     save(color);
@@ -162,6 +164,7 @@ export function AnnotateBar({
                   add({
                     uri,
                     page,
+                    source,
                     text,
                     color: NOTE_DEFAULT_COLOR,
                     note,
@@ -227,14 +230,16 @@ export function AnnotateBar({
               onComposingChange?.(true);
             }}
           />
-          <SelAction
-            icon={<IconBookmark color="#F6F3EE" size={16} />}
-            label="Bookmark"
-            onPress={() => {
-              onBookmark();
-              dismissComposer();
-            }}
-          />
+          {onBookmark ? (
+            <SelAction
+              icon={<IconBookmark color="#F6F3EE" size={16} />}
+              label="Bookmark"
+              onPress={() => {
+                onBookmark();
+                dismissComposer();
+              }}
+            />
+          ) : null}
         </Box>
 
         <Box

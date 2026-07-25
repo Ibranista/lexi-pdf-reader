@@ -9,12 +9,18 @@ import { WebView } from "react-native-webview";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { Box, Text } from "@/components/atoms";
-import { HeaderButton, IconBack, IconType, Tap } from "@/components/lexi-components";
+import {
+  HeaderButton,
+  IconBack,
+  IconType,
+  Tap,
+} from "@/components/lexi-components";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
-import { PdfOutlineDrawer } from "@/components/reader";
+import { AnnotateBar, PdfOutlineDrawer } from "@/components/reader";
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import { bookDocUri } from "@/hooks/use-book-suggestions";
+import { useCachedBook } from "@/hooks/use-cached-book";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -227,8 +233,34 @@ function bootScript(s: ReaderStyle, padTop: number): string {
       if (e.target && e.target.closest && e.target.closest('a')) return;
       post({ type: 'tap' });
     }, { passive: true });
+
+    /* ---- selection ----
+       Reported on settle rather than on every change: Android fires
+       selectionchange for each handle movement, and the annotate bar shouldn't
+       flicker while the handles are being dragged. */
+    var selTimer = null, lastSel = '';
+    document.addEventListener('selectionchange', function(){
+      clearTimeout(selTimer);
+      selTimer = setTimeout(function(){
+        var sel = window.getSelection();
+        var text = sel ? sel.toString().trim() : '';
+        if (text === lastSel) return;
+        lastSel = text;
+        var y = window.scrollY || document.documentElement.scrollTop || 0;
+        post({ type: 'selection', text: text, page: pageOf(y) });
+      }, 320);
+    });
+
+    window.lexiClearSelection = function(){
+      try { window.getSelection().removeAllRanges(); } catch (e) {}
+      lastSel = '';
+      post({ type: 'selection', text: '', page: 0 });
+    };
+
   })(); true;`;
 }
+
+const STANDALONE_URI = "lexi:standalone";
 
 export default function BookReaderScreen() {
   const t = useProtoTheme();
@@ -255,15 +287,23 @@ export default function BookReaderScreen() {
   const [immersive, setImmersive] = useState(false);
   const [headerH, setHeaderH] = useState(0);
   const padTop = immersive ? 12 : headerH + 8;
+  const [selection, setSelection] = useState<{
+    page: number;
+    text: string;
+  } | null>(null);
+  const [composing, setComposing] = useState(false);
 
   const docUri = useMemo(
     () => (url ? bookDocUri({ coverUrl: cover, readUrl: url }) : ""),
     [cover, url],
   );
 
+  const book = useCachedBook(url);
+
   const reload = () => {
     setRefreshing(true);
     setFailed(false);
+    book.refresh();
     webRef.current?.reload();
   };
 
@@ -334,6 +374,7 @@ export default function BookReaderScreen() {
   useEffect(() => {
     webRef.current?.injectJavaScript(chromeScript(padTop));
   }, [padTop]);
+
 
   const [bar] = useState(() => new Animated.Value(1));
   useEffect(() => {
@@ -493,6 +534,9 @@ export default function BookReaderScreen() {
                     const msg = JSON.parse(nativeEvent.data);
                     if (msg.type === "tap") {
                       setImmersive((v) => !v);
+                    } else if (msg.type === "selection") {
+                      if (msg.text) setSelection({ page: msg.page, text: msg.text });
+                      else if (!composing) setSelection(null);
                     } else if (msg.type === "scroll") {
                       setAtTop(msg.y <= 0);
                       setPage(msg.page);
@@ -513,7 +557,8 @@ export default function BookReaderScreen() {
                 onLoadStart={onStart}
                 originWhitelist={["*"]}
                 ref={webRef}
-                source={{ uri: url }}
+                allowFileAccess
+                source={{ uri: book.uri ?? url }}
                 style={{ height: bodyH, backgroundColor: t.page }}
               />
             ) : null}
@@ -615,6 +660,23 @@ export default function BookReaderScreen() {
         showViewModes={false}
         viewMode="reflow"
       />
+
+      {selection ? (
+        <AnnotateBar
+          onClose={() => {
+            setComposing(false);
+            setSelection(null);
+            webRef.current?.injectJavaScript(
+              "if (window.lexiClearSelection) window.lexiClearSelection(); true;",
+            );
+          }}
+          onComposingChange={setComposing}
+          page={selection.page}
+          source={title ?? "Book"}
+          text={selection.text}
+          uri={STANDALONE_URI}
+        />
+      ) : null}
 
       {outlineOpen ? (
         <PdfOutlineDrawer

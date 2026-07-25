@@ -34,7 +34,7 @@ import { CollectionsTab } from "./library/collections-tab";
 import { FilesTab as FilesLibraryTab } from "./library/files-tab";
 import { RecentTab as RecentLibraryTab } from "./library/recent-tab";
 import { SearchResults as SearchLibraryResults } from "./library/search-results";
-import { VocabTab as VocabLibraryTab } from "./library/vocab-tab";
+import { NotesTab as NotesLibraryTab } from "./library/notes-tab";
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
 
@@ -351,7 +351,7 @@ export default function LibraryScreen() {
                 shelf={openShelf}
               />
             ) : (
-              <VocabLibraryTab openReader={openReader} />
+              <NotesLibraryTab openReader={openReader} />
             )}
           </ScrollView>
         )}

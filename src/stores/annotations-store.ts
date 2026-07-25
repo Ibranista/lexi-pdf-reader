@@ -24,6 +24,7 @@ export interface Annotation {
   uri: string;
   page: number;
   text: string;
+  source?: string;
   color: HighlightColor;
   note: string;
   createdAt: number;
@@ -35,6 +36,7 @@ interface AnnotationsState {
     uri: string;
     page: number;
     text: string;
+    source?: string;
     color: HighlightColor;
     note?: string;
   }) => string;
@@ -52,7 +54,7 @@ export const useAnnotationsStore = create<AnnotationsState>()(
     (set) => ({
       items: [],
 
-      add: ({ uri, page, text, color, note }) => {
+      add: ({ uri, page, text, source, color, note }) => {
         const id = newId();
         set((s) => ({
           items: [
@@ -61,6 +63,7 @@ export const useAnnotationsStore = create<AnnotationsState>()(
               uri,
               page,
               text: text.trim(),
+              source,
               color,
               note: note ?? "",
               createdAt: Date.now(),
