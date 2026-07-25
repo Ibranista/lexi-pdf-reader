@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,7 +18,12 @@ import {
   HIGHLIGHT_FILL,
   useAnnotationsStore,
 } from "@/stores/annotations-store";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import {
+  useAppStore,
+  useReaderJumpStore,
+  useToastStore,
+} from "@/stores/app-store";
+import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
 type Section = "highlights" | "notes" | "vocab";
@@ -44,6 +50,31 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
   const setPage = useAppStore((s) => s.setPage);
   const showToast = useToastStore((s) => s.showToast);
   const annotations = useAnnotationsStore((s) => s.items);
+  const recents = useRecentsStore((s) => s.recents);
+
+  const docs = useMemo(() => {
+    const byUri = new Map<string, { ext: string; name: string }>();
+    for (const r of recents) byUri.set(r.uri, { ext: r.ext, name: r.name });
+    return byUri;
+  }, [recents]);
+
+  const jumpTo = (uri: string, page: number) => {
+    const doc = docs.get(uri);
+    if (!doc) return;
+    useReaderJumpStore.getState().request(uri, page);
+    if (doc.ext === "PDF") {
+      router.push({
+        params: { name: doc.name, uri, view: "reflow" },
+        pathname: "/pdf",
+      });
+      showToast(tr("library.notes.jumpedToast", { page }));
+      return;
+    }
+    router.push({
+      params: { ext: doc.ext, name: doc.name, uri },
+      pathname: "/text",
+    });
+  };
 
   const { highlights, notes } = useMemo(() => {
     const sorted = [...annotations].sort((a, b) => b.createdAt - a.createdAt);
@@ -156,46 +187,72 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
 
       {section !== "vocab" ? (
         <Box gap={12}>
-          {(section === "highlights" ? highlights : notes).map((a) => (
-            <Card gap={10} key={a.id}>
-              <Box align="center" direction="row" gap={8}>
-                <Box
-                  bg={HIGHLIGHT_FILL[a.color]}
-                  height={10}
-                  rounded={3}
-                  width={10}
-                />
-                <Box flex={1}>
-                  <Text color={t.sub} numberOfLines={1} size={11.5}>
-                    {a.source ?? tr("library.notes.fromDocument")}
+          {(section === "highlights" ? highlights : notes).map((a) => {
+            const doc = docs.get(a.uri);
+            const card = (
+              <Card gap={10}>
+                <Box align="center" direction="row" gap={8}>
+                  <Box
+                    bg={HIGHLIGHT_FILL[a.color]}
+                    height={10}
+                    rounded={3}
+                    width={10}
+                  />
+                  <Box flex={1}>
+                    <Text
+                      color={doc ? t.accentText : t.sub}
+                      numberOfLines={1}
+                      size={11.5}
+                      weight={doc ? "600" : "400"}
+                    >
+                      {doc?.name ?? a.source ?? tr("library.notes.fromDocument")}
+                    </Text>
+                  </Box>
+                  {doc ? (
+                    <Text color={t.faint} mono size={11} weight="600">
+                      {tr("library.vocab.pageAbbrev", { page: a.page })}
+                    </Text>
+                  ) : null}
+                  <Text color={t.faint} size={11}>
+                    {whenLabel(a.createdAt)}
                   </Text>
                 </Box>
-                <Text color={t.faint} size={11}>
-                  {whenLabel(a.createdAt)}
-                </Text>
-              </Box>
 
-              <Box direction="row" gap={9}>
-                <Box bg={HIGHLIGHT_FILL[a.color]} rounded={2} width={4} />
-                <Box flex={1}>
-                  <Text color={t.readerInk} lh={20} numberOfLines={5} size={13}>
-                    {a.text}
-                  </Text>
+                <Box direction="row" gap={9}>
+                  <Box bg={HIGHLIGHT_FILL[a.color]} rounded={2} width={4} />
+                  <Box flex={1}>
+                    <Text
+                      color={t.readerInk}
+                      lh={20}
+                      numberOfLines={5}
+                      size={13}
+                    >
+                      {a.text}
+                    </Text>
+                  </Box>
                 </Box>
-              </Box>
 
-              {a.note.trim() ? (
-                <Box bg={t.chip} gap={6} padding={10} rounded={10}>
-                  <Text color={t.faint} ls={0.6} size={10} upper weight="600">
-                    {tr("library.notes.noteLabel")}
-                  </Text>
-                  <Text lh={19} size={13}>
-                    {a.note}
-                  </Text>
-                </Box>
-              ) : null}
-            </Card>
-          ))}
+                {a.note.trim() ? (
+                  <Box bg={t.chip} gap={6} padding={10} rounded={10}>
+                    <Text color={t.faint} ls={0.6} size={10} upper weight="600">
+                      {tr("library.notes.noteLabel")}
+                    </Text>
+                    <Text lh={19} size={13}>
+                      {a.note}
+                    </Text>
+                  </Box>
+                ) : null}
+              </Card>
+            );
+
+            return doc ? (
+              <Tap key={a.id} onPress={() => jumpTo(a.uri, a.page)} scale={0.985}>
+                {card}
+              </Tap>
+            ) : (
+              <Box key={a.id}>{card}</Box>
+            );
+          })}
 
           {(section === "highlights" ? highlights : notes).length === 0 ? (
             <Empty

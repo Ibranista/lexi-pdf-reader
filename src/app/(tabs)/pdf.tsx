@@ -74,7 +74,11 @@ function savedPageFor(uri: string | undefined): number {
 export default function PdfViewerScreen() {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
-  const { uri, name } = useLocalSearchParams<{ uri: string; name?: string }>();
+  const { uri, name, view } = useLocalSearchParams<{
+    uri: string;
+    name?: string;
+    view?: ViewMode;
+  }>();
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
   const bright = useAppStore((s) => s.bright);
@@ -104,7 +108,7 @@ export default function PdfViewerScreen() {
   const startFocus = useFocusStore((s) => s.start);
   const exitFocus = useFocusStore((s) => s.exit);
 
-  const [mode, setMode] = useState<ViewMode>("page");
+  const [mode, setMode] = useState<ViewMode>(view === "reflow" ? "reflow" : "page");
   const [page, setPage] = useState(() => savedPageFor(uri));
   const [pageCount, setPageCount] = useState(0);
   const readingVisit = useRef({ uri, page: savedPageFor(uri), startedAt: 0 });
@@ -911,6 +915,7 @@ export default function PdfViewerScreen() {
             setClearSelSeq((n) => n + 1);
           }}
           page={selection.page}
+          source={name ?? "Document"}
           text={selection.text}
           uri={uri}
         />
