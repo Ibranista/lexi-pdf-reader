@@ -13,9 +13,12 @@ import {
   IconSliders,
   IconSun,
   ProtoScreen,
-  Segmented,
+  SwipeTabsBar,
+  SwipeTabsPager,
   Tap,
   Text,
+  useSwipeTabs,
+  type SwipeTabItem,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -37,6 +40,8 @@ import { SearchResults as SearchLibraryResults } from "./library/search-results"
 import { NotesTab as NotesLibraryTab } from "./library/notes-tab";
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
+
+const TAB_KEYS = ["recent", "all", "coll", "files", "vocab"] as const;
 
 export default function LibraryScreen() {
   const t = useProtoTheme();
@@ -122,13 +127,19 @@ export default function LibraryScreen() {
     }
   }, [storageAsked, access, ensureAccess]);
 
-  const TAB_ITEMS = [
-    { key: "recent" as const, label: tr("tabItems.recent") },
-    { key: "all" as const, label: tr("tabItems.all") },
-    { key: "coll" as const, label: tr("tabItems.collections"), flex: 1.4 },
-    { key: "files" as const, label: tr("tabItems.files") },
-    { key: "vocab" as const, label: tr("tabItems.vocab") },
+  const TAB_ITEMS: SwipeTabItem<LibTab>[] = [
+    { key: "recent", label: tr("tabItems.recent") },
+    { key: "all", label: tr("tabItems.all") },
+    { key: "coll", label: tr("tabItems.collections"), flex: 1.4 },
+    { key: "files", label: tr("tabItems.files") },
+    { key: "vocab", label: tr("tabItems.vocab") },
   ];
+
+  const tabs = useSwipeTabs<LibTab>({
+    keys: TAB_KEYS,
+    onChange: setTab,
+    value: tab,
+  });
 
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -299,7 +310,7 @@ export default function LibraryScreen() {
             </Box>
 
             <Box marginTop={14} paddingLeft={20} paddingRight={20}>
-              <Segmented items={TAB_ITEMS} onChange={setTab} value={tab} />
+              <SwipeTabsBar items={TAB_ITEMS} tabs={tabs} />
             </Box>
           </>
         )}
@@ -313,47 +324,54 @@ export default function LibraryScreen() {
             query={query}
             refreshControl={renderRefresh()}
           />
-        ) : tab === "all" ? (
-          <AllLibraryTab
-            contentPad={contentPad}
-            lib={lib}
-            openCollections={openCollections}
-            openDoc={openDoc}
-            refreshControl={renderRefresh()}
-          />
-        ) : tab === "files" ? (
-          <FilesLibraryTab
-            contentPad={contentPad}
-            lib={lib}
-            openCollections={openCollections}
-            openDoc={openDoc}
-            openUri={openFolderUri}
-            refreshControl={renderRefresh()}
-            setOpenUri={setOpenFolderUri}
-          />
         ) : (
-          <ScrollView
-            contentContainerStyle={contentPad}
-            refreshControl={renderRefresh()}
-            style={{ flex: 1 }}
-          >
-            {tab === "recent" ? (
-              <RecentLibraryTab
-                openCollections={openCollections}
-                openDoc={openDoc}
-              />
-            ) : tab === "coll" ? (
-              <CollectionsTab
-                openBook={openBook}
-                openCollection={setOpenShelf}
-                openCollections={openCollections}
-                openDoc={openDoc}
-                shelf={openShelf}
-              />
-            ) : (
-              <NotesLibraryTab openReader={openReader} />
-            )}
-          </ScrollView>
+          <SwipeTabsPager
+            renderTab={(key) =>
+              key === "all" ? (
+                <AllLibraryTab
+                  contentPad={contentPad}
+                  lib={lib}
+                  openCollections={openCollections}
+                  openDoc={openDoc}
+                  refreshControl={renderRefresh()}
+                />
+              ) : key === "files" ? (
+                <FilesLibraryTab
+                  contentPad={contentPad}
+                  lib={lib}
+                  openCollections={openCollections}
+                  openDoc={openDoc}
+                  openUri={openFolderUri}
+                  refreshControl={renderRefresh()}
+                  setOpenUri={setOpenFolderUri}
+                />
+              ) : (
+                <ScrollView
+                  contentContainerStyle={contentPad}
+                  refreshControl={renderRefresh()}
+                  style={{ flex: 1 }}
+                >
+                  {key === "recent" ? (
+                    <RecentLibraryTab
+                      openCollections={openCollections}
+                      openDoc={openDoc}
+                    />
+                  ) : key === "coll" ? (
+                    <CollectionsTab
+                      openBook={openBook}
+                      openCollection={setOpenShelf}
+                      openCollections={openCollections}
+                      openDoc={openDoc}
+                      shelf={openShelf}
+                    />
+                  ) : (
+                    <NotesLibraryTab openReader={openReader} />
+                  )}
+                </ScrollView>
+              )
+            }
+            tabs={tabs}
+          />
         )}
 
         {filing ? (

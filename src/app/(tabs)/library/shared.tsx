@@ -19,6 +19,7 @@ import {
   IconStar,
   Tap,
   Text,
+  usePagerGesture,
 } from "@/components/lexi-components";
 import { FAVORITE_COLLECTION } from "@/constants/collections";
 import { bookCoverFromUri } from "@/hooks/use-book-suggestions";
@@ -197,8 +198,10 @@ export function SwipeToFavorite({
     );
   }, [doc, showToast, tr]);
 
-  const pan = Gesture.Pan()
+  const pager = usePagerGesture();
+  const swipe = Gesture.Pan()
     .activeOffsetX(-16)
+    .failOffsetX(14)
     .failOffsetY([-12, 12])
     .onUpdate((e) => {
       tx.value = Math.max(-SWIPE_MAX, Math.min(0, e.translationX));
@@ -207,6 +210,7 @@ export function SwipeToFavorite({
       if (tx.value <= -SWIPE_COMMIT) runOnJS(commit)();
       tx.value = withSpring(0, { damping: 22, stiffness: 240 });
     });
+  const pan = pager ? swipe.blocksExternalGesture(pager) : swipe;
 
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
