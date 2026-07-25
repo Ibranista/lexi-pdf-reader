@@ -41,11 +41,13 @@ export function AnnotateBar({
   onClose,
   onComposingChange,
   page,
+  source,
   text,
   uri,
 }: {
-  /** Bookmarks the page the passage is on. */
-  onBookmark: () => void;
+  /** Bookmarks the page the passage is on. Omit where there's nothing to
+   *  bookmark against — the action is hidden rather than shown inert. */
+  onBookmark?: () => void;
   onClose: () => void;
   /**
    * True while the note composer is open. The reader needs this because
@@ -55,6 +57,8 @@ export function AnnotateBar({
    */
   onComposingChange?: (composing: boolean) => void;
   page: number;
+  /** Where the passage came from, for listings that aren't per-document. */
+  source?: string;
   text: string;
   uri: string;
 }) {
@@ -80,7 +84,7 @@ export function AnnotateBar({
   };
 
   const save = (color: HighlightColor) =>
-    add({ uri, page, text, color, note: "" });
+    add({ uri, page, source, text, color, note: "" });
 
   const highlight = (color: HighlightColor) => {
     save(color);
@@ -192,6 +196,7 @@ export function AnnotateBar({
                   add({
                     uri,
                     page,
+                    source,
                     text,
                     color: NOTE_DEFAULT_COLOR,
                     note,
@@ -259,14 +264,16 @@ export function AnnotateBar({
               onComposingChange?.(true);
             }}
           />
-          <SelAction
-            icon={<IconBookmark color="#F6F3EE" size={16} />}
-            label="Bookmark"
-            onPress={() => {
-              onBookmark();
-              dismissComposer();
-            }}
-          />
+          {onBookmark ? (
+            <SelAction
+              icon={<IconBookmark color="#F6F3EE" size={16} />}
+              label="Bookmark"
+              onPress={() => {
+                onBookmark();
+                dismissComposer();
+              }}
+            />
+          ) : null}
         </Box>
 
         <Box
