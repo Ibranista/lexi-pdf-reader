@@ -1,16 +1,15 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { ReaderType, ReadingHelp } from '@/constants/onboarding';
+import type { ReaderType, ReadingInterest } from '@/constants/onboarding';
+import { readerTypeFor } from '@/constants/onboarding';
 import { zustandStorage } from '@/utils/storage';
 
 interface OnboardingState {
-  readerType: ReaderType;
-  helps: ReadingHelp[];
+  interests: ReadingInterest[];
   hasCompletedOnboarding: boolean;
 
-  selectReaderType: (readerType: ReaderType) => void;
-  toggleHelp: (help: ReadingHelp) => void;
+  toggleInterest: (interest: ReadingInterest) => void;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
 }
@@ -18,27 +17,35 @@ interface OnboardingState {
 export const useOnboardingStore = create<OnboardingState>()(
   persist(
     (set) => ({
-      readerType: 'student',
-      helps: ['focus', 'remember'],
+      interests: [],
       hasCompletedOnboarding: false,
 
-      selectReaderType: (readerType) => set({ readerType }),
-
-      toggleHelp: (help) =>
+      toggleInterest: (interest) =>
         set((state) => ({
-          helps: state.helps.includes(help)
-            ? state.helps.filter((h) => h !== help)
-            : [...state.helps, help],
+          interests: state.interests.includes(interest)
+            ? state.interests.filter((i) => i !== interest)
+            : [...state.interests, interest],
         })),
 
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
 
-      resetOnboarding: () =>
-        set({ readerType: 'student', helps: ['focus', 'remember'], hasCompletedOnboarding: false }),
+      resetOnboarding: () => set({ interests: [], hasCompletedOnboarding: false }),
     }),
     {
       name: 'onboarding-storage',
       storage: createJSONStorage(() => zustandStorage),
+      version: 1,
+      migrate: (persisted) => {
+        const prior = persisted as Partial<OnboardingState> | undefined;
+        return {
+          interests: [],
+          hasCompletedOnboarding: prior?.hasCompletedOnboarding ?? false,
+        } as unknown as OnboardingState;
+      },
     },
   ),
 );
+
+export function useReaderType(): ReaderType {
+  return useOnboardingStore((s) => readerTypeFor(s.interests));
+}

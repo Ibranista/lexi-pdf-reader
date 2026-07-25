@@ -19,7 +19,7 @@ import {
 import { COLLECTIONS } from "@/constants/library";
 import { SUGGESTION_COUNT, useBookSuggestions } from "@/hooks/use-book-suggestions";
 import { useCollectionsStore } from "@/stores/collections-store";
-import { useOnboardingStore } from "@/stores/onboarding-store";
+import { useReaderType } from "@/stores/onboarding-store";
 import { useProtoTheme } from "@/theme/proto";
 
 import { DocRow, type OpenCollections } from "./shared";
@@ -39,7 +39,7 @@ export function CollectionsTab({
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
-  const readerType = useOnboardingStore((s) => s.readerType);
+  const readerType = useReaderType();
   const items = useCollectionsStore((s) => s.items);
   const cd = COLLECTIONS[readerType] ?? COLLECTIONS.student;
   const { suggestions, loading } = useBookSuggestions();
