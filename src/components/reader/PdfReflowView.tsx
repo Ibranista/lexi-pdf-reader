@@ -278,9 +278,27 @@ function buildHtml(
     if (pad) pad.style.height = (${topInset} + 16 + px) + 'px';
   };
 
+  /* ---- page jumps ----
+     Pages arrive one at a time, so a jump to page 40 of a long book asks for a
+     section that hasn't been extracted yet. Rather than no-op (which used to
+     strand you wherever extraction had reached, and then let the end-of-run
+     scroll drop you back on the page you opened at), the target is held and
+     retried as each page lands. Touching the document clears it — once you've
+     started reading somewhere, a queued jump yanking you away is wrong. */
+  var pendingScroll = 0;
+
+  function tryPendingScroll(){
+    if (!pendingScroll) return;
+    var el = document.querySelector('section[data-page="' + pendingScroll + '"]');
+    if (!el) return;             // not extracted yet — try again next page
+    el.scrollIntoView({ block: 'start' });
+    pendingScroll = 0;
+  }
+
   window.scrollToPage = function(n){
-    var el = document.querySelector('section[data-page="' + n + '"]');
-    if (el) el.scrollIntoView({ block: 'start' });
+    pendingScroll = n > 1 ? n : 0;
+    if (n <= 1) window.scrollTo(0, 0);
+    tryPendingScroll();
   };
 
   window.searchText = function(q){
@@ -545,6 +563,8 @@ function buildHtml(
       return;
     }
     if (e.touches.length !== 1) { moved = true; return; }
+    // reading where you are outranks a jump still waiting on extraction
+    pendingScroll = 0;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     startT = Date.now();
@@ -723,29 +743,56 @@ function buildHtml(
   }
 
   var savedHighlights = [];
+  /* Highlights whose page hasn't been extracted yet. Kept as a count so the
+     extraction loop can skip the repaint entirely once everything has landed
+     — the scan below walks the document, which grows with every page. */
+  var pendingHighlights = 0;
 
-  function clearHighlights(){
-    var marks = document.querySelectorAll('mark.lexi-hl');
-    for (var i = 0; i < marks.length; i++){
-      var m = marks[i], parent = m.parentNode;
-      if (!parent) continue;
-      while (m.firstChild) parent.insertBefore(m.firstChild, m);
-      parent.removeChild(m);
-      parent.normalize();   // re-join, or the next match sees a split string
-    }
+  function unwrap(m){
+    var parent = m.parentNode;
+    if (!parent) return;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+    parent.normalize();   // re-join, or the next match sees a split string
   }
 
+  /* Brings the page in line with the saved list, touching only what changed.
+     Tearing every mark out and re-finding all of them — which is what this
+     used to do — costs a pass over the whole document each time, so on a long
+     book adding one highlight made every other one blink off and back on
+     while the search ran. Marks already in place are left alone; a recolour
+     is done on the mark itself; only a deleted passage is unwrapped. */
   window.applyHighlights = function(list){
     if (list) savedHighlights = list;
-    clearHighlights();
+
+    var wanted = {};
     for (var i = 0; i < savedHighlights.length; i++){
-      var h = savedHighlights[i];
-      var sec = document.querySelector('section[data-page="' + h.page + '"]');
-      if (!sec) continue;
+      wanted[savedHighlights[i].id] = savedHighlights[i];
+    }
+
+    var placed = {};
+    var marks = document.querySelectorAll('mark.lexi-hl');
+    for (var j = 0; j < marks.length; j++){
+      var m = marks[j], id = m.getAttribute('data-id') || '';
+      var h = wanted[id];
+      if (!h) { unwrap(m); continue; }
+      if (m.getAttribute('data-c') !== h.color) m.setAttribute('data-c', h.color);
+      placed[id] = true;
+    }
+
+    pendingHighlights = 0;
+    for (var k = 0; k < savedHighlights.length; k++){
+      var hl = savedHighlights[k];
+      if (placed[hl.id]) continue;
+      var sec = document.querySelector('section[data-page="' + hl.page + '"]');
+      if (!sec) { pendingHighlights++; continue; }   // retried as the page lands
+      if (markPassage(sec, hl.text, hl.color, hl.id)) continue;
       // A passage can run past its own page break; the next section is the
-      // only other place it can be.
-      if (!markPassage(sec, h.text, h.color, h.id) && sec.nextElementSibling) {
-        markPassage(sec.nextElementSibling, h.text, h.color, h.id);
+      // only other place it can be — and it may not have been extracted yet.
+      if (sec.nextElementSibling) {
+        markPassage(sec.nextElementSibling, hl.text, hl.color, hl.id);
+      } else {
+        pendingHighlights++;
       }
     }
   };
@@ -1626,6 +1673,7 @@ function buildHtml(
 
     pdfjsLib.getDocument({ data: b64ToBytes('${b64}') }).promise.then(async function(pdf){
       var wordCounts = [];
+      if (INITIAL_PAGE > 1) pendingScroll = INITIAL_PAGE;
       for (var p = 1; p <= pdf.numPages; p++){
         try { wordCounts[p - 1] = await processPage(pdf, p, content); }
         catch (e) { /* skip unreadable page */ }
@@ -1637,10 +1685,20 @@ function buildHtml(
           buildOutline(pdf);
         }
         post({ type: 'progress', page: p, total: pdf.numPages });
-        if (p === INITIAL_PAGE) window.scrollToPage(INITIAL_PAGE);
+        // The page this landed on may be the one being waited for, and may
+        // carry highlights that had nowhere to attach until now. Both are
+        // no-ops once satisfied, so they're cheap to keep trying.
+        tryPendingScroll();
+        if (pendingHighlights) window.applyHighlights();
+        /* Hand the thread back between pages. Extraction and everything the
+           reader injects — a new highlight, a page jump, a settings change —
+           share one JS thread in here, so without a yield a command posted
+           mid-run waits behind however long the current page takes. That wait
+           is what made highlighting a big book feel unresponsive. */
+        await new Promise(function(resolve){ setTimeout(resolve, 0); });
       }
       post({ type: 'done', pages: pdf.numPages, wordCounts: wordCounts });
-      if (INITIAL_PAGE > 1) window.scrollToPage(INITIAL_PAGE);
+      tryPendingScroll();
     }).catch(function(err){
       document.getElementById('status').textContent = 'Could not extract text from this PDF.';
       post({ type: 'error', message: String(err && err.message || err) });
