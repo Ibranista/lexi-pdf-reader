@@ -38,6 +38,12 @@ export interface Annotation {
   page: number;
   /** The selected passage itself. */
   text: string;
+  /**
+   * Human-readable origin, e.g. a book's title. Set for passages that aren't
+   * tied to a document you can reopen — a web book's url can change, so the
+   * uri is no use as a label there.
+   */
+  source?: string;
   color: HighlightColor;
   /** Empty for a plain highlight. */
   note: string;
@@ -51,6 +57,7 @@ interface AnnotationsState {
     uri: string;
     page: number;
     text: string;
+    source?: string;
     color: HighlightColor;
     note?: string;
   }) => string;
@@ -69,7 +76,7 @@ export const useAnnotationsStore = create<AnnotationsState>()(
     (set) => ({
       items: [],
 
-      add: ({ uri, page, text, color, note }) => {
+      add: ({ uri, page, text, source, color, note }) => {
         const id = newId();
         set((s) => ({
           items: [
@@ -78,6 +85,7 @@ export const useAnnotationsStore = create<AnnotationsState>()(
               uri,
               page,
               text: text.trim(),
+              source,
               color,
               note: note ?? "",
               createdAt: Date.now(),

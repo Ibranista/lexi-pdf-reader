@@ -55,7 +55,9 @@ export function usePdfThumbnail(uri: string, isPdf: boolean): string | null {
     if (failed.has(uri)) return;
 
     let cancelled = false;
-    schedule(() => PdfPageImage.generate(uri, 1, 1))
+    // Page index is 0-based on both platforms (Android PdfRenderer.openPage /
+    // iOS PDFDocument.page(at:)), so 0 is the first page — 1 rendered the 2nd.
+    schedule(() => PdfPageImage.generate(uri, 0, 1))
       .then((page) => {
         cache.set(uri, page.uri);
         if (!cancelled) setThumb(page.uri);

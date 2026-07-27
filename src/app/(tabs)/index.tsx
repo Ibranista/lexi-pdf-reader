@@ -9,18 +9,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Box, TextInput } from "@/components/atoms";
 import {
   HeaderButton,
-  IconBrain,
   IconSearch,
   IconSliders,
   IconSun,
   ProtoScreen,
-  Segmented,
+  SwipeTabsBar,
+  SwipeTabsPager,
   Tap,
   Text,
+  useSwipeTabs,
+  type SwipeTabItem,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
+import {
+  bookCoverFromUri,
+  bookReadUrl,
+} from "@/hooks/use-book-suggestions";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import type { FilableDoc } from "@/stores/collections-store";
@@ -31,9 +37,12 @@ import { CollectionsTab } from "./library/collections-tab";
 import { FilesTab as FilesLibraryTab } from "./library/files-tab";
 import { RecentTab as RecentLibraryTab } from "./library/recent-tab";
 import { SearchResults as SearchLibraryResults } from "./library/search-results";
-import { VocabTab as VocabLibraryTab } from "./library/vocab-tab";
+import { NotesTab as NotesLibraryTab } from "./library/notes-tab";
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
+
+/** Left-to-right order of the tabs — the order you swipe through them. */
+const TAB_KEYS = ["recent", "all", "coll", "files", "vocab"] as const;
 
 export default function LibraryScreen() {
   const t = useProtoTheme();
@@ -132,13 +141,21 @@ export default function LibraryScreen() {
     }
   }, [storageAsked, access, ensureAccess]);
 
-  const TAB_ITEMS = [
-    { key: "recent" as const, label: tr("tabItems.recent") },
-    { key: "all" as const, label: tr("tabItems.all") },
-    { key: "coll" as const, label: tr("tabItems.collections"), flex: 1.4 },
-    { key: "files" as const, label: tr("tabItems.files") },
-    { key: "vocab" as const, label: tr("tabItems.vocab") },
+  const TAB_ITEMS: SwipeTabItem<LibTab>[] = [
+    { key: "recent", label: tr("tabItems.recent") },
+    { key: "all", label: tr("tabItems.all") },
+    { key: "coll", label: tr("tabItems.collections"), flex: 1.4 },
+    { key: "files", label: tr("tabItems.files") },
+    { key: "vocab", label: tr("tabItems.vocab") },
   ];
+
+  // Drives both the bar and the pages below it, so the pill and the content
+  // move together under the finger.
+  const tabs = useSwipeTabs<LibTab>({
+    keys: TAB_KEYS,
+    onChange: setTab,
+    value: tab,
+  });
 
   // Settings rides in as a left drawer rather than a pushed route, so the
   // swipe can track the finger. Shared by the header icon and the edge swipe.
@@ -152,9 +169,29 @@ export default function LibraryScreen() {
   );
 
   const openReader = () => router.push("/reader");
+  // Opens a suggested book's full text in the in-app web reader. The cover
+  // rides along so the book can be filed on the Recent shelf with its art.
+  const openBook = (book: { cover?: string; url: string; title: string }) =>
+    router.push({
+      pathname: "/book",
+      params: { cover: book.cover, url: book.url, title: book.title },
+    });
   // Open formats that have a native reader. Other indexed formats remain
   // visible in the library until their readers are added.
   const openDoc = (doc: { uri: string; name: string; ext: string }) => {
+    // A book filed from the suggestions shelf — its uri is the readable page
+    // with the cover packed on, so strip that back off before loading it.
+    if (doc.ext === "BOOK") {
+      router.push({
+        pathname: "/book",
+        params: {
+          cover: bookCoverFromUri(doc.uri),
+          title: doc.name,
+          url: bookReadUrl(doc.uri),
+        },
+      });
+      return;
+    }
     if (doc.ext === "PDF") {
       // the reader records the open itself, so every entry point counts
       router.push({
@@ -172,8 +209,6 @@ export default function LibraryScreen() {
     }
     showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
   };
-  const openDemo = (name: string) =>
-    showToast(tr("library.demoToast", { name }));
   // long-press anywhere a document is listed: file it into a collection
   const openCollections = (doc: FilableDoc) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -226,9 +261,6 @@ export default function LibraryScreen() {
           <Box direction="row" gap={10}>
             <HeaderButton onPress={() => router.push("/today")}>
               <IconSun color={t.ink} size={19} />
-            </HeaderButton>
-            <HeaderButton onPress={() => router.push("/brain")}>
-              <IconBrain color={t.ink} size={19} />
             </HeaderButton>
             <HeaderButton
               bg={t.accentSoft}
@@ -314,14 +346,16 @@ export default function LibraryScreen() {
 
             {/* tabs */}
             <Box marginTop={14} paddingLeft={20} paddingRight={20}>
-              <Segmented items={TAB_ITEMS} onChange={setTab} value={tab} />
+              <SwipeTabsBar items={TAB_ITEMS} tabs={tabs} />
             </Box>
           </>
         )}
 
-        {/* Search, All and Files own their scroller — a FlashList can't be
-          nested in a ScrollView, and those are the views long enough to need
-          one. The short, fixed-length tabs stay on a plain ScrollView. */}
+        {/* Search takes over the whole body; otherwise the tabs sit side by
+          side in the pager, one screen apart. All and Files own their
+          scroller — a FlashList can't be nested in a ScrollView, and those are
+          the views long enough to need one. The short, fixed-length tabs get a
+          plain ScrollView each. */}
         {searching ? (
           <SearchLibraryResults
             contentPad={contentPad}
@@ -331,48 +365,54 @@ export default function LibraryScreen() {
             query={query}
             refreshControl={renderRefresh()}
           />
-        ) : tab === "all" ? (
-          <AllLibraryTab
-            contentPad={contentPad}
-            lib={lib}
-            openCollections={openCollections}
-            openDoc={openDoc}
-            refreshControl={renderRefresh()}
-          />
-        ) : tab === "files" ? (
-          <FilesLibraryTab
-            contentPad={contentPad}
-            lib={lib}
-            openCollections={openCollections}
-            openDoc={openDoc}
-            openUri={openFolderUri}
-            refreshControl={renderRefresh()}
-            setOpenUri={setOpenFolderUri}
-          />
         ) : (
-          <ScrollView
-            contentContainerStyle={contentPad}
-            refreshControl={renderRefresh()}
-            style={{ flex: 1 }}
-          >
-            {tab === "recent" ? (
-              <RecentLibraryTab
-                openCollections={openCollections}
-                openDoc={openDoc}
-              />
-            ) : tab === "coll" ? (
-              <CollectionsTab
-                openCollection={setOpenShelf}
-                openCollections={openCollections}
-                openDemo={openDemo}
-                openDoc={openDoc}
-                openReader={openReader}
-                shelf={openShelf}
-              />
-            ) : (
-              <VocabLibraryTab openReader={openReader} />
-            )}
-          </ScrollView>
+          <SwipeTabsPager
+            renderTab={(key) =>
+              key === "all" ? (
+                <AllLibraryTab
+                  contentPad={contentPad}
+                  lib={lib}
+                  openCollections={openCollections}
+                  openDoc={openDoc}
+                  refreshControl={renderRefresh()}
+                />
+              ) : key === "files" ? (
+                <FilesLibraryTab
+                  contentPad={contentPad}
+                  lib={lib}
+                  openCollections={openCollections}
+                  openDoc={openDoc}
+                  openUri={openFolderUri}
+                  refreshControl={renderRefresh()}
+                  setOpenUri={setOpenFolderUri}
+                />
+              ) : (
+                <ScrollView
+                  contentContainerStyle={contentPad}
+                  refreshControl={renderRefresh()}
+                  style={{ flex: 1 }}
+                >
+                  {key === "recent" ? (
+                    <RecentLibraryTab
+                      openCollections={openCollections}
+                      openDoc={openDoc}
+                    />
+                  ) : key === "coll" ? (
+                    <CollectionsTab
+                      openBook={openBook}
+                      openCollection={setOpenShelf}
+                      openCollections={openCollections}
+                      openDoc={openDoc}
+                      shelf={openShelf}
+                    />
+                  ) : (
+                    <NotesLibraryTab openReader={openReader} />
+                  )}
+                </ScrollView>
+              )
+            }
+            tabs={tabs}
+          />
         )}
 
         {filing ? (

@@ -19,8 +19,10 @@ import {
   IconStar,
   Tap,
   Text,
+  usePagerGesture,
 } from "@/components/lexi-components";
 import { FAVORITE_COLLECTION } from "@/constants/collections";
+import { bookCoverFromUri } from "@/hooks/use-book-suggestions";
 import { formatSize, formatWhen } from "@/hooks/use-device-library";
 import { usePdfThumbnail } from "@/hooks/use-pdf-thumbnail";
 import { type SortKey, useAppStore, useToastStore } from "@/stores/app-store";
@@ -56,6 +58,8 @@ export function PdfThumb({
 }) {
   const t = useProtoTheme();
   const thumb = usePdfThumbnail(doc.uri, doc.ext === "PDF");
+  // Suggested books carry their cover in the uri; show it instead of a badge.
+  const cover = thumb ?? bookCoverFromUri(doc.uri);
 
   return (
     <Box
@@ -67,10 +71,10 @@ export function PdfThumb({
       rounded={rounded}
       style={{ ...style, overflow: "hidden" }}
     >
-      {thumb ? (
+      {cover ? (
         <Image
           contentFit="cover"
-          source={{ uri: thumb }}
+          source={{ uri: cover }}
           style={{ width: "100%", height: "100%" }}
           transition={160}
         />
@@ -214,9 +218,14 @@ export function SwipeToFavorite({
   }, [doc, showToast, tr]);
 
   // Left-only activation, and a vertical bail-out, so the list still scrolls
-  // normally under the finger.
-  const pan = Gesture.Pan()
+  // normally under the finger. When the tab pager is wrapped around this row,
+  // the row outranks it: a leftward drag files the document, and only once
+  // this gesture has failed — dragged right, or up and down — can the pager
+  // take the swipe and change tabs.
+  const pager = usePagerGesture();
+  const swipe = Gesture.Pan()
     .activeOffsetX(-16)
+    .failOffsetX(14)
     .failOffsetY([-12, 12])
     .onUpdate((e) => {
       tx.value = Math.max(-SWIPE_MAX, Math.min(0, e.translationX));
@@ -225,6 +234,7 @@ export function SwipeToFavorite({
       if (tx.value <= -SWIPE_COMMIT) runOnJS(commit)();
       tx.value = withSpring(0, { damping: 22, stiffness: 240 });
     });
+  const pan = pager ? swipe.blocksExternalGesture(pager) : swipe;
 
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],

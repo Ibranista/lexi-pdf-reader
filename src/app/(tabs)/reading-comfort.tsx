@@ -93,6 +93,7 @@ export default function ReadingComfortScreen() {
               {app.textSize} pt
             </Text>
           </Box>
+          <ReflowNote />
           <Box align="center" direction="row" gap={14}>
             <Text color={t.sub} serif size={13}>
               A
@@ -122,6 +123,7 @@ export default function ReadingComfortScreen() {
 
         <Card gap={12}>
           <SectionLabel>Line spacing</SectionLabel>
+          <ReflowNote />
           <Segmented
             items={LS_ITEMS}
             onChange={(key) => app.set({ lineSp: key })}
@@ -131,6 +133,7 @@ export default function ReadingComfortScreen() {
           <Box marginTop={4}>
             <SectionLabel>Reading width & margins</SectionLabel>
           </Box>
+          <ReflowNote />
           <Segmented
             items={RW_ITEMS}
             onChange={(key) => app.set({ readWidth: key })}
@@ -150,6 +153,9 @@ export default function ReadingComfortScreen() {
               {app.bright}%
             </Text>
           </Box>
+          <Text color={t.sub} size={11.5} style={{ marginTop: -4 }}>
+            Applies to both Page and Reflow views.
+          </Text>
           <ProtoSlider
             max={100}
             min={40}
@@ -157,15 +163,18 @@ export default function ReadingComfortScreen() {
             step={5}
             value={app.bright}
           />
-          <Box align="center" direction="row" justify="between" paddingTop={2}>
-            <SectionLabel>Contrast</SectionLabel>
-            <Box width={170}>
-              <Segmented
-                items={CT_ITEMS}
-                onChange={(key) => app.set({ contrast: key })}
-                value={app.contrast}
-              />
+          <Box paddingTop={2}>
+            <Box align="center" direction="row" justify="between">
+              <SectionLabel>Contrast</SectionLabel>
+              <Box width={170}>
+                <Segmented
+                  items={CT_ITEMS}
+                  onChange={(key) => app.set({ contrast: key })}
+                  value={app.contrast}
+                />
+              </Box>
             </Box>
+            <ReflowNote />
           </Box>
         </Card>
 
@@ -174,5 +183,18 @@ export default function ReadingComfortScreen() {
         </Text>
       </ScrollView>
     </ProtoScreen>
+  );
+}
+
+/**
+ * Marks a control that only restyles the reflowed text, not the original PDF
+ * page — mirrors the "Reflow only" labels in the reader's own settings sheet.
+ */
+function ReflowNote() {
+  const t = useProtoTheme();
+  return (
+    <Text color={t.sub} size={11.5} style={{ marginTop: -4 }}>
+      Reflow view only.
+    </Text>
   );
 }
