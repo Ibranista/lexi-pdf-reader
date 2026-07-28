@@ -74,7 +74,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
    * Passages saved in the web reader have no document to open — their url is
    * not a stable key — so those cards stay inert.
    */
-  const jumpTo = (uri: string | undefined, page: number) => {
+  const jumpTo = (uri: string | undefined, page: number, flash?: string) => {
     const doc = uri ? docs.get(uri) : undefined;
     if (!uri || !doc) {
       // A saved word/passage whose document is no longer on the recents list
@@ -83,7 +83,8 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
       showToast(tr("library.notes.reopenUnavailable"));
       return;
     }
-    useReaderJumpStore.getState().request(uri, page);
+    // `flash` briefly lights the word/passage up in the reader once it opens.
+    useReaderJumpStore.getState().request(uri, page, flash);
     if (doc.ext === "PDF") {
       // Reflow, not page view: the highlight is drawn into the reflowed text,
       // so the page bitmap would open with nothing marked on it.
@@ -145,7 +146,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                 // take. Only the seeded demo words (no uri) fall back to the
                 // prototype reader.
                 if (v.uri) {
-                  jumpTo(v.uri, v.p);
+                  jumpTo(v.uri, v.p, v.word);
                 } else {
                   setPage(v.p);
                   openReader();
@@ -173,20 +174,26 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                     {tr("library.vocab.pageAbbrev", { page: v.p })}
                   </Text>
                 </Box>
+                {/* No translation for same-language saves — show just the
+                    language, so the row still names what it is. */}
                 <Box
                   direction="row"
                   gap={8}
                   wrap="wrap"
                   style={{ alignItems: "baseline" }}
                 >
-                  <Text color={t.accentText} size={17} weight="600">
-                    {v.tr}
-                  </Text>
+                  {v.tr ? (
+                    <Text color={t.accentText} size={17} weight="600">
+                      {v.tr}
+                    </Text>
+                  ) : null}
                   <Text color={t.sub} size={12}>
-                    {tr("library.vocab.translitLine", {
-                      lang: LANG_NAMES[v.lang] ?? v.lang,
-                      translit: v.translit,
-                    })}
+                    {v.tr
+                      ? tr("library.vocab.translitLine", {
+                          lang: LANG_NAMES[v.lang] ?? v.lang,
+                          translit: v.translit,
+                        })
+                      : LANG_NAMES[v.lang] ?? v.lang}
                   </Text>
                 </Box>
                 <Box direction="row" gap={9}>
@@ -287,7 +294,11 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
 
             // No document behind it (saved in the web reader) — nothing to open.
             return doc ? (
-              <Tap key={a.id} onPress={() => jumpTo(a.uri, a.page)} scale={0.985}>
+              <Tap
+                key={a.id}
+                onPress={() => jumpTo(a.uri, a.page, a.text)}
+                scale={0.985}
+              >
                 {card}
               </Tap>
             ) : (

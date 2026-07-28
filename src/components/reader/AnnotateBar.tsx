@@ -72,6 +72,12 @@ export function AnnotateBar({
   const showToast = useToastStore((s) => s.showToast);
   const add = useAnnotationsStore((s) => s.add);
 
+  // A word or two is a quick "Translate"; a longer passage is something to
+  // "Explain". Either way the word card answers in the reader's language and in
+  // context — this only frames the action the way the reader is thinking of it.
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const translateLabel = wordCount <= 2 ? "Translate" : "Explain";
+
   // Null means "still just a selection". Once true, the note composer opens.
   const [noteFor, setNoteFor] = useState<boolean>(false);
   const [draft, setDraft] = useState("");
@@ -272,7 +278,7 @@ export function AnnotateBar({
           {onTranslate ? (
             <SelAction
               icon={<IconGlobe color="#F6F3EE" size={16} />}
-              label="Translate"
+              label={translateLabel}
               onPress={() => {
                 // The card takes the passage from here, so the bar can go —
                 // but the WebView keeps its selection until the card closes.

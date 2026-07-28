@@ -18,8 +18,15 @@ import {
 } from "@/components/lexi-components";
 import { useWordLookup } from "@/hooks/use-lexi-ai";
 import { speak, type TranslateResult } from "@/services/lexi-ai";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useAppStore, useToastStore, type Lang } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
+
+/** The tiny in-card language switch. Short labels so three fit on one row. */
+const LANGS: { key: Lang; label: string }[] = [
+  { key: "am", label: "አማ" },
+  { key: "ar", label: "ع" },
+  { key: "en", label: "EN" },
+];
 
 export interface TranslateTarget {
   /** The selected word or short phrase. */
@@ -56,6 +63,10 @@ export function TranslateCard({
   const t = useProtoTheme();
   const showToast = useToastStore((s) => s.showToast);
   const addVocab = useAppStore((s) => s.addVocab);
+  // The word lookup reads its target language from the app store, so switching
+  // it here re-runs the lookup in the chosen language automatically.
+  const lang = useAppStore((s) => s.lang);
+  const setApp = useAppStore((s) => s.set);
 
   // "Hear it" plays the model's audio through a tiny off-screen WebView rather
   // than a native audio module — react-native-webview is already a dependency,
@@ -80,7 +91,7 @@ export function TranslateCard({
   }, [heard]);
 
   const hearIt = async (r: TranslateResult) => {
-    const url = r.audioUrl ?? (await speak(r.tr, r.lang));
+    const url = r.audioUrl ?? (await speak(r.tr ?? r.word, r.lang));
     // No voice for this language yet (e.g. Amharic) — say so rather than
     // failing silently on a button that looks live.
     if (!url) {
@@ -110,7 +121,7 @@ export function TranslateCard({
       s1: r.s1,
       s2: r.s2,
       source: target.source,
-      tr: r.tr,
+      tr: r.tr ?? "",
       translit: r.translit ?? "—",
       uri: target.uri,
       word: r.word,
@@ -140,6 +151,33 @@ export function TranslateCard({
           elevation: 24,
         }}
       >
+        {/* Tiny language switch — kept above the content so it's usable while
+            the lookup loads and re-runs in whichever language is tapped. */}
+        <Box align="center" direction="row" gap={6} marginBottom={14}>
+          <Text color={t.faint} ls={0.4} size={10} upper weight="700">
+            Explain in
+          </Text>
+          <Box flex={1} />
+          {LANGS.map((l) => (
+            <Tap key={l.key} onPress={() => setApp({ lang: l.key })} scale={0.9}>
+              <Box
+                bg={lang === l.key ? t.accent : t.chip}
+                paddingX={11}
+                paddingY={5}
+                rounded={9}
+              >
+                <Text
+                  color={lang === l.key ? t.onAccent : t.sub}
+                  size={12}
+                  weight="600"
+                >
+                  {l.label}
+                </Text>
+              </Box>
+            </Tap>
+          ))}
+        </Box>
+
         {result ? (
           <>
             <Box
@@ -160,20 +198,27 @@ export function TranslateCard({
               </Box>
             </Box>
 
-            <Box
-              align="center"
-              direction="row"
-              gap={8}
-              marginBottom={14}
-              wrap="wrap"
-            >
-              <Text color={t.accentText} size={22} weight="600">
-                {result.tr}
-              </Text>
-              <Text color={t.sub} size={12}>
-                {result.translit ? `· ${result.translit} ` : ""}· {result.langName}
-              </Text>
-            </Box>
+            {/* Translation line — omitted when the selection is already in the
+                target language, so the card is just the explanation. */}
+            {result.tr ? (
+              <Box
+                align="center"
+                direction="row"
+                gap={8}
+                marginBottom={14}
+                wrap="wrap"
+              >
+                <Text color={t.accentText} size={22} weight="600">
+                  {result.tr}
+                </Text>
+                <Text color={t.sub} size={12}>
+                  {result.translit ? `· ${result.translit} ` : ""}·{" "}
+                  {result.langName}
+                </Text>
+              </Box>
+            ) : (
+              <Box marginBottom={10} />
+            )}
 
             <Box bg={t.line} height={1} marginBottom={14} />
 

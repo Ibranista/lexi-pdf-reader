@@ -12,10 +12,15 @@
  * behind plausible-looking output. Only unreachable and 5xx fall back now.
  */
 import { isAxiosError } from "axios";
+// A maintained SSE client for React Native — it reads the XHR response
+// incrementally, which is what actually delivers chat tokens as they arrive
+// (RN's own fetch/XHR and expo/fetch buffered the whole body on-device).
+import EventSource from "react-native-sse";
 
 import { DICT, LANG_NAMES } from "@/constants/library";
+import { ensureSession } from "@/services/device-session";
 import type { ExplainStyle, Lang } from "@/stores/app-store";
-import { api } from "@/utils/axios";
+import { API_BASE_URL, api, tokenStorage } from "@/utils/axios";
 
 /** Remaining AI allowance, echoed by every endpoint. */
 export interface AiQuota {
@@ -28,8 +33,10 @@ export interface AiQuota {
 export interface TranslateResult {
   word: string;
   pos: string;
-  /** The translation, in the target script. */
-  tr: string;
+  /** The translation, in the target script. Omitted when the selection is
+   *  already in the target language (English word, English target) — then the
+   *  card shows only the explanation. */
+  tr?: string;
   /** Latin transliteration; absent for Latin-script targets. */
   translit?: string;
   lang: Lang;
@@ -268,8 +275,148 @@ function localChat(input: ChatInput): ChatReply {
 }
 
 /* =========================
+   Streaming chat
+========================= */
+
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  kind: ChatKind;
+  content: string;
+}
+
+export interface ChatStreamHandlers {
+  /** A piece of the reply, as it's generated. */
+  onToken: (token: string) => void;
+  /** The reply finished — carries the final kind and refreshed quota. */
+  onDone: (final: { kind: ChatKind; sessionId: string; quota?: AiQuota }) => void;
+  /** Network/server failure, or an AiQuotaError when the wall should rise. */
+  onError: (error: unknown) => void;
+}
+
+/**
+ * One chat turn, streamed over Server-Sent Events. The server sends one
+ * `data: { t }` per token and a final `data: { done, kind, quota }`; the
+ * EventSource fires a `message` event for each, so the reply renders
+ * token-by-token as it's generated. Returns an abort function so a closing
+ * sheet can cancel an in-flight reply.
+ */
+export async function streamChat(
+  input: ChatInput,
+  handlers: ChatStreamHandlers,
+): Promise<() => void> {
+  // The EventSource bypasses the axios interceptors, so guarantee a session.
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {
+    // offline on first launch — the connection below fails and onError fires
+  }
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      author: input.author,
+      docKey: input.docKey,
+      excerpt: input.excerpt,
+      message: input.message,
+      page: input.page,
+      sessionId: input.sessionId,
+      style: input.style ?? "balanced",
+      title: input.title,
+    }),
+    // One-shot: never auto-reconnect after the reply ends or fails.
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      t?: string;
+      done?: boolean;
+      kind?: ChatKind;
+      sessionId?: string;
+      quota?: AiQuota;
+      error?: boolean;
+      message?: string;
+    };
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.t) {
+      handlers.onToken(obj.t);
+    } else if (obj.done) {
+      handlers.onDone({
+        kind: obj.kind ?? "normal",
+        sessionId: obj.sessionId ?? input.sessionId,
+        quota: obj.quota,
+      });
+      finish();
+    } else if (obj.error) {
+      handlers.onError(new Error(obj.message ?? "Lexi couldn't finish that."));
+      finish();
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    // The quota wall answers 402 before any events; other statuses / network
+    // drops are a plain failure.
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true),
+      );
+    } else {
+      handlers.onError(new Error("Couldn't reach Lexi."));
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
+/** Prior turns for a book's conversation, oldest first — to rehydrate the sheet. */
+export async function fetchChatHistory(
+  sessionId: string,
+): Promise<ChatHistoryMessage[]> {
+  try {
+    const { data } = await api.get<{ messages: ChatHistoryMessage[] }>(
+      "/ai/chat/history",
+      { params: { sessionId } },
+    );
+    return data.messages ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/* =========================
    Speech
 ========================= */
+
+/** Voice arbitrary text (a chat reply's speaker button). Undefined on failure. */
+export async function speakText(text: string): Promise<string | undefined> {
+  try {
+    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", { text });
+    return data.audioUrl;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Spoken audio for a translation. Returns undefined when there's no voice. */
 export async function speak(text: string, lang: Lang): Promise<string | undefined> {

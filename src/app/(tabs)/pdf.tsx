@@ -59,6 +59,9 @@ import {
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
+import NetInfo from "@react-native-community/netinfo";
+
+import { isOnline } from "@/utils/connectivity";
 import { useDocKey } from "@/utils/doc-key";
 import { useProtoTheme } from "@/theme/proto";
 import { expectedReadingMs } from "@/utils/reading-progress";
@@ -81,9 +84,12 @@ const TITLE_SWAP = LinearTransition.duration(260);
  */
 function savedPageFor(uri: string | undefined): number {
   if (!uri) return 1;
-  const saved = useRecentsStore
-    .getState()
-    .recents.find((r) => r.uri === uri)?.page;
+  const state = useRecentsStore.getState();
+  // Prefer the uncapped positions cache, so a document that's dropped off the
+  // recents shelf still reopens where it was left; fall back to the recents row.
+  const saved =
+    state.positions[uri] ??
+    state.recents.find((r) => r.uri === uri)?.page;
   return saved && saved > 0 ? saved : 1;
 }
 
@@ -134,10 +140,24 @@ export default function PdfViewerScreen() {
   const startFocus = useFocusStore((s) => s.start);
   const exitFocus = useFocusStore((s) => s.exit);
 
-  // Page view unless the caller asked otherwise. A highlight only exists in
-  // reflow — the page view is a bitmap with nothing to mark — so opening one
-  // from My Notes has to land in reflow or the passage isn't there to see.
-  const [mode, setMode] = useState<ViewMode>(view === "reflow" ? "reflow" : "page");
+  // The reader the reader prefers (Settings → Default reader), Reflow out of the
+  // box. An explicit `view` (e.g. Reflow from My Notes) always wins. Reflow
+  // fetches its pdf.js engine from a CDN, so with no connection it can only
+  // error — fall back to the native, offline Page view then, whatever the
+  // preference. Only the plain default reacts to connectivity.
+  const defaultReader = useAppStore((s) => s.defaultReader);
+  const [mode, setMode] = useState<ViewMode>(
+    view === "page"
+      ? "page"
+      : view === "reflow"
+        ? "reflow"
+        : !isOnline()
+          ? "page"
+          : defaultReader,
+  );
+  // Whether the reader has manually toggled the view — once they have, we never
+  // move it out from under them (e.g. the late offline check below is skipped).
+  const userPickedView = useRef(false);
   // Resume where this document was left off. Read as a lazy initializer, not
   // in an effect — the progress recorder below would otherwise fire first
   // with page 1 and overwrite the very position we're restoring.
@@ -161,6 +181,9 @@ export default function PdfViewerScreen() {
     query: string;
     index: number;
     seq: number;
+    /** Set when flashing a note/word from My Notes, to scope the mark to its
+     *  own page rather than an earlier occurrence elsewhere. */
+    page?: number;
   } | null>(null);
   // Page view's search locator. The native PDF has no text layer we can mark,
   // so a band is drawn over the page using pdf.js geometry from the reflow
@@ -366,6 +389,7 @@ export default function PdfViewerScreen() {
 
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
+    userPickedView.current = true;
     if (next === "page") {
       setPdfPage(page);
     } else {
@@ -373,6 +397,29 @@ export default function PdfViewerScreen() {
     }
     setMode(next);
   };
+
+  // Connectivity can be unknown at first render (NetInfo is async); resolve it
+  // once, at open, and if we're offline yet defaulted into Reflow, drop back to
+  // Page view — Reflow's engine can't load without a connection. One-shot on
+  // purpose: losing the connection later, after Reflow has already loaded,
+  // should not yank the reader out of it. Never overrides an explicit `view`
+  // param or a view the reader chose themselves.
+  useEffect(() => {
+    if (view || userPickedView.current) return;
+    let cancelled = false;
+    NetInfo.fetch()
+      .then((state) => {
+        const offline =
+          state.isConnected === false || state.isInternetReachable === false;
+        if (!cancelled && offline && !userPickedView.current) {
+          setMode((current) => (current === "reflow" ? "page" : current));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
 
   const clampPage = (n: number) =>
     pageCount ? Math.max(1, Math.min(n, pageCount)) : Math.max(1, n);
@@ -402,10 +449,30 @@ export default function PdfViewerScreen() {
    */
   useFocusEffect(
     useCallback(() => {
-      const target = useReaderJumpStore.getState().consume(uri);
-      if (target) goToPage(target);
-      // goToPage closes over view state that changes every render; the store
-      // read is the part that must happen exactly once, on focus.
+      const jump = useReaderJumpStore.getState().consume(uri);
+      if (!jump) return;
+      const nextPage = clampPage(jump.page);
+      setPage(nextPage);
+      setApp({ page: nextPage });
+      // A flash (arriving from a tapped note or saved word) always reads in
+      // reflow — the page view is a bitmap with no live text to light up — and
+      // briefly marks the passage so the reader sees exactly where it sits.
+      if (jump.flash) {
+        setMode("reflow");
+        setReflowGoto((g) => ({ page: nextPage, seq: g.seq + 1 }));
+        setHighlight((h) => ({
+          query: jump.flash as string,
+          index: 0,
+          page: nextPage,
+          seq: (h?.seq ?? 0) + 1,
+        }));
+      } else if (mode === "page") {
+        setPdfPage(nextPage);
+      } else {
+        setReflowGoto((g) => ({ page: nextPage, seq: g.seq + 1 }));
+      }
+      // The store read must happen exactly once, on focus; the rest closes over
+      // view state that changes every render.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [uri]),
   );

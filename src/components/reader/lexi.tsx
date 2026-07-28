@@ -25,21 +25,27 @@ import {
   type ComponentProps,
 } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 
 import { Box } from "@/components/atoms";
 import {
   IconClose,
   IconSend,
   IconSpark,
+  IconWave,
   Text,
   Tap,
 } from "@/components/lexi-components";
 import { LEXI_SEED } from "@/constants/library";
-import { useLexiChat } from "@/hooks/use-lexi-ai";
-import { AiQuotaError } from "@/services/lexi-ai";
+import {
+  AiQuotaError,
+  fetchChatHistory,
+  speakText,
+  streamChat,
+} from "@/services/lexi-ai";
 import { useAppStore } from "@/stores/app-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useProtoTheme } from "@/theme/proto";
-import { getApiErrorMessage } from "@/utils/axios";
 
 interface LexiMsg {
   role: "lexi" | "user";
@@ -184,7 +190,8 @@ export function LexiSheet({
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const explStyle = useAppStore((s) => s.explStyle);
-  const ask = useLexiChat();
+  const setQuota = useAuthStore((s) => s.setQuota);
+  const openWall = useAuthStore((s) => s.openWall);
 
   const sheetRef = useRef<GorhomBottomSheetModal>(null);
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
@@ -192,25 +199,36 @@ export function LexiSheet({
   // composer sits at the bottom, where `keyboardBehavior` can lift it.
   const snapPoints = useMemo(() => ["86%"], []);
 
-  const [messages, setMessages] = useState<LexiMsg[]>(() =>
-    book
-      ? [
-          {
-            role: "lexi",
-            kind: "normal",
-            text: `I've got ${book.title} open in front of me. Ask me anything about it — what a passage means, why it matters, where an argument is going.`,
-          },
-        ]
-      : LEXI_SEED,
+  // The conversation is keyed to the book itself (its docKey), so reopening the
+  // sheet on the same document continues the same thread rather than starting a
+  // fresh one — which is what lets prior turns be loaded back below.
+  const sessionId = book?.docKey ?? "";
+
+  const greeting = useMemo<LexiMsg[]>(
+    () =>
+      book
+        ? [
+            {
+              role: "lexi",
+              kind: "normal",
+              text: `I've got ${book.title} open in front of me. Ask me anything about it — what a passage means, why it matters, where an argument is going.`,
+            },
+          ]
+        : LEXI_SEED,
+    [book],
   );
+
+  const [messages, setMessages] = useState<LexiMsg[]>(greeting);
   const [input, setInput] = useState("");
+  // The reply currently streaming in, shown as a live bubble; null when idle.
+  const [streaming, setStreaming] = useState<string | null>(null);
+  const busy = streaming !== null;
   const rabbitCount = useRef(0);
   const replyIdx = useRef(0);
-  // One conversation per open document, so follow-ups keep their thread. Minted
-  // on the first send rather than during render — a render must stay pure.
-  const sessionId = useRef("");
-  // The last question actually sent, so an error bubble can offer to retry it.
   const lastQuestion = useRef("");
+  const abortRef = useRef<(() => void) | null>(null);
+  // Text accumulated for the in-flight reply — read on completion, off-render.
+  const accRef = useRef("");
 
   // Present on mount; `onClose` runs from onDismiss so the pan-down gesture,
   // the backdrop tap and the ✕ all funnel through the same teardown.
@@ -218,54 +236,116 @@ export function LexiSheet({
     sheetRef.current?.present();
   }, []);
 
+  // Rehydrate the book's earlier conversation, so the reader picks up where
+  // they left off instead of a blank slate every time the sheet opens.
+  useEffect(() => {
+    if (!book || !sessionId) return;
+    let cancelled = false;
+    void fetchChatHistory(sessionId).then((history) => {
+      if (cancelled || !history.length) return;
+      setMessages(
+        history.map((m) => ({
+          role: m.role === "user" ? "user" : "lexi",
+          kind: m.kind,
+          text: m.content,
+        })),
+      );
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [book, sessionId]);
+
+  // Abort any in-flight stream if the sheet unmounts mid-reply.
+  useEffect(() => () => abortRef.current?.(), []);
+
   const close = useCallback(() => sheetRef.current?.dismiss(), []);
 
   const push = (msg: LexiMsg) => setMessages((prev) => [...prev, msg]);
   const scrollToEnd = () =>
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
 
+  // ── read a reply aloud ─────────────────────────────────────────
+  // Same off-screen WebView trick as the word card: no native audio module, so
+  // it works without a rebuild. `seq` replays the same bubble on a re-tap.
+  const [heard, setHeard] = useState<{ url: string; seq: number } | null>(null);
+  const audioNode = useMemo(() => {
+    if (!heard) return null;
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio autoplay playsinline src="${heard.url}"></audio></body></html>`;
+    return (
+      <WebView
+        allowsInlineMediaPlayback
+        key={heard.seq}
+        mediaPlaybackRequiresUserAction={false}
+        mixedContentMode="always"
+        pointerEvents="none"
+        source={{ html }}
+        style={{ position: "absolute", width: 0, height: 0, opacity: 0 }}
+      />
+    );
+  }, [heard]);
+
+  const hearReply = async (text: string) => {
+    const url = await speakText(text);
+    if (url) setHeard((prev) => ({ url, seq: (prev?.seq ?? 0) + 1 }));
+  };
+
   const runChat = async (q: string) => {
-    if (!sessionId.current) {
-      sessionId.current = `${Date.now().toString(36)}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-    }
-    try {
-      const answer = await ask.mutateAsync({
+    accRef.current = "";
+    setStreaming("");
+    abortRef.current = await streamChat(
+      {
         author: book!.author,
         docKey: book!.docKey,
         excerpt: book!.excerpt,
         message: q,
         page: book!.page,
-        sessionId: sessionId.current,
+        sessionId,
         style: explStyle,
         title: book!.title,
-      });
-      push({ role: "lexi", kind: answer.kind, text: answer.reply });
-    } catch (error) {
-      // The hook has already banked the quota and raised the wall; the sheet
-      // just gets out of the way so the wall is what you're looking at.
-      if (error instanceof AiQuotaError) {
-        close();
-        return;
-      }
-      // Anything else is a real failure the reader can act on. Surface the
-      // server's own message when it sent one (e.g. "AI is not configured on
-      // this server.") rather than a single canned line, and offer a retry —
-      // a professional error says what happened and what to do about it.
-      push({
-        role: "lexi",
-        kind: "error",
-        text: getApiErrorMessage(error),
-      });
-    } finally {
-      scrollToEnd();
-    }
+      },
+      {
+        onToken: (token) => {
+          accRef.current += token;
+          setStreaming(accRef.current);
+          scrollToEnd();
+        },
+        onDone: ({ kind, quota }) => {
+          abortRef.current = null;
+          setStreaming(null);
+          if (quota) setQuota(quota);
+          const text = accRef.current.trim();
+          if (text) push({ role: "lexi", kind, text });
+          scrollToEnd();
+        },
+        onError: (error) => {
+          abortRef.current = null;
+          setStreaming(null);
+          // Out of credits: bank it, raise the wall, and get out of the way.
+          if (error instanceof AiQuotaError) {
+            setQuota(error.quota);
+            if (error.requiresAuth) openWall("quota");
+            close();
+            return;
+          }
+          push({
+            role: "lexi",
+            kind: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Lexi couldn't answer just then.",
+          });
+          scrollToEnd();
+        },
+      },
+    );
   };
 
   const send = () => {
     const q = input.trim();
-    if (!q || ask.isPending) return;
+    if (!q || busy) return;
     push({ role: "user", kind: "normal", text: q });
     setInput("");
     scrollToEnd();
@@ -282,7 +362,7 @@ export function LexiSheet({
   };
 
   const retry = () => {
-    if (!book || ask.isPending || !lastQuestion.current) return;
+    if (!book || busy || !lastQuestion.current) return;
     // Drop the error bubble it's attached to, then ask again.
     setMessages((prev) =>
       prev.length && prev[prev.length - 1].kind === "error"
@@ -320,6 +400,7 @@ export function LexiSheet({
       snapPoints={snapPoints}
     >
       <BottomSheetView style={{ flex: 1 }}>
+        {audioNode}
         <Box
           align="center"
           direction="row"
@@ -455,17 +536,50 @@ export function LexiSheet({
                       </Text>
                     </Box>
                   ) : null}
+                  {/* Hear the reply read aloud in Lexi's voice. */}
+                  {!user && !isError ? (
+                    <Tap
+                      onPress={() => hearReply(m.text)}
+                      scale={0.9}
+                      style={{ alignSelf: "flex-start" }}
+                    >
+                      <Box
+                        align="center"
+                        direction="row"
+                        gap={5}
+                        paddingY={2}
+                      >
+                        <IconWave color={t.sub} size={13} />
+                        <Text color={t.sub} size={11} weight="600">
+                          Hear it
+                        </Text>
+                      </Box>
+                    </Tap>
+                  ) : null}
                 </Box>
               </Box>
             );
           })}
 
-          {ask.isPending ? (
+          {/* The reply as it streams in — a placeholder until the first token. */}
+          {streaming !== null ? (
             <Box direction="row" justify="start" paddingY={5}>
-              <Box bg={t.chip} paddingX={14} paddingY={10} rounded={16}>
-                <Text color={t.sub} size={13.5}>
-                  Reading that back…
-                </Text>
+              <Box
+                bg={t.chip}
+                paddingX={14}
+                paddingY={10}
+                rounded={16}
+                style={{ maxWidth: "80%" }}
+              >
+                {streaming ? (
+                  <Text color={t.ink} lh={20} size={13.5}>
+                    {streaming}
+                  </Text>
+                ) : (
+                  <Text color={t.sub} size={13.5}>
+                    Reading that back…
+                  </Text>
+                )}
               </Box>
             </Box>
           ) : null}
