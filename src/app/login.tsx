@@ -1,3 +1,7 @@
+import {
+  GoogleSignin,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
 import { router } from "expo-router";
 import { useState } from "react";
 import { ScrollView } from "react-native";
@@ -15,6 +19,10 @@ import { useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useProtoTheme } from "@/theme/proto";
 import { authApi, getApiErrorMessage, tokenStorage } from "@/utils/axios";
+
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+});
 
 type Mode = "register" | "signin";
 
@@ -35,6 +43,50 @@ export default function LoginScreen() {
     email.trim().includes("@") &&
     password.length >= 8 &&
     (!registering || name.trim().length > 0);
+
+  const finishGoogle = async (idToken: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      let result;
+      if (tokenStorage.getAccessToken()) {
+        try {
+          result = await authApi.linkGoogle(idToken);
+        } catch {
+          result = await authApi.google(idToken);
+        }
+      } else {
+        result = await authApi.google(idToken);
+      }
+      setUser(result.user);
+      showToast("Signed in with Google");
+      router.back();
+    } catch (e) {
+      setError(getApiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    if (busy) return;
+    setError(null);
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const response = await GoogleSignin.signIn();
+      if (response.type === "cancelled") return;
+      const idToken = response.data?.idToken;
+      if (!idToken) {
+        setError("Google didn't return a sign-in token. Try again.");
+        return;
+      }
+      await finishGoogle(idToken);
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      if (code === statusCodes.SIGN_IN_CANCELLED) return;
+      setError("Google sign-in couldn't complete. Try again.");
+    }
+  };
 
   const submit = async () => {
     if (!ready || busy) return;
@@ -75,12 +127,7 @@ export default function LoginScreen() {
           </Text>
         </Box>
 
-        <Tap
-          onPress={() =>
-            showToast("Google sign-in isn't connected yet — use email for now")
-          }
-          scale={0.97}
-        >
+        <Tap disabled={busy} onPress={signInWithGoogle} scale={0.97}>
           <Box
             align="center"
             bg={t.card}
