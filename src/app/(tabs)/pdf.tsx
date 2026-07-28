@@ -803,6 +803,7 @@ export default function PdfViewerScreen() {
                 setSelection(text ? { text, page: selPage || page } : null);
               }}
               onSingleTap={() => setImmersive((v) => !v)}
+              onSwitchToPage={() => switchTo("page")}
               searchQuery={searchQuery}
               topInset={insets.top}
               uri={uri}

@@ -17,11 +17,12 @@
  */
 import { File } from "expo-file-system";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated } from "react-native";
+import { Animated, Easing } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
 import { Box, Text } from "@/components/atoms";
+import { Tap } from "@/components/lexi-components";
 // One bridge batch per upload request — a local constant would drift and
 // silently double the number of POSTs.
 import { CONTEXT_CHUNK_PAGES } from "@/services/lexi-ai";
@@ -1787,6 +1788,80 @@ function buildHtml(
 </html>`;
 }
 
+/** Placeholder paragraph shapes, cycled to fill the screen while extracting. */
+const SKELETON_PARAGRAPHS: number[][] = [
+  [98, 100, 94, 72],
+  [100, 90, 97, 100, 64],
+  [95, 100, 82],
+  [100, 96, 100, 88, 70],
+  [92, 100, 100, 60],
+  [100, 85, 98, 100, 76],
+];
+
+/**
+ * A full-screen reading skeleton shown while the document is being extracted —
+ * paragraph bars filling the whole reading column (not just the top), pulsing
+ * softly. The bottom progress bar tracks real extraction alongside it.
+ */
+function ReflowSkeleton({ topInset }: { topInset: number }) {
+  const t = useProtoTheme();
+  const [pulse] = useState(() => new Animated.Value(0.4));
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 0.85,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.4,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  // Repeat the templates enough to overflow any screen; overflow is clipped so
+  // the placeholder reads as a full page of text rather than a few lines up top.
+  const paras = Array.from(
+    { length: 14 },
+    (_, i) => SKELETON_PARAGRAPHS[i % SKELETON_PARAGRAPHS.length],
+  );
+
+  return (
+    <Animated.View
+      style={{
+        flex: 1,
+        opacity: pulse,
+        overflow: "hidden",
+        paddingTop: topInset + 24,
+        paddingHorizontal: 22,
+      }}
+    >
+      {paras.map((para, pi) => (
+        <Box gap={11} key={pi} style={{ marginBottom: 26 }}>
+          {para.map((w, li) => (
+            <Box
+              bg={t.chip}
+              height={13}
+              key={li}
+              rounded={4}
+              style={{ width: `${w}%` }}
+            />
+          ))}
+        </Box>
+      ))}
+    </Animated.View>
+  );
+}
+
 interface Props {
   uri: string;
   /** Page to scroll to on first load (keeps position across mode switches). */
@@ -1831,6 +1906,8 @@ interface Props {
    * in view. `done` marks the final batch. Omit the prop and nothing is walked.
    */
   onContext?: (pages: { page: number; text: string }[], done: boolean) => void;
+  /** Lets the reader drop to Page view from the reflow error screen. */
+  onSwitchToPage?: () => void;
 }
 
 export function PdfReflowView({
@@ -1853,6 +1930,7 @@ export function PdfReflowView({
   onOutline,
   onWordCounts,
   onContext,
+  onSwitchToPage,
 }: Props) {
   const t = useProtoTheme();
   const textSize = useAppStore((s) => s.textSize);
@@ -2070,8 +2148,17 @@ export function PdfReflowView({
         <Text align="center" color={t.sub} lh={20} size={13}>
           Reflow needs a connection the first time it opens a document. If
           you&apos;re online, this may be a scanned/image-only PDF with no text
-          layer — try Page view.
+          layer.
         </Text>
+        {onSwitchToPage ? (
+          <Tap onPress={onSwitchToPage} scale={0.97} style={{ marginTop: 8 }}>
+            <Box align="center" bg={t.accent} paddingX={22} paddingY={12} rounded={12}>
+              <Text color={t.onAccent} size={14} weight="600">
+                Switch to Page view
+              </Text>
+            </Box>
+          </Tap>
+        ) : null}
       </Box>
     );
   }
@@ -2181,11 +2268,12 @@ export function PdfReflowView({
         />
       ) : null}
 
-      {/* Blank reading surface until the first page (or the target page, when
-          opening deep) is in place — no skeleton, so there's nothing to flash
-          away. Progress lives in the bottom bar below. */}
+      {/* Full-screen reading skeleton until the first page (or the target page,
+          when opening deep) is in place; the bottom bar tracks real progress. */}
       {status !== "ready" ? (
-        <Box bg={t.page} style={{ position: "absolute", inset: 0 }} />
+        <Box bg={t.page} style={{ position: "absolute", inset: 0 }}>
+          <ReflowSkeleton topInset={topInset} />
+        </Box>
       ) : null}
 
       {/* Extraction progress, as a thin bar along the bottom edge — the same

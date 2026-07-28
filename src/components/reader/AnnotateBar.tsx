@@ -23,6 +23,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { MAX_TRANSLATE_WORDS } from "@/constants/limits";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
@@ -280,6 +281,14 @@ export function AnnotateBar({
               icon={<IconGlobe color="#F6F3EE" size={16} />}
               label={translateLabel}
               onPress={() => {
+                // Guard against sending a whole chapter to the AI: a selection
+                // past the word cap gets a nudge instead of a request.
+                if (wordCount > MAX_TRANSLATE_WORDS) {
+                  showToast(
+                    `Select up to ${MAX_TRANSLATE_WORDS} words to ${translateLabel.toLowerCase()}`,
+                  );
+                  return;
+                }
                 // The card takes the passage from here, so the bar can go —
                 // but the WebView keeps its selection until the card closes.
                 onTranslate();
