@@ -42,9 +42,14 @@ import {
   PdfSearchPanel,
   SummarizeSheet,
 } from "@/components/reader";
+import { SignInWall } from "@/components/auth/SignInWall";
+import { NoteCard } from "@/components/reader/NoteCard";
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
+import type { TranslateTarget } from "@/components/reader/TranslateCard";
+import { TranslateCard } from "@/components/reader/TranslateCard";
+import { uploadContext } from "@/services/lexi-ai";
 import { useAnnotationsStore } from "@/stores/annotations-store";
 import {
   useAppStore,
@@ -54,6 +59,7 @@ import {
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
+import { useDocKey } from "@/utils/doc-key";
 import { useProtoTheme } from "@/theme/proto";
 import { expectedReadingMs } from "@/utils/reading-progress";
 
@@ -90,6 +96,10 @@ export default function PdfViewerScreen() {
     /** Opens straight into this view — "reflow" when arriving from My Notes. */
     view?: ViewMode;
   }>();
+  // What the server calls this document. Derived once per open (one sha256) and
+  // required by every AI endpoint, so the AI affordances stay closed until it
+  // resolves rather than sending a key that would be rejected.
+  const docKey = useDocKey(uri, name);
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
   const bright = useAppStore((s) => s.bright);
@@ -144,6 +154,9 @@ export default function PdfViewerScreen() {
   >([]);
   // Extraction finished, so an empty result set really means "no matches".
   const [indexed, setIndexed] = useState(false);
+  // The docKey whose text has been uploaded, so re-extraction (a font change
+  // reloads the reflow page) doesn't send the whole book up a second time.
+  const contextSent = useRef<string | null>(null);
   const [highlight, setHighlight] = useState<{
     query: string;
     index: number;
@@ -173,6 +186,10 @@ export default function PdfViewerScreen() {
   } | null>(null);
   // Bumped to tell the reflow page to drop its own selection.
   const [clearSelSeq, setClearSelSeq] = useState(0);
+  // The passage the word card is open on, if any.
+  const [translating, setTranslating] = useState<TranslateTarget | null>(null);
+  // The tapped highlight, held by id so an edit to it re-renders the card.
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   // True while the note composer has the passage. Focusing its input pulls
   // focus out of the WebView, which drops the selection there and would
   // otherwise unmount the composer the instant the keyboard began to open.
@@ -186,6 +203,12 @@ export default function PdfViewerScreen() {
         .filter((a) => a.uri === uri)
         .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
     [annotations, uri],
+  );
+  // Resolved rather than stored: editing or recolouring the note has to be
+  // reflected in the open card, and deleting it has to close it.
+  const openNote = useMemo(
+    () => annotations.find((a) => a.id === openNoteId) ?? null,
+    [annotations, openNoteId],
   );
   const [pageMarker, setPageMarker] = useState<{
     page: number;
@@ -662,12 +685,7 @@ export default function PdfViewerScreen() {
               chromeOffset={immersive ? 0 : barH}
               clearSelectionSeq={clearSelSeq}
               highlights={highlights}
-              onHighlightPress={(id) =>
-                router.push({
-                  pathname: "/notes",
-                  params: { uri, name: name ?? "Document", focus: id },
-                })
-              }
+              onHighlightPress={setOpenNoteId}
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -682,6 +700,27 @@ export default function PdfViewerScreen() {
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
+              // Hands the extracted text to the server so Lexi answers from
+              // the whole book rather than only the page in view. Batches are
+              // uploaded as they arrive rather than buffered, so a long book
+              // doesn't sit in memory twice; failures are the service's to
+              // swallow, since chat still works off its per-turn excerpt.
+              onContext={
+                aiOn && docKey
+                  ? (pages, done) => {
+                      if (contextSent.current === docKey) return;
+                      if (done) contextSent.current = docKey;
+                      if (!pages.length) return;
+                      void uploadContext({
+                        author: undefined,
+                        docKey,
+                        pageCount,
+                        pages,
+                        title: name ?? "Document",
+                      });
+                    }
+                  : undefined
+              }
               onOutline={setReflowOutline}
               onWordCounts={(counts) => {
                 useRecentsStore.getState().setReadingPlan(
@@ -1012,8 +1051,11 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
-      {lexiOpen && aiOn ? (
-        <LexiSheet onClose={() => setLexiOpen(false)} />
+      {lexiOpen && aiOn && docKey ? (
+        <LexiSheet
+          book={{ docKey, page, title: name ?? "Document" }}
+          onClose={() => setLexiOpen(false)}
+        />
       ) : null}
       {filingOpen ? (
         <CollectionPicker
@@ -1021,7 +1063,7 @@ export default function PdfViewerScreen() {
           onClose={() => setFilingOpen(false)}
         />
       ) : null}
-      {selection && mode === "reflow" ? (
+      {selection && mode === "reflow" && !translating ? (
         <AnnotateBar
           onBookmark={() => {
             toggleBookmark(selection.page);
@@ -1035,6 +1077,24 @@ export default function PdfViewerScreen() {
             // and the next selectionchange re-opens the bar.
             setClearSelSeq((n) => n + 1);
           }}
+          onTranslate={() => {
+            // No key yet means the hash hasn't landed; the lookup would 400.
+            if (!docKey) {
+              showToast("One moment — still opening this document");
+              return;
+            }
+            setTranslating({
+              docKey,
+              page: selection.page,
+              source: name ?? "Document",
+              text: selection.text,
+              uri,
+            });
+            // Drop the WebView's own selection as the card opens, or Android's
+            // native selection menu (Copy · Translate · …) and its handles
+            // float on top of the card, over the very passage it's about.
+            setClearSelSeq((n) => n + 1);
+          }}
           page={selection.page}
           // Kept on the annotation itself so My Notes can still name the
           // document after it drops off the (capped) recents list.
@@ -1043,6 +1103,37 @@ export default function PdfViewerScreen() {
           uri={uri}
         />
       ) : null}
+
+      {/* Word card. Closing it also drops the selection, so the reader is left
+          on the passage rather than with the action bar back over it. */}
+      {translating ? (
+        <TranslateCard
+          onClose={() => {
+            setTranslating(null);
+            setSelection(null);
+            setClearSelSeq((n) => n + 1);
+          }}
+          onHighlight={(result) => {
+            useAnnotationsStore.getState().add({
+              color: "sage",
+              note: `${result.tr} — ${result.translit ?? result.langName}`,
+              page: translating.page,
+              source: name ?? "Document",
+              text: translating.text,
+              uri,
+            });
+          }}
+          target={translating}
+        />
+      ) : null}
+
+      {/* A tapped highlight opens where it is, rather than sending the reader
+          off to the Notes screen and losing the page. */}
+      {openNote ? (
+        <NoteCard annotation={openNote} onClose={() => setOpenNoteId(null)} />
+      ) : null}
+
+      <SignInWall />
     </Box>
   );
 }

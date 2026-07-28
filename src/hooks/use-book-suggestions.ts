@@ -4,17 +4,21 @@
  * the full book in the in-app web reader (see app/(tabs)/book.tsx), so tapping
  * one reads the whole text in the app.
  *
- * The picks are public-domain classics served by Project Gutenberg via the
- * keyless Gutendex API (https://gutendex.com): a clean, full-text HTML page
- * plus a cover, both loaded straight into a WebView. (We tried streaming
- * library PDFs from the Internet Archive so the books could open in the native
- * PDF reader, but react-native-pdf can't fetch those redirected multi-MB scans
- * on-device — the web page loads reliably, so that's what we use.)
- *
- * Same fetch-on-mount + module-cache shape as use-pdf-thumbnail, since the app
- * has no react-query provider wired up.
+ * Picks come from our own API, tailored to what the reader chose in onboarding.
+ * Until that endpoint exists — and whenever it can't be reached — this falls
+ * back to curated public-domain classics from the keyless Gutendex API
+ * (https://gutendex.com): a clean, full-text HTML page plus a cover, both
+ * loaded straight into a WebView. (We tried streaming library PDFs from the
+ * Internet Archive so the books could open in the native PDF reader, but
+ * react-native-pdf can't fetch those redirected multi-MB scans on-device — the
+ * web page loads reliably, so that's what we use.)
  */
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import type { ReadingInterest } from "@/constants/onboarding";
+import { queryKeys } from "@/services/query-client";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import { api } from "@/utils/axios";
 
 export interface BookSuggestion {
   /** Stable id from the source (used as a React key). */
@@ -46,9 +50,6 @@ const SEED: Seed[] = [
 
 /** Number of skeleton rows to show while the first fetch is in flight. */
 export const SUGGESTION_COUNT = SEED.length;
-
-/** Resolved once per app session — the picks don't change between mounts. */
-let cache: BookSuggestion[] | null = null;
 
 /**
  * Query parameter a suggested book's cover rides in on. A filed book is stored
@@ -141,27 +142,45 @@ async function resolveSeed(seed: Seed): Promise<BookSuggestion> {
   };
 }
 
+/**
+ * Personalised picks from our own API (`GET /book-suggestions`, see prompt.md),
+ * falling back to the curated Gutenberg seeds when it isn't reachable — which
+ * is every build until the backend ships, and any build a reader opens offline.
+ */
+async function fetchSuggestions(
+  interests: readonly ReadingInterest[],
+): Promise<BookSuggestion[]> {
+  try {
+    const { data } = await api.get<{ suggestions: BookSuggestion[] }>(
+      "/book-suggestions",
+      {
+        params: {
+          interests: interests.length ? interests.join(",") : undefined,
+          limit: SUGGESTION_COUNT,
+        },
+      },
+    );
+    if (data.suggestions?.length) return data.suggestions;
+  } catch {
+    // no backend yet, or offline — the seeds below still read as a shelf
+  }
+  return Promise.all(SEED.map(resolveSeed));
+}
+
 export function useBookSuggestions(): {
   suggestions: BookSuggestion[];
   loading: boolean;
 } {
-  const [suggestions, setSuggestions] = useState<BookSuggestion[]>(() => cache ?? []);
-  const [loading, setLoading] = useState(cache === null);
+  // What the reader said they read, in onboarding. Re-picking them is a new
+  // query key, so the shelf refreshes rather than showing the old cache.
+  const interests = useOnboardingStore((s) => s.interests);
 
-  useEffect(() => {
-    if (cache) return;
-    let cancelled = false;
-    Promise.all(SEED.map(resolveSeed)).then((list) => {
-      cache = list;
-      if (!cancelled) {
-        setSuggestions(list);
-        setLoading(false);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, isPending } = useQuery({
+    queryFn: () => fetchSuggestions(interests),
+    queryKey: queryKeys.bookSuggestions(interests),
+    // The picks don't change while the app is open.
+    staleTime: Infinity,
+  });
 
-  return { suggestions, loading };
+  return { suggestions: data ?? [], loading: isPending };
 }

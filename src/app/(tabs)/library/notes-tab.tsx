@@ -74,9 +74,15 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
    * Passages saved in the web reader have no document to open — their url is
    * not a stable key — so those cards stay inert.
    */
-  const jumpTo = (uri: string, page: number) => {
-    const doc = docs.get(uri);
-    if (!doc) return;
+  const jumpTo = (uri: string | undefined, page: number) => {
+    const doc = uri ? docs.get(uri) : undefined;
+    if (!uri || !doc) {
+      // A saved word/passage whose document is no longer on the recents list
+      // (or was saved in the web reader) has nothing to reopen — say so rather
+      // than swallowing the tap.
+      showToast(tr("library.notes.reopenUnavailable"));
+      return;
+    }
     useReaderJumpStore.getState().request(uri, page);
     if (doc.ext === "PDF") {
       // Reflow, not page view: the highlight is drawn into the reflowed text,
@@ -134,9 +140,17 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
             <Tap
               key={v.word}
               onPress={() => {
-                setPage(v.p);
-                openReader();
-                showToast(tr("library.vocab.jumpedToast", { page: v.p }));
+                // A word saved while reading a real document reopens that
+                // document on its page — the same path highlights and notes
+                // take. Only the seeded demo words (no uri) fall back to the
+                // prototype reader.
+                if (v.uri) {
+                  jumpTo(v.uri, v.p);
+                } else {
+                  setPage(v.p);
+                  openReader();
+                  showToast(tr("library.vocab.jumpedToast", { page: v.p }));
+                }
               }}
               scale={0.985}
             >
@@ -191,6 +205,13 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                     </Text>
                   </Box>
                 </Box>
+                {v.example ? (
+                  <Box bg={t.chip} paddingX={10} paddingY={8} rounded={9}>
+                    <Text color={t.sub} lh={19} serif size={12.5}>
+                      “{v.example}”
+                    </Text>
+                  </Box>
+                ) : null}
               </Card>
             </Tap>
           ))}

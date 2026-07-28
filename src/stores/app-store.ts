@@ -37,6 +37,14 @@ export interface VocabEntry {
   p: number;
   s1: string;
   s2: string;
+  /** One example sentence using the word; absent on older/seeded entries. */
+  example?: string;
+  /**
+   * Document the word was read in — absent for the demo book, whose words are
+   * seeded. Kept so the vocabulary list can name a real source and reopen it.
+   */
+  uri?: string;
+  source?: string;
 }
 
 export interface NoteItem {

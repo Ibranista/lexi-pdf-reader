@@ -17,6 +17,7 @@ import {
   Backdrop,
   IconBookmark,
   IconClose,
+  IconGlobe,
   IconHighlighter,
   IconNoteDoc,
   Tap,
@@ -40,6 +41,7 @@ export function AnnotateBar({
   onBookmark,
   onClose,
   onComposingChange,
+  onTranslate,
   page,
   source,
   text,
@@ -49,6 +51,9 @@ export function AnnotateBar({
    *  bookmark against — the action is hidden rather than shown inert. */
   onBookmark?: () => void;
   onClose: () => void;
+  /** Opens the word card on the selection. Omitted where there's no reader
+   *  language to translate into. */
+  onTranslate?: () => void;
   /**
    * True while the note composer is open. The reader needs this because
    * focusing the composer's input pulls focus out of the reflow WebView,
@@ -264,6 +269,17 @@ export function AnnotateBar({
               onComposingChange?.(true);
             }}
           />
+          {onTranslate ? (
+            <SelAction
+              icon={<IconGlobe color="#F6F3EE" size={16} />}
+              label="Translate"
+              onPress={() => {
+                // The card takes the passage from here, so the bar can go —
+                // but the WebView keeps its selection until the card closes.
+                onTranslate();
+              }}
+            />
+          ) : null}
           {onBookmark ? (
             <SelAction
               icon={<IconBookmark color="#F6F3EE" size={16} />}
