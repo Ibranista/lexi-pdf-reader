@@ -17,11 +17,13 @@ import {
   Backdrop,
   IconBookmark,
   IconClose,
+  IconGlobe,
   IconHighlighter,
   IconNoteDoc,
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { MAX_TRANSLATE_WORDS } from "@/constants/limits";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
@@ -40,6 +42,7 @@ export function AnnotateBar({
   onBookmark,
   onClose,
   onComposingChange,
+  onTranslate,
   page,
   source,
   text,
@@ -49,6 +52,9 @@ export function AnnotateBar({
    *  bookmark against — the action is hidden rather than shown inert. */
   onBookmark?: () => void;
   onClose: () => void;
+  /** Opens the word card on the selection. Omitted where there's no reader
+   *  language to translate into. */
+  onTranslate?: () => void;
   /**
    * True while the note composer is open. The reader needs this because
    * focusing the composer's input pulls focus out of the reflow WebView,
@@ -66,6 +72,12 @@ export function AnnotateBar({
   const insets = useSafeAreaInsets();
   const showToast = useToastStore((s) => s.showToast);
   const add = useAnnotationsStore((s) => s.add);
+
+  // A word or two is a quick "Translate"; a longer passage is something to
+  // "Explain". Either way the word card answers in the reader's language and in
+  // context — this only frames the action the way the reader is thinking of it.
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const translateLabel = wordCount <= 2 ? "Translate" : "Explain";
 
   // Null means "still just a selection". Once true, the note composer opens.
   const [noteFor, setNoteFor] = useState<boolean>(false);
@@ -264,6 +276,25 @@ export function AnnotateBar({
               onComposingChange?.(true);
             }}
           />
+          {onTranslate ? (
+            <SelAction
+              icon={<IconGlobe color="#F6F3EE" size={16} />}
+              label={translateLabel}
+              onPress={() => {
+                // Guard against sending a whole chapter to the AI: a selection
+                // past the word cap gets a nudge instead of a request.
+                if (wordCount > MAX_TRANSLATE_WORDS) {
+                  showToast(
+                    `Select up to ${MAX_TRANSLATE_WORDS} words to ${translateLabel.toLowerCase()}`,
+                  );
+                  return;
+                }
+                // The card takes the passage from here, so the bar can go —
+                // but the WebView keeps its selection until the card closes.
+                onTranslate();
+              }}
+            />
+          ) : null}
           {onBookmark ? (
             <SelAction
               icon={<IconBookmark color="#F6F3EE" size={16} />}

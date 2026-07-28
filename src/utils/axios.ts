@@ -1,81 +1,74 @@
 // axios.ts
+//
+// The one configured client. Two things happen in its interceptors that no
+// screen has to think about:
+//
+//  - every request is guaranteed a session, anonymous if there is no account
+//    (spec §1) — reading, highlighting and AI all work signed out, and they
+//    only work because the device row was registered before the first call;
+//  - a 401 refreshes once, and if the refresh is refused the reader drops back
+//    to a fresh anonymous session instead of being thrown onto /login mid-book.
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
-import * as SecureStore from 'expo-secure-store';
-import { router, type Href } from 'expo-router';
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-// NOTE: on an Android emulator "localhost" points at the emulator itself —
-// use http://10.0.2.2:3000/v1, or your machine's LAN IP on a physical device.
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/v1';
+import { ensureSession, resetSession } from '@/services/device-session';
+import {
+  API_BASE_URL,
+  notifySessionLost,
+  tokenStorage,
+  type ApiErrorResponse,
+  type AuthResponse,
+  type AuthTokens,
+  type User,
+} from '@/utils/api-config';
 
-const ACCESS_TOKEN_KEY = 'accessToken';
-const REFRESH_TOKEN_KEY = 'refreshToken';
+// Re-exported so existing `from "@/utils/axios"` imports keep working; the
+// definitions live in api-config so device-session can reach them too.
+export {
+  API_BASE_URL,
+  tokenStorage,
+  type ApiErrorResponse,
+  type AuthResponse,
+  type AuthTokens,
+  type TokenPayload,
+  type User,
+} from '@/utils/api-config';
 
-// ---------------------------------------------------------------------------
-// Types (match your backend responses)
-// ---------------------------------------------------------------------------
-export interface TokenPayload {
-  token: string;
-  expires: string;
-}
+/**
+ * Endpoints that establish a session. They must never wait on one, or the
+ * bootstrap would be waiting on itself.
+ */
+const SESSION_ENDPOINTS = [
+  '/auth/device',
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh-tokens',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+];
 
-export interface AuthTokens {
-  access: TokenPayload;
-  refresh: TokenPayload;
-}
+const isSessionEndpoint = (url?: string) =>
+  !!url && SESSION_ENDPOINTS.some((path) => url.includes(path));
 
-export interface User {
-  id: number;
-  email: string;
-  name: string;
-  role: 'USER' | 'ADMIN';
-  isEmailVerified: boolean;
-}
-
-export interface AuthResponse {
-  user: User;
-  tokens: AuthTokens;
-}
-
-// Shape produced by your error middleware (ApiError)
-export interface ApiErrorResponse {
-  code: number;
-  message: string;
-  stack?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Token storage helpers (expo-secure-store)
-// ---------------------------------------------------------------------------
-export const tokenStorage = {
-  getAccessToken: () => SecureStore.getItem(ACCESS_TOKEN_KEY),
-  getRefreshToken: () => SecureStore.getItem(REFRESH_TOKEN_KEY),
-  setTokens: (tokens: AuthTokens) => {
-    SecureStore.setItem(ACCESS_TOKEN_KEY, tokens.access.token);
-    SecureStore.setItem(REFRESH_TOKEN_KEY, tokens.refresh.token);
-  },
-  clearTokens: async () => {
-    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Axios instance
-// ---------------------------------------------------------------------------
 export const api: AxiosInstance = axios.create({
-  baseURL: BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
 
 // ---------------------------------------------------------------------------
-// Request interceptor — attach access token
+// Request — guarantee a session, then attach the token
 // ---------------------------------------------------------------------------
 api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  async (config: InternalAxiosRequestConfig) => {
+    if (!tokenStorage.getAccessToken() && !isSessionEndpoint(config.url)) {
+      try {
+        await ensureSession();
+      } catch {
+        // Offline on first launch. Let the request go and fail on its own —
+        // callers already fall back, and throwing here would turn a missing
+        // network into a missing feature.
+      }
+    }
     const token = tokenStorage.getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -86,13 +79,13 @@ api.interceptors.request.use(
 );
 
 // ---------------------------------------------------------------------------
-// Response interceptor — auto-refresh on 401, queue concurrent requests
+// Response — refresh on 401, queue whatever else is in flight
 // ---------------------------------------------------------------------------
 let isRefreshing = false;
-let refreshQueue: Array<{
+let refreshQueue: {
   resolve: (token: string) => void;
   reject: (error: unknown) => void;
-}> = [];
+}[] = [];
 
 const processQueue = (error: unknown, token: string | null) => {
   refreshQueue.forEach(({ resolve, reject }) => {
@@ -102,11 +95,21 @@ const processQueue = (error: unknown, token: string | null) => {
   refreshQueue = [];
 };
 
-const onAuthFailure = async () => {
-  await tokenStorage.clearTokens();
-  // Adjust to whatever your login route ends up being.
-  // Cast needed until a /login route actually exists (expo-router typed routes).
-  router.replace('/login' as Href);
+/**
+ * The refresh was refused, or there was nothing to refresh with. Any account
+ * session is over — but the reader is mid-document, so they come back as a new
+ * anonymous identity rather than being sent to a login screen they never asked
+ * for. Their local library, highlights and notes are untouched either way.
+ */
+const fallBackToAnonymous = async (): Promise<string | null> => {
+  notifySessionLost();
+  try {
+    await resetSession();
+    return tokenStorage.getAccessToken();
+  } catch {
+    await tokenStorage.clearTokens();
+    return null;
+  }
 };
 
 api.interceptors.response.use(
@@ -114,59 +117,62 @@ api.interceptors.response.use(
   async (error: AxiosError<ApiErrorResponse>) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    const isAuthEndpoint =
-      originalRequest?.url?.includes('/auth/login') ||
-      originalRequest?.url?.includes('/auth/register') ||
-      originalRequest?.url?.includes('/auth/refresh-tokens');
+    // 402 is the quota wall and 403 a permission — neither is about the token.
+    if (
+      error.response?.status !== 401 ||
+      originalRequest?._retry ||
+      isSessionEndpoint(originalRequest?.url)
+    ) {
+      return Promise.reject(error);
+    }
 
-    // Only try refresh on 401s from non-auth endpoints, once per request
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    originalRequest._retry = true;
+
+    // A refresh is already running — ride on its result.
+    if (isRefreshing) {
+      return new Promise<string>((resolve, reject) => {
+        refreshQueue.push({ resolve, reject });
+      }).then((token) => {
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return api(originalRequest);
+      });
+    }
+
+    isRefreshing = true;
+    try {
       const refreshToken = tokenStorage.getRefreshToken();
-      if (!refreshToken) {
-        await onAuthFailure();
+      let accessToken: string | null = null;
+
+      if (refreshToken) {
+        try {
+          // Plain axios so this call skips the interceptors above.
+          const { data } = await axios.post<AuthTokens>(`${API_BASE_URL}/auth/refresh-tokens`, {
+            refreshToken,
+          });
+          tokenStorage.setTokens(data);
+          accessToken = data.access.token;
+        } catch {
+          accessToken = await fallBackToAnonymous();
+        }
+      } else {
+        accessToken = await fallBackToAnonymous();
+      }
+
+      if (!accessToken) {
+        processQueue(error, null);
         return Promise.reject(error);
       }
 
-      // If a refresh is already in flight, wait for it
-      if (isRefreshing) {
-        return new Promise<string>((resolve, reject) => {
-          refreshQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return api(originalRequest);
-        });
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        // Plain axios (not `api`) so this call skips the interceptors
-        const { data } = await axios.post<AuthTokens>(`${BASE_URL}/auth/refresh-tokens`, {
-          refreshToken,
-        });
-
-        tokenStorage.setTokens(data);
-        processQueue(null, data.access.token);
-
-        originalRequest.headers.Authorization = `Bearer ${data.access.token}`;
-        return api(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
-        await onAuthFailure();
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
-      }
+      processQueue(null, accessToken);
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+      return api(originalRequest);
+    } finally {
+      isRefreshing = false;
     }
-
-    return Promise.reject(error);
   }
 );
 
-// ---------------------------------------------------------------------------
-// Helper to surface your backend's { code, message } errors nicely
-// ---------------------------------------------------------------------------
+/** Surfaces the backend's `{ code, message }` errors as something readable. */
 export const getApiErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError<ApiErrorResponse>(error)) {
     return error.response?.data?.message ?? error.message;
@@ -175,9 +181,21 @@ export const getApiErrorMessage = (error: unknown): string => {
 };
 
 // ---------------------------------------------------------------------------
-// Ready-made API calls matching your routes
+// Calls
 // ---------------------------------------------------------------------------
 export const authApi = {
+  /**
+   * Turns the anonymous row into an email account, in place (spec §1.2) —
+   * `/auth/register` would create a *second* user and leave everything already
+   * read, highlighted and saved behind on the first one.
+   */
+  linkEmail: (body: { name: string; email: string; password: string }) =>
+    api.post<AuthResponse>('/auth/link/email', body).then((r) => {
+      tokenStorage.setTokens(r.data.tokens);
+      return r.data;
+    }),
+
+  /** Signing up with no anonymous session to upgrade. */
   register: (body: { name: string; email: string; password: string }) =>
     api.post<AuthResponse>('/auth/register', body).then((r) => {
       tokenStorage.setTokens(r.data.tokens);
@@ -186,6 +204,19 @@ export const authApi = {
 
   login: (body: { email: string; password: string }) =>
     api.post<AuthResponse>('/auth/login', body).then((r) => {
+      tokenStorage.setTokens(r.data.tokens);
+      return r.data;
+    }),
+
+  /** Sign in with a Google id token; `linkGoogle` upgrades in place instead. */
+  google: (idToken: string) =>
+    api.post<AuthResponse>('/auth/google', { idToken }).then((r) => {
+      tokenStorage.setTokens(r.data.tokens);
+      return r.data;
+    }),
+
+  linkGoogle: (idToken: string) =>
+    api.post<AuthResponse>('/auth/link/google', { idToken }).then((r) => {
       tokenStorage.setTokens(r.data.tokens);
       return r.data;
     }),
@@ -207,18 +238,30 @@ export const authApi = {
 };
 
 export const userApi = {
-  getUsers: (params?: { name?: string; role?: string; sortBy?: string; limit?: number; page?: number }) =>
-    api.get<{ results: User[]; page: number; limit: number; totalPages: number; totalResults: number }>('/users', { params }),
+  getUsers: (params?: {
+    name?: string;
+    role?: string;
+    sortBy?: string;
+    limit?: number;
+    page?: number;
+  }) =>
+    api.get<{
+      results: User[];
+      page: number;
+      limit: number;
+      totalPages: number;
+      totalResults: number;
+    }>('/users', { params }),
 
-  getUser: (id: number) => api.get<User>(`/users/${id}`),
+  getUser: (id: string) => api.get<User>(`/users/${id}`),
 
   createUser: (body: { name: string; email: string; password: string; role?: string }) =>
     api.post<User>('/users', body),
 
-  updateUser: (id: number, body: Partial<{ name: string; email: string; password: string }>) =>
+  updateUser: (id: string, body: Partial<{ name: string; email: string; password: string }>) =>
     api.patch<User>(`/users/${id}`, body),
 
-  deleteUser: (id: number) => api.delete(`/users/${id}`),
+  deleteUser: (id: string) => api.delete(`/users/${id}`),
 };
 
 export default api;

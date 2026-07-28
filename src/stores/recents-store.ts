@@ -30,6 +30,12 @@ export interface RecentDoc {
 
 interface RecentsState {
   recents: RecentDoc[];
+  /**
+   * Last reading page per document, kept UNCAPPED and separate from the (capped)
+   * recents list — so where you left off survives even after a document falls
+   * off the recents shelf. Keyed by uri; tiny, so it's cheap to keep forever.
+   */
+  positions: Record<string, number>;
   /** Moves the document to the front, keeping any progress already stored. */
   recordOpen: (doc: { uri: string; name: string; ext: string }) => void;
   /** Reading position, written as the reader moves through the document. */
@@ -46,6 +52,7 @@ export const useRecentsStore = create<RecentsState>()(
   persist(
     (set) => ({
       recents: [],
+      positions: {},
 
       recordOpen: ({ uri, name, ext }) =>
         set((s) => {
@@ -75,19 +82,27 @@ export const useRecentsStore = create<RecentsState>()(
       recordProgress: (uri, page, pageCount) =>
         set((s) => {
           const current = s.recents.find((r) => r.uri === uri);
-          if (
+          const positionUnchanged = s.positions[uri] === page;
+          const recentUnchanged =
             !current ||
             (current.page === page &&
-              (!pageCount || current.pageCount === pageCount))
-          ) {
+              (!pageCount || current.pageCount === pageCount));
+          if (recentUnchanged && positionUnchanged) {
             return s;
           }
           return {
-            recents: s.recents.map((r) =>
-              r.uri === uri
-                ? { ...r, page, pageCount: pageCount ?? r.pageCount }
-                : r,
-            ),
+            // Always record the raw position in the uncapped map, so it outlives
+            // the document dropping off the recents shelf.
+            positions: positionUnchanged
+              ? s.positions
+              : { ...s.positions, [uri]: page },
+            recents: recentUnchanged
+              ? s.recents
+              : s.recents.map((r) =>
+                  r.uri === uri
+                    ? { ...r, page, pageCount: pageCount ?? r.pageCount }
+                    : r,
+                ),
           };
         }),
 

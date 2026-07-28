@@ -16,6 +16,8 @@ export type LineSpacing = 'airy' | 'comfy' | 'compact';
 export type ReadWidth = 'comfort' | 'full' | 'narrow';
 export type Contrast = 'soft' | 'std';
 export type ExplainStyle = 'advanced' | 'balanced' | 'simple';
+/** Which reader a document opens in by default. */
+export type ReaderMode = 'reflow' | 'page';
 export type FocusSensitivity = 'balanced' | 'frequent' | 'relaxed';
 export type PaywallPlan = 'annual' | 'monthly';
 /** What the library's sort control orders by, and in which direction. */
@@ -37,6 +39,14 @@ export interface VocabEntry {
   p: number;
   s1: string;
   s2: string;
+  /** One example sentence using the word; absent on older/seeded entries. */
+  example?: string;
+  /**
+   * Document the word was read in — absent for the demo book, whose words are
+   * seeded. Kept so the vocabulary list can name a real source and reopen it.
+   */
+  uri?: string;
+  source?: string;
 }
 
 export interface NoteItem {
@@ -107,6 +117,8 @@ interface AppState {
   aiOn: boolean;
   lang: Lang;
   explStyle: ExplainStyle;
+  /** Which reader a document opens in by default (offline always uses page). */
+  defaultReader: ReaderMode;
   thoughtOn: boolean;
   cardsPerDay: number;
   syncPos: boolean;
@@ -158,6 +170,7 @@ export const useAppStore = create<AppState>()(
       aiOn: true,
       lang: 'am',
       explStyle: 'balanced',
+      defaultReader: 'reflow',
       thoughtOn: true,
       cardsPerDay: 3,
       syncPos: true,
@@ -231,19 +244,26 @@ export const useToastStore = create<ToastState>()((set) => ({
  * to the reader later by any other route doesn't re-trigger the jump. Carries
  * the uri so a stale request can't move a different document.
  */
+interface ReaderJump {
+  page: number;
+  /** Passage/word to briefly flash-highlight on arrival, so the reader can see
+   *  exactly where the tapped note or word sits on the page. */
+  flash?: string;
+}
+
 interface ReaderJumpState {
-  pending: { uri: string; page: number } | null;
-  request: (uri: string, page: number) => void;
-  consume: (uri: string) => number | null;
+  pending: ({ uri: string } & ReaderJump) | null;
+  request: (uri: string, page: number, flash?: string) => void;
+  consume: (uri: string) => ReaderJump | null;
 }
 
 export const useReaderJumpStore = create<ReaderJumpState>()((set, get) => ({
   pending: null,
-  request: (uri, page) => set({ pending: { uri, page } }),
+  request: (uri, page, flash) => set({ pending: { uri, page, flash } }),
   consume: (uri) => {
     const { pending } = get();
     if (!pending || pending.uri !== uri) return null;
     set({ pending: null });
-    return pending.page;
+    return { page: pending.page, flash: pending.flash };
   },
 }));

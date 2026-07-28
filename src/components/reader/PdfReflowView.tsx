@@ -18,9 +18,14 @@
 import { File } from "expo-file-system";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
 import { Box, Text } from "@/components/atoms";
+import { Tap } from "@/components/lexi-components";
+// One bridge batch per upload request — a local constant would drift and
+// silently double the number of POSTs.
+import { CONTEXT_CHUNK_PAGES } from "@/services/lexi-ai";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 import { fontStack, READ_WIDTH_PX, softInk } from "@/utils/reader-typography";
@@ -416,12 +421,23 @@ function buildHtml(
     }, 2200);
   }
 
-  window.highlightMatch = function(q, idx){
+  window.highlightMatch = function(q, idx, page){
     cancelHitTimers();
     clearMarks();
     if (!q) return;
     var ql = q.toLowerCase();
-    var secs = document.querySelectorAll('section[data-page]');
+    // When a page is given (a flash from My Notes), look only on that page and
+    // its overflow onto the next section, and take the first occurrence there —
+    // so the tapped note/word lights up where it actually sits rather than at
+    // some earlier mention elsewhere in the book.
+    var secs;
+    if (page) {
+      var pageSec = document.querySelector('section[data-page="' + page + '"]');
+      secs = pageSec ? [pageSec, pageSec.nextElementSibling].filter(Boolean) : [];
+      idx = 0;
+    } else {
+      secs = document.querySelectorAll('section[data-page]');
+    }
     var seen = 0;
     for (var i = 0; i < secs.length; i++) {
       var ps = secs[i].querySelectorAll('p');
@@ -438,6 +454,43 @@ function buildHtml(
   };
 
   window.clearHighlight = function(){ cancelHitTimers(); clearMarks(); };
+
+  /* ---- extracted text, out to the reader ----
+     Lexi answers from the whole document, so the server needs its text
+     (POST /ai/context). Extraction already happened to build this DOM, so
+     this walks what is here rather than parsing the PDF a second time.
+
+     Posted in page-sized batches: a long book's text is several megabytes,
+     and one message that size stalls the bridge and the upload behind it. */
+  window.sendContext = function(batch){
+    var secs = document.querySelectorAll('section[data-page]');
+    var out = [];
+    for (var i = 0; i < secs.length; i++) {
+      var ps = secs[i].querySelectorAll('p');
+      var buf = [];
+      for (var j = 0; j < ps.length; j++) {
+        var txt = ps[j].textContent || '';
+        if (txt) buf.push(txt);
+      }
+      out.push({
+        page: parseInt(secs[i].getAttribute('data-page'), 10),
+        // Double-escaped on purpose: this whole script is a JS template
+        // literal, so a single-escaped newline here would emit a real line
+        // break inside a quoted string in the generated HTML — a syntax error
+        // that kills the entire injected script (which left reflow's skeleton
+        // spinning forever). The doubled form survives into the page as the
+        // newline escape we actually want.
+        text: buf.join('\\n')
+      });
+      if (out.length >= batch) {
+        post({ type: 'context', pages: out, done: false });
+        out = [];
+      }
+    }
+    // Always fires, empty tail included — it's what tells the reader the
+    // document is fully uploaded.
+    post({ type: 'context', pages: out, done: true });
+  };
 
   /* ---- focus mode: scroll-driven spotlight ----
      The block whose box crosses the reading line (45% down the screen — a
@@ -1670,19 +1723,39 @@ function buildHtml(
     pdfjsLib.GlobalWorkerOptions.workerSrc = '${PDFJS_BASE}/pdf.worker.min.js';
     var content = document.getElementById('content');
     var firstPaint = false;
+    // Opening straight to a deep page (from My Notes / Recents): hold the reveal
+    // until that page has been extracted and scrolled into view, so the reader
+    // never sees page 1 first and then a jump. reveal() scrolls first, THEN
+    // uncovers, so what appears is already in place — no flicker.
+    var needTarget = INITIAL_PAGE > 1;
+
+    // pdf is passed in because reveal is defined outside the getDocument().then
+    // callback, so it cannot close over that callback's parameter.
+    function reveal(pdf){
+      if (firstPaint) return;
+      firstPaint = true;
+      tryPendingScroll();
+      document.getElementById('status').className = 'hidden';
+      post({ type: 'firstpaint' });
+      buildOutline(pdf); // not awaited — the outline arrives as pages extract
+    }
 
     pdfjsLib.getDocument({ data: b64ToBytes('${b64}') }).promise.then(async function(pdf){
+      // pdf.js, its worker and the document all loaded — tell the native side
+      // so its boot watchdog stands down and only genuine load failures (this
+      // message never arriving) surface as an error.
+      post({ type: 'booting', pages: pdf.numPages });
       var wordCounts = [];
       if (INITIAL_PAGE > 1) pendingScroll = INITIAL_PAGE;
       for (var p = 1; p <= pdf.numPages; p++){
         try { wordCounts[p - 1] = await processPage(pdf, p, content); }
         catch (e) { /* skip unreadable page */ }
         if (!firstPaint && content.childNodes.length) {
-          firstPaint = true;
-          document.getElementById('status').className = 'hidden';
-          post({ type: 'firstpaint' });
-          // not awaited — the outline arrives while pages keep extracting
-          buildOutline(pdf);
+          // Reveal at once when we're opening at the top; otherwise wait for the
+          // target page's section to exist so we can land on it directly.
+          if (!needTarget || document.querySelector('section[data-page="' + INITIAL_PAGE + '"]')) {
+            reveal(pdf);
+          }
         }
         post({ type: 'progress', page: p, total: pdf.numPages });
         // The page this landed on may be the one being waited for, and may
@@ -1697,6 +1770,9 @@ function buildHtml(
            is what made highlighting a big book feel unresponsive. */
         await new Promise(function(resolve){ setTimeout(resolve, 0); });
       }
+      // Target never materialised (e.g. a page past the end) — reveal anyway
+      // rather than holding the loading state forever.
+      reveal(pdf);
       post({ type: 'done', pages: pdf.numPages, wordCounts: wordCounts });
       tryPendingScroll();
     }).catch(function(err){
@@ -1712,30 +1788,37 @@ function buildHtml(
 </html>`;
 }
 
-/** Line widths (%) that read like paragraphs of text while loading. */
-const SKELETON_LINES = [
-  [96, 100, 92, 74],
-  [100, 88, 97, 100, 61],
-  [93, 100, 79],
+/** Placeholder paragraph shapes, cycled to fill the screen while extracting. */
+const SKELETON_PARAGRAPHS: number[][] = [
+  [98, 100, 94, 72],
+  [100, 90, 97, 100, 64],
+  [95, 100, 82],
+  [100, 96, 100, 88, 70],
+  [92, 100, 100, 60],
+  [100, 85, 98, 100, 76],
 ];
 
-/** Placeholder text bars shown while the document is being extracted. */
+/**
+ * A full-screen reading skeleton shown while the document is being extracted —
+ * paragraph bars filling the whole reading column (not just the top), pulsing
+ * softly. The bottom progress bar tracks real extraction alongside it.
+ */
 function ReflowSkeleton({ topInset }: { topInset: number }) {
   const t = useProtoTheme();
-  const [pulse] = useState(() => new Animated.Value(0.35));
+  const [pulse] = useState(() => new Animated.Value(0.4));
 
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 0.85,
-          duration: 750,
+          duration: 800,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
-          toValue: 0.35,
-          duration: 750,
+          toValue: 0.4,
+          duration: 800,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -1745,17 +1828,25 @@ function ReflowSkeleton({ topInset }: { topInset: number }) {
     return () => loop.stop();
   }, [pulse]);
 
+  // Repeat the templates enough to overflow any screen; overflow is clipped so
+  // the placeholder reads as a full page of text rather than a few lines up top.
+  const paras = Array.from(
+    { length: 14 },
+    (_, i) => SKELETON_PARAGRAPHS[i % SKELETON_PARAGRAPHS.length],
+  );
+
   return (
     <Animated.View
       style={{
         flex: 1,
         opacity: pulse,
+        overflow: "hidden",
         paddingTop: topInset + 24,
         paddingHorizontal: 22,
       }}
     >
-      {SKELETON_LINES.map((para, pi) => (
-        <Box gap={11} key={pi} style={{ marginBottom: 30 }}>
+      {paras.map((para, pi) => (
+        <Box gap={11} key={pi} style={{ marginBottom: 26 }}>
           {para.map((w, li) => (
             <Box
               bg={t.chip}
@@ -1785,9 +1876,11 @@ interface Props {
   searchQuery?: string;
   /**
    * Match to mark and scroll to. `index` is the hit's position in the last
-   * result list; `seq` is bumped to re-mark the same hit again.
+   * result list; `seq` is bumped to re-mark the same hit again. `page` scopes
+   * the mark to one page (a flash from My Notes), so it lands on the tapped
+   * occurrence rather than an earlier one elsewhere in the book.
    */
-  highlight?: { query: string; index: number; seq: number };
+  highlight?: { query: string; index: number; seq: number; page?: number };
   /** Dim everything but the block under the reading line (focus mode). */
   focusMode?: boolean;
   onPageChange?: (page: number) => void;
@@ -1807,6 +1900,14 @@ interface Props {
   onOutline?: (entries: PdfOutlineEntry[]) => void;
   /** Word counts extracted per PDF page, used for time-based progress. */
   onWordCounts?: (counts: number[]) => void;
+  /**
+   * The document's text, batched, once extraction has finished — for
+   * `POST /ai/context`, so Lexi can answer from the book and not just the page
+   * in view. `done` marks the final batch. Omit the prop and nothing is walked.
+   */
+  onContext?: (pages: { page: number; text: string }[], done: boolean) => void;
+  /** Lets the reader drop to Page view from the reflow error screen. */
+  onSwitchToPage?: () => void;
 }
 
 export function PdfReflowView({
@@ -1828,6 +1929,8 @@ export function PdfReflowView({
   onIndexed,
   onOutline,
   onWordCounts,
+  onContext,
+  onSwitchToPage,
 }: Props) {
   const t = useProtoTheme();
   const textSize = useAppStore((s) => s.textSize);
@@ -1837,9 +1940,23 @@ export function PdfReflowView({
   const readWidth = useAppStore((s) => s.readWidth);
   const contrast = useAppStore((s) => s.contrast);
 
+  const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("reading");
+  // Extraction progress, shown as a thin bar along the bottom edge (like the
+  // web reader) instead of a full-screen skeleton. `extracting` stays true from
+  // open until the whole document is walked, so the bar tracks background
+  // extraction that continues after the first page is on screen.
+  const [extracting, setExtracting] = useState(true);
+  const barWidth = useRef(new Animated.Value(0.04)).current;
+  // Cleared the moment the WebView posts anything back — even "extracting page
+  // 1". If it stays armed, pdf.js (or its worker, fetched from a CDN) never
+  // loaded, which is what left the skeleton spinning forever with no error. We
+  // surface the recoverable error instead of hanging. Extraction being merely
+  // slow can't trip this: the first `progress`/`firstpaint` message disarms it.
+  const bootTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gotFirstMessage = useRef(false);
   // Bumped when extraction finishes, so highlights get a second pass once
   // every page is in the DOM.
   const [extractedSeq, setExtractedSeq] = useState(0);
@@ -1884,6 +2001,7 @@ export function PdfReflowView({
   // Read the file and build the page once per document.
   useEffect(() => {
     let cancelled = false;
+    gotFirstMessage.current = false;
     (async () => {
       try {
         const data = await new File(uri).base64();
@@ -1905,6 +2023,21 @@ export function PdfReflowView({
       cancelled = true;
     };
   }, [uri]);
+
+  // Watchdog: once the page is built, the WebView should report back within
+  // seconds (extracting page 1). Silence past the timeout means pdf.js never
+  // came up — almost always no network to fetch it on first open. Show the
+  // error rather than an endless skeleton. Reset per document.
+  useEffect(() => {
+    if (!html) return;
+    if (bootTimer.current) clearTimeout(bootTimer.current);
+    bootTimer.current = setTimeout(() => {
+      if (!gotFirstMessage.current) setStatus("error");
+    }, 25000);
+    return () => {
+      if (bootTimer.current) clearTimeout(bootTimer.current);
+    };
+  }, [html]);
 
   // push settings updates into the live page without re-extracting
   useEffect(() => {
@@ -1984,13 +2117,18 @@ export function PdfReflowView({
     );
   }, [focusMode, status]);
 
-  // mark and scroll to the tapped result
+  // Mark and scroll to the tapped result / flashed passage. Fires ONLY when a
+  // new highlight is requested (or on first ready) — deliberately not tied to
+  // extraction progress: re-running it when background extraction finished was
+  // yanking the reader back to an old target after they'd scrolled away. The
+  // target page is already in the DOM by the time this runs, because Reflow
+  // holds its reveal until that page is extracted.
   useEffect(() => {
     if (status !== "ready" || !highlight?.query) return;
     webRef.current?.injectJavaScript(
       `window.highlightMatch && window.highlightMatch(${JSON.stringify(
         highlight.query,
-      )}, ${highlight.index}); true;`,
+      )}, ${highlight.index}, ${highlight.page ?? 0}); true;`,
     );
   }, [highlight, status]);
 
@@ -2008,8 +2146,19 @@ export function PdfReflowView({
           Couldn&apos;t reflow this document
         </Text>
         <Text align="center" color={t.sub} lh={20} size={13}>
-          It may be a scanned/image-only PDF with no text layer. Try Page view.
+          Reflow needs a connection the first time it opens a document. If
+          you&apos;re online, this may be a scanned/image-only PDF with no text
+          layer.
         </Text>
+        {onSwitchToPage ? (
+          <Tap onPress={onSwitchToPage} scale={0.97} style={{ marginTop: 8 }}>
+            <Box align="center" bg={t.accent} paddingX={22} paddingY={12} rounded={12}>
+              <Text color={t.onAccent} size={14} weight="600">
+                Switch to Page view
+              </Text>
+            </Box>
+          </Tap>
+        ) : null}
       </Box>
     );
   }
@@ -2020,7 +2169,33 @@ export function PdfReflowView({
         <WebView
           allowFileAccess
           androidLayerType="hardware"
+          // Replace the system text-selection menu with just Copy and Select
+          // all — supplying our own list is what drops Android's injected
+          // "Translate" (and "Web search") item the reader didn't want. Both
+          // are re-implemented with document.execCommand so no clipboard module
+          // is needed; the app's own AnnotateBar still handles translate.
+          menuItems={[
+            { key: "lexiCopy", label: "Copy" },
+            { key: "lexiSelectAll", label: "Select all" },
+          ]}
+          onCustomMenuSelection={(e) => {
+            const key = e.nativeEvent.key;
+            if (key === "lexiCopy") {
+              webRef.current?.injectJavaScript(
+                `try{document.execCommand('copy');}catch(e){} true;`,
+              );
+            } else if (key === "lexiSelectAll") {
+              webRef.current?.injectJavaScript(
+                `try{document.execCommand('selectAll');}catch(e){} true;`,
+              );
+            }
+          }}
           onMessage={(e) => {
+            // Any message means pdf.js is alive — disarm the boot watchdog.
+            if (!gotFirstMessage.current) {
+              gotFirstMessage.current = true;
+              if (bootTimer.current) clearTimeout(bootTimer.current);
+            }
             try {
               const msg = JSON.parse(e.nativeEvent.data) as {
                 type: string;
@@ -2031,6 +2206,8 @@ export function PdfReflowView({
                 results?: PdfSearchResult[];
                 entries?: PdfOutlineEntry[];
                 wordCounts?: number[];
+                pages?: { page: number; text: string }[];
+                done?: boolean;
               };
               if (msg.type === "firstpaint") setStatus("ready");
               else if (msg.type === "page" && msg.page)
@@ -2040,18 +2217,42 @@ export function PdfReflowView({
               else if (msg.type === "selection")
                 onSelection?.(msg.text ?? "", msg.page ?? 0);
               else if (msg.type === "tap") onSingleTap?.();
-              else if (msg.type === "error") setStatus("error");
-              else if (msg.type === "searchresults")
+              else if (msg.type === "error") {
+                setStatus("error");
+                setExtracting(false);
+              } else if (msg.type === "searchresults")
                 onSearchResults?.(msg.results ?? []);
               else if (msg.type === "outline" && msg.entries?.length)
                 onOutline?.(msg.entries);
+              else if (msg.type === "context")
+                onContext?.(msg.pages ?? [], msg.done ?? false);
               else if (msg.type === "done") {
                 onIndexed?.();
                 onWordCounts?.(msg.wordCounts ?? []);
+                // Only walked when someone is listening — the text is only
+                // wanted for the AI upload, and it isn't free to serialise.
+                if (onContext) {
+                  webRef.current?.injectJavaScript(
+                    `window.sendContext(${CONTEXT_CHUNK_PAGES}); true;`,
+                  );
+                }
+                // fill the bar, then retire it once extraction is complete
+                Animated.timing(barWidth, {
+                  toValue: 1,
+                  duration: 180,
+                  useNativeDriver: false,
+                }).start(() => setExtracting(false));
                 // every page exists now, so highlights on later ones can land
                 setExtractedSeq((n) => n + 1);
                 if (queryRef.current) setIndexSeq((n) => n + 1);
               } else if (msg.type === "progress") {
+                if (msg.total) {
+                  Animated.timing(barWidth, {
+                    toValue: Math.max(0.04, (msg.page ?? 0) / msg.total),
+                    duration: 180,
+                    useNativeDriver: false,
+                  }).start();
+                }
                 // refresh an in-flight search every few pages, not every page
                 if (queryRef.current && msg.page && msg.page % 5 === 0)
                   setIndexSeq((n) => n + 1);
@@ -2067,9 +2268,37 @@ export function PdfReflowView({
         />
       ) : null}
 
+      {/* Full-screen reading skeleton until the first page (or the target page,
+          when opening deep) is in place; the bottom bar tracks real progress. */}
       {status !== "ready" ? (
         <Box bg={t.page} style={{ position: "absolute", inset: 0 }}>
           <ReflowSkeleton topInset={topInset} />
+        </Box>
+      ) : null}
+
+      {/* Extraction progress, as a thin bar along the bottom edge — the same
+          affordance the web reader uses, sitting above the Android nav bar. */}
+      {extracting ? (
+        <Box
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: insets.bottom,
+            height: 3,
+          }}
+        >
+          <Animated.View
+            style={{
+              height: 3,
+              backgroundColor: t.accent,
+              width: barWidth.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["0%", "100%"],
+              }),
+            }}
+          />
         </Box>
       ) : null}
     </Box>

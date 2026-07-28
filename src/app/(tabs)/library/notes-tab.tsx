@@ -74,10 +74,17 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
    * Passages saved in the web reader have no document to open — their url is
    * not a stable key — so those cards stay inert.
    */
-  const jumpTo = (uri: string, page: number) => {
-    const doc = docs.get(uri);
-    if (!doc) return;
-    useReaderJumpStore.getState().request(uri, page);
+  const jumpTo = (uri: string | undefined, page: number, flash?: string) => {
+    const doc = uri ? docs.get(uri) : undefined;
+    if (!uri || !doc) {
+      // A saved word/passage whose document is no longer on the recents list
+      // (or was saved in the web reader) has nothing to reopen — say so rather
+      // than swallowing the tap.
+      showToast(tr("library.notes.reopenUnavailable"));
+      return;
+    }
+    // `flash` briefly lights the word/passage up in the reader once it opens.
+    useReaderJumpStore.getState().request(uri, page, flash);
     if (doc.ext === "PDF") {
       // Reflow, not page view: the highlight is drawn into the reflowed text,
       // so the page bitmap would open with nothing marked on it.
@@ -134,9 +141,17 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
             <Tap
               key={v.word}
               onPress={() => {
-                setPage(v.p);
-                openReader();
-                showToast(tr("library.vocab.jumpedToast", { page: v.p }));
+                // A word saved while reading a real document reopens that
+                // document on its page — the same path highlights and notes
+                // take. Only the seeded demo words (no uri) fall back to the
+                // prototype reader.
+                if (v.uri) {
+                  jumpTo(v.uri, v.p, v.word);
+                } else {
+                  setPage(v.p);
+                  openReader();
+                  showToast(tr("library.vocab.jumpedToast", { page: v.p }));
+                }
               }}
               scale={0.985}
             >
@@ -159,20 +174,26 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                     {tr("library.vocab.pageAbbrev", { page: v.p })}
                   </Text>
                 </Box>
+                {/* No translation for same-language saves — show just the
+                    language, so the row still names what it is. */}
                 <Box
                   direction="row"
                   gap={8}
                   wrap="wrap"
                   style={{ alignItems: "baseline" }}
                 >
-                  <Text color={t.accentText} size={17} weight="600">
-                    {v.tr}
-                  </Text>
+                  {v.tr ? (
+                    <Text color={t.accentText} size={17} weight="600">
+                      {v.tr}
+                    </Text>
+                  ) : null}
                   <Text color={t.sub} size={12}>
-                    {tr("library.vocab.translitLine", {
-                      lang: LANG_NAMES[v.lang] ?? v.lang,
-                      translit: v.translit,
-                    })}
+                    {v.tr
+                      ? tr("library.vocab.translitLine", {
+                          lang: LANG_NAMES[v.lang] ?? v.lang,
+                          translit: v.translit,
+                        })
+                      : LANG_NAMES[v.lang] ?? v.lang}
                   </Text>
                 </Box>
                 <Box direction="row" gap={9}>
@@ -191,6 +212,13 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                     </Text>
                   </Box>
                 </Box>
+                {v.example ? (
+                  <Box bg={t.chip} paddingX={10} paddingY={8} rounded={9}>
+                    <Text color={t.sub} lh={19} serif size={12.5}>
+                      “{v.example}”
+                    </Text>
+                  </Box>
+                ) : null}
               </Card>
             </Tap>
           ))}
@@ -266,7 +294,11 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
 
             // No document behind it (saved in the web reader) — nothing to open.
             return doc ? (
-              <Tap key={a.id} onPress={() => jumpTo(a.uri, a.page)} scale={0.985}>
+              <Tap
+                key={a.id}
+                onPress={() => jumpTo(a.uri, a.page, a.text)}
+                scale={0.985}
+              >
                 {card}
               </Tap>
             ) : (

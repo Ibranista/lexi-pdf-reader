@@ -103,8 +103,9 @@ export default function NotesScreen() {
   const noteList =
     tab === "notes" ? annotations.filter((a) => a.note.trim()) : annotations;
 
-  const jump = (p: number) => {
-    if (uri) requestJump(uri, p);
+  const jump = (p: number, flash?: string) => {
+    // `flash` briefly lights the passage up in the reader on arrival.
+    if (uri) requestJump(uri, p, flash);
     router.back();
     showToast(`Jumped to page ${p}`);
   };
@@ -248,7 +249,7 @@ export default function NotesScreen() {
         ) : (
           <>
             {noteList.map((a) => (
-              <Tap key={a.id} onPress={() => jump(a.page)} scale={0.985}>
+              <Tap key={a.id} onPress={() => jump(a.page, a.text)} scale={0.985}>
                 {/* The one you tapped in the text is ringed, so arriving here
                     from a highlight doesn't mean hunting for it in the list. */}
                 <Card
@@ -433,7 +434,7 @@ export default function NotesScreen() {
               <Tap
                 onPress={() => {
                   setExpanded(null);
-                  jump(openEntry.page);
+                  jump(openEntry.page, openEntry.text);
                 }}
                 scale={0.97}
               >

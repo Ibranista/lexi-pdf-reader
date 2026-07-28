@@ -42,9 +42,14 @@ import {
   PdfSearchPanel,
   SummarizeSheet,
 } from "@/components/reader";
+import { SignInWall } from "@/components/auth/SignInWall";
+import { NoteCard } from "@/components/reader/NoteCard";
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
+import type { TranslateTarget } from "@/components/reader/TranslateCard";
+import { TranslateCard } from "@/components/reader/TranslateCard";
+import { uploadContext } from "@/services/lexi-ai";
 import { useAnnotationsStore } from "@/stores/annotations-store";
 import {
   useAppStore,
@@ -54,6 +59,10 @@ import {
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
+import NetInfo from "@react-native-community/netinfo";
+
+import { isOnline } from "@/utils/connectivity";
+import { useDocKey } from "@/utils/doc-key";
 import { useProtoTheme } from "@/theme/proto";
 import { expectedReadingMs } from "@/utils/reading-progress";
 
@@ -75,9 +84,12 @@ const TITLE_SWAP = LinearTransition.duration(260);
  */
 function savedPageFor(uri: string | undefined): number {
   if (!uri) return 1;
-  const saved = useRecentsStore
-    .getState()
-    .recents.find((r) => r.uri === uri)?.page;
+  const state = useRecentsStore.getState();
+  // Prefer the uncapped positions cache, so a document that's dropped off the
+  // recents shelf still reopens where it was left; fall back to the recents row.
+  const saved =
+    state.positions[uri] ??
+    state.recents.find((r) => r.uri === uri)?.page;
   return saved && saved > 0 ? saved : 1;
 }
 
@@ -90,6 +102,10 @@ export default function PdfViewerScreen() {
     /** Opens straight into this view — "reflow" when arriving from My Notes. */
     view?: ViewMode;
   }>();
+  // What the server calls this document. Derived once per open (one sha256) and
+  // required by every AI endpoint, so the AI affordances stay closed until it
+  // resolves rather than sending a key that would be rejected.
+  const docKey = useDocKey(uri, name);
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
   const bright = useAppStore((s) => s.bright);
@@ -124,10 +140,24 @@ export default function PdfViewerScreen() {
   const startFocus = useFocusStore((s) => s.start);
   const exitFocus = useFocusStore((s) => s.exit);
 
-  // Page view unless the caller asked otherwise. A highlight only exists in
-  // reflow — the page view is a bitmap with nothing to mark — so opening one
-  // from My Notes has to land in reflow or the passage isn't there to see.
-  const [mode, setMode] = useState<ViewMode>(view === "reflow" ? "reflow" : "page");
+  // The reader the reader prefers (Settings → Default reader), Reflow out of the
+  // box. An explicit `view` (e.g. Reflow from My Notes) always wins. Reflow
+  // fetches its pdf.js engine from a CDN, so with no connection it can only
+  // error — fall back to the native, offline Page view then, whatever the
+  // preference. Only the plain default reacts to connectivity.
+  const defaultReader = useAppStore((s) => s.defaultReader);
+  const [mode, setMode] = useState<ViewMode>(
+    view === "page"
+      ? "page"
+      : view === "reflow"
+        ? "reflow"
+        : !isOnline()
+          ? "page"
+          : defaultReader,
+  );
+  // Whether the reader has manually toggled the view — once they have, we never
+  // move it out from under them (e.g. the late offline check below is skipped).
+  const userPickedView = useRef(false);
   // Resume where this document was left off. Read as a lazy initializer, not
   // in an effect — the progress recorder below would otherwise fire first
   // with page 1 and overwrite the very position we're restoring.
@@ -144,10 +174,16 @@ export default function PdfViewerScreen() {
   >([]);
   // Extraction finished, so an empty result set really means "no matches".
   const [indexed, setIndexed] = useState(false);
+  // The docKey whose text has been uploaded, so re-extraction (a font change
+  // reloads the reflow page) doesn't send the whole book up a second time.
+  const contextSent = useRef<string | null>(null);
   const [highlight, setHighlight] = useState<{
     query: string;
     index: number;
     seq: number;
+    /** Set when flashing a note/word from My Notes, to scope the mark to its
+     *  own page rather than an earlier occurrence elsewhere. */
+    page?: number;
   } | null>(null);
   // Page view's search locator. The native PDF has no text layer we can mark,
   // so a band is drawn over the page using pdf.js geometry from the reflow
@@ -173,6 +209,10 @@ export default function PdfViewerScreen() {
   } | null>(null);
   // Bumped to tell the reflow page to drop its own selection.
   const [clearSelSeq, setClearSelSeq] = useState(0);
+  // The passage the word card is open on, if any.
+  const [translating, setTranslating] = useState<TranslateTarget | null>(null);
+  // The tapped highlight, held by id so an edit to it re-renders the card.
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   // True while the note composer has the passage. Focusing its input pulls
   // focus out of the WebView, which drops the selection there and would
   // otherwise unmount the composer the instant the keyboard began to open.
@@ -186,6 +226,12 @@ export default function PdfViewerScreen() {
         .filter((a) => a.uri === uri)
         .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
     [annotations, uri],
+  );
+  // Resolved rather than stored: editing or recolouring the note has to be
+  // reflected in the open card, and deleting it has to close it.
+  const openNote = useMemo(
+    () => annotations.find((a) => a.id === openNoteId) ?? null,
+    [annotations, openNoteId],
   );
   const [pageMarker, setPageMarker] = useState<{
     page: number;
@@ -343,6 +389,7 @@ export default function PdfViewerScreen() {
 
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
+    userPickedView.current = true;
     if (next === "page") {
       setPdfPage(page);
     } else {
@@ -350,6 +397,29 @@ export default function PdfViewerScreen() {
     }
     setMode(next);
   };
+
+  // Connectivity can be unknown at first render (NetInfo is async); resolve it
+  // once, at open, and if we're offline yet defaulted into Reflow, drop back to
+  // Page view — Reflow's engine can't load without a connection. One-shot on
+  // purpose: losing the connection later, after Reflow has already loaded,
+  // should not yank the reader out of it. Never overrides an explicit `view`
+  // param or a view the reader chose themselves.
+  useEffect(() => {
+    if (view || userPickedView.current) return;
+    let cancelled = false;
+    NetInfo.fetch()
+      .then((state) => {
+        const offline =
+          state.isConnected === false || state.isInternetReachable === false;
+        if (!cancelled && offline && !userPickedView.current) {
+          setMode((current) => (current === "reflow" ? "page" : current));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
 
   const clampPage = (n: number) =>
     pageCount ? Math.max(1, Math.min(n, pageCount)) : Math.max(1, n);
@@ -379,10 +449,30 @@ export default function PdfViewerScreen() {
    */
   useFocusEffect(
     useCallback(() => {
-      const target = useReaderJumpStore.getState().consume(uri);
-      if (target) goToPage(target);
-      // goToPage closes over view state that changes every render; the store
-      // read is the part that must happen exactly once, on focus.
+      const jump = useReaderJumpStore.getState().consume(uri);
+      if (!jump) return;
+      const nextPage = clampPage(jump.page);
+      setPage(nextPage);
+      setApp({ page: nextPage });
+      // A flash (arriving from a tapped note or saved word) always reads in
+      // reflow — the page view is a bitmap with no live text to light up — and
+      // briefly marks the passage so the reader sees exactly where it sits.
+      if (jump.flash) {
+        setMode("reflow");
+        setReflowGoto((g) => ({ page: nextPage, seq: g.seq + 1 }));
+        setHighlight((h) => ({
+          query: jump.flash as string,
+          index: 0,
+          page: nextPage,
+          seq: (h?.seq ?? 0) + 1,
+        }));
+      } else if (mode === "page") {
+        setPdfPage(nextPage);
+      } else {
+        setReflowGoto((g) => ({ page: nextPage, seq: g.seq + 1 }));
+      }
+      // The store read must happen exactly once, on focus; the rest closes over
+      // view state that changes every render.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [uri]),
   );
@@ -662,12 +752,7 @@ export default function PdfViewerScreen() {
               chromeOffset={immersive ? 0 : barH}
               clearSelectionSeq={clearSelSeq}
               highlights={highlights}
-              onHighlightPress={(id) =>
-                router.push({
-                  pathname: "/notes",
-                  params: { uri, name: name ?? "Document", focus: id },
-                })
-              }
+              onHighlightPress={setOpenNoteId}
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -682,6 +767,27 @@ export default function PdfViewerScreen() {
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
+              // Hands the extracted text to the server so Lexi answers from
+              // the whole book rather than only the page in view. Batches are
+              // uploaded as they arrive rather than buffered, so a long book
+              // doesn't sit in memory twice; failures are the service's to
+              // swallow, since chat still works off its per-turn excerpt.
+              onContext={
+                aiOn && docKey
+                  ? (pages, done) => {
+                      if (contextSent.current === docKey) return;
+                      if (done) contextSent.current = docKey;
+                      if (!pages.length) return;
+                      void uploadContext({
+                        author: undefined,
+                        docKey,
+                        pageCount,
+                        pages,
+                        title: name ?? "Document",
+                      });
+                    }
+                  : undefined
+              }
               onOutline={setReflowOutline}
               onWordCounts={(counts) => {
                 useRecentsStore.getState().setReadingPlan(
@@ -697,6 +803,7 @@ export default function PdfViewerScreen() {
                 setSelection(text ? { text, page: selPage || page } : null);
               }}
               onSingleTap={() => setImmersive((v) => !v)}
+              onSwitchToPage={() => switchTo("page")}
               searchQuery={searchQuery}
               topInset={insets.top}
               uri={uri}
@@ -1012,8 +1119,11 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
-      {lexiOpen && aiOn ? (
-        <LexiSheet onClose={() => setLexiOpen(false)} />
+      {lexiOpen && aiOn && docKey ? (
+        <LexiSheet
+          book={{ docKey, page, title: name ?? "Document" }}
+          onClose={() => setLexiOpen(false)}
+        />
       ) : null}
       {filingOpen ? (
         <CollectionPicker
@@ -1021,7 +1131,7 @@ export default function PdfViewerScreen() {
           onClose={() => setFilingOpen(false)}
         />
       ) : null}
-      {selection && mode === "reflow" ? (
+      {selection && mode === "reflow" && !translating ? (
         <AnnotateBar
           onBookmark={() => {
             toggleBookmark(selection.page);
@@ -1035,6 +1145,24 @@ export default function PdfViewerScreen() {
             // and the next selectionchange re-opens the bar.
             setClearSelSeq((n) => n + 1);
           }}
+          onTranslate={() => {
+            // No key yet means the hash hasn't landed; the lookup would 400.
+            if (!docKey) {
+              showToast("One moment — still opening this document");
+              return;
+            }
+            setTranslating({
+              docKey,
+              page: selection.page,
+              source: name ?? "Document",
+              text: selection.text,
+              uri,
+            });
+            // Drop the WebView's own selection as the card opens, or Android's
+            // native selection menu (Copy · Translate · …) and its handles
+            // float on top of the card, over the very passage it's about.
+            setClearSelSeq((n) => n + 1);
+          }}
           page={selection.page}
           // Kept on the annotation itself so My Notes can still name the
           // document after it drops off the (capped) recents list.
@@ -1043,6 +1171,37 @@ export default function PdfViewerScreen() {
           uri={uri}
         />
       ) : null}
+
+      {/* Word card. Closing it also drops the selection, so the reader is left
+          on the passage rather than with the action bar back over it. */}
+      {translating ? (
+        <TranslateCard
+          onClose={() => {
+            setTranslating(null);
+            setSelection(null);
+            setClearSelSeq((n) => n + 1);
+          }}
+          onHighlight={(result) => {
+            useAnnotationsStore.getState().add({
+              color: "sage",
+              note: `${result.tr} — ${result.translit ?? result.langName}`,
+              page: translating.page,
+              source: name ?? "Document",
+              text: translating.text,
+              uri,
+            });
+          }}
+          target={translating}
+        />
+      ) : null}
+
+      {/* A tapped highlight opens where it is, rather than sending the reader
+          off to the Notes screen and losing the page. */}
+      {openNote ? (
+        <NoteCard annotation={openNote} onClose={() => setOpenNoteId(null)} />
+      ) : null}
+
+      <SignInWall />
     </Box>
   );
 }
