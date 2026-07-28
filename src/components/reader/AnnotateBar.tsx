@@ -8,6 +8,7 @@ import {
   Backdrop,
   IconBookmark,
   IconClose,
+  IconGlobe,
   IconHighlighter,
   IconNoteDoc,
   Tap,
@@ -30,6 +31,7 @@ export function AnnotateBar({
   onBookmark,
   onClose,
   onComposingChange,
+  onTranslate,
   page,
   source,
   text,
@@ -37,6 +39,7 @@ export function AnnotateBar({
 }: {
   onBookmark?: () => void;
   onClose: () => void;
+  onTranslate?: () => void;
   onComposingChange?: (composing: boolean) => void;
   page: number;
   source?: string;
@@ -230,6 +233,15 @@ export function AnnotateBar({
               onComposingChange?.(true);
             }}
           />
+          {onTranslate ? (
+            <SelAction
+              icon={<IconGlobe color="#F6F3EE" size={16} />}
+              label="Translate"
+              onPress={() => {
+                onTranslate();
+              }}
+            />
+          ) : null}
           {onBookmark ? (
             <SelAction
               icon={<IconBookmark color="#F6F3EE" size={16} />}

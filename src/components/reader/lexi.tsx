@@ -1,10 +1,23 @@
-import { useRef, useState } from "react";
-import { ScrollView } from "react-native";
+import {
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  BottomSheetTextInput,
+  BottomSheetView,
+  BottomSheetModal as GorhomBottomSheetModal,
+  type BottomSheetScrollViewMethods,
+} from "@gorhom/bottom-sheet";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box, TextInput } from "@/components/atoms";
+import { Box } from "@/components/atoms";
 import {
-  Backdrop,
   IconClose,
   IconSend,
   IconSpark,
@@ -12,11 +25,15 @@ import {
   Tap,
 } from "@/components/lexi-components";
 import { LEXI_SEED } from "@/constants/library";
+import { useLexiChat } from "@/hooks/use-lexi-ai";
+import { AiQuotaError } from "@/services/lexi-ai";
+import { useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
+import { getApiErrorMessage } from "@/utils/axios";
 
 interface LexiMsg {
   role: "lexi" | "user";
-  kind: "drift" | "normal" | "recap";
+  kind: "drift" | "normal" | "recap" | "error";
   text: string;
 }
 
@@ -47,6 +64,37 @@ const REPLY_POOL = [
   "Good question. On this page, the author frames Edison as selling reclaimed time, not just light — the lamps mattered because of what people could now do after dark.",
   "The gas industry's collapse is the page's counterweight: every hour gained by electric light cost the lamplighters their trade. The author wants you to hold both at once.",
 ];
+
+function scriptedReply(
+  question: string,
+  rabbitCount: { current: number },
+  replyIdx: { current: number },
+): LexiMsg {
+  const lower = question.toLowerCase();
+  if (!DOC_WORDS.some((w) => lower.includes(w))) {
+    rabbitCount.current = 0;
+    return {
+      role: "lexi",
+      kind: "drift",
+      text: "Happy to chat, but let's park that for later — you were doing great on Chapter 3. Want to continue?",
+    };
+  }
+  rabbitCount.current += 1;
+  if (rabbitCount.current >= 3) {
+    rabbitCount.current = 0;
+    return {
+      role: "lexi",
+      kind: "recap",
+      text: "Short answer: it comes back to cheap, constant light. We've covered this point well — the core idea is that electricity turned night into usable time. Ready for the next section?",
+    };
+  }
+  replyIdx.current += 1;
+  return {
+    role: "lexi",
+    kind: "normal",
+    text: REPLY_POOL[replyIdx.current % REPLY_POOL.length],
+  };
+}
 
 export function LexiBubble({ onPress }: { onPress: () => void }) {
   const t = useProtoTheme();
@@ -90,88 +138,145 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
   );
 }
 
-export function LexiSheet({ onClose }: { onClose: () => void }) {
+export interface LexiBook {
+  title: string;
+  author?: string;
+  docKey: string;
+  page: number;
+  excerpt?: string;
+}
+
+export function LexiSheet({
+  book,
+  onClose,
+}: {
+  book?: LexiBook;
+  onClose: () => void;
+}) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
-  const [messages, setMessages] = useState<LexiMsg[]>(LEXI_SEED);
+  const explStyle = useAppStore((s) => s.explStyle);
+  const ask = useLexiChat();
+
+  const sheetRef = useRef<GorhomBottomSheetModal>(null);
+  const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
+  const snapPoints = useMemo(() => ["86%"], []);
+
+  const [messages, setMessages] = useState<LexiMsg[]>(() =>
+    book
+      ? [
+          {
+            role: "lexi",
+            kind: "normal",
+            text: `I've got ${book.title} open in front of me. Ask me anything about it — what a passage means, why it matters, where an argument is going.`,
+          },
+        ]
+      : LEXI_SEED,
+  );
   const [input, setInput] = useState("");
   const rabbitCount = useRef(0);
   const replyIdx = useRef(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const sessionId = useRef("");
+  const lastQuestion = useRef("");
+
+  useEffect(() => {
+    sheetRef.current?.present();
+  }, []);
+
+  const close = useCallback(() => sheetRef.current?.dismiss(), []);
+
+  const push = (msg: LexiMsg) => setMessages((prev) => [...prev, msg]);
+  const scrollToEnd = () =>
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+
+  const runChat = async (q: string) => {
+    if (!sessionId.current) {
+      sessionId.current = `${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+    }
+    try {
+      const answer = await ask.mutateAsync({
+        author: book!.author,
+        docKey: book!.docKey,
+        excerpt: book!.excerpt,
+        message: q,
+        page: book!.page,
+        sessionId: sessionId.current,
+        style: explStyle,
+        title: book!.title,
+      });
+      push({ role: "lexi", kind: answer.kind, text: answer.reply });
+    } catch (error) {
+      if (error instanceof AiQuotaError) {
+        close();
+        return;
+      }
+      push({
+        role: "lexi",
+        kind: "error",
+        text: getApiErrorMessage(error),
+      });
+    } finally {
+      scrollToEnd();
+    }
+  };
 
   const send = () => {
     const q = input.trim();
-    if (!q) return;
-    const lower = q.toLowerCase();
-    const isDoc = DOC_WORDS.some((w) => lower.includes(w));
+    if (!q || ask.isPending) return;
+    push({ role: "user", kind: "normal", text: q });
+    setInput("");
+    scrollToEnd();
 
-    let reply: LexiMsg;
-    if (!isDoc) {
-      rabbitCount.current = 0;
-      reply = {
-        role: "lexi",
-        kind: "drift",
-        text: "Happy to chat, but let's park that for later — you were doing great on Chapter 3. Want to continue?",
-      };
-    } else {
-      rabbitCount.current += 1;
-      if (rabbitCount.current >= 3) {
-        rabbitCount.current = 0;
-        reply = {
-          role: "lexi",
-          kind: "recap",
-          text: "Short answer: it comes back to cheap, constant light. We've covered this point well — the core idea is that electricity turned night into usable time. Ready for the next section?",
-        };
-      } else {
-        replyIdx.current += 1;
-        reply = {
-          role: "lexi",
-          kind: "normal",
-          text: REPLY_POOL[replyIdx.current % REPLY_POOL.length],
-        };
-      }
+    if (!book) {
+      push(scriptedReply(q, rabbitCount, replyIdx));
+      scrollToEnd();
+      return;
     }
 
-    setMessages([
-      ...messages,
-      { role: "user", kind: "normal", text: q },
-      reply,
-    ]);
-    setInput("");
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+    lastQuestion.current = q;
+    void runChat(q);
   };
 
-  return (
-    <>
-      <Backdrop onPress={onClose} opacity={0.35} />
-      <Box
-        bg={t.card}
-        height={590}
-        roundedTopLeft={24}
-        roundedTopRight={24}
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 39,
-          shadowColor: "#14100C",
-          shadowOffset: { width: 0, height: -12 },
-          shadowOpacity: 0.35,
-          shadowRadius: 48,
-          elevation: 24,
-        }}
-      >
-        <Box paddingTop={10} paddingX={20}>
-          <Box
-            bg={t.line}
-            height={4}
-            rounded={2}
-            style={{ alignSelf: "center" }}
-            width={40}
-          />
-        </Box>
+  const retry = () => {
+    if (!book || ask.isPending || !lastQuestion.current) return;
+    setMessages((prev) =>
+      prev.length && prev[prev.length - 1].kind === "error"
+        ? prev.slice(0, -1)
+        : prev,
+    );
+    void runChat(lastQuestion.current);
+  };
 
+  const renderBackdrop = useCallback(
+    (props: ComponentProps<typeof BottomSheetBackdrop>) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  return (
+    <GorhomBottomSheetModal
+      android_keyboardInputMode="adjustResize"
+      backdropComponent={renderBackdrop}
+      backgroundStyle={{ backgroundColor: t.card }}
+      enableDynamicSizing={false}
+      handleIndicatorStyle={{ backgroundColor: t.line }}
+      index={0}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      onDismiss={onClose}
+      ref={sheetRef}
+      snapPoints={snapPoints}
+    >
+      <BottomSheetView style={{ flex: 1 }}>
         <Box
           align="center"
           direction="row"
@@ -195,7 +300,9 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
               Lexi
             </Text>
             <Text color={t.sub} numberOfLines={1} size={11}>
-              Your reading companion · Ch. 3
+              {book
+                ? `${book.title} · p. ${book.page}`
+                : "Your reading companion · Ch. 3"}
             </Text>
           </Box>
           <Box bg={t.calmSoft} paddingX={10} paddingY={4} rounded={12}>
@@ -203,7 +310,7 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
               You’re on track ✓
             </Text>
           </Box>
-          <Tap onPress={onClose}>
+          <Tap onPress={close}>
             <Box
               align="center"
               height={32}
@@ -216,8 +323,9 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
           </Tap>
         </Box>
 
-        <ScrollView
+        <BottomSheetScrollView
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() =>
             scrollRef.current?.scrollToEnd({ animated: false })
           }
@@ -227,6 +335,7 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
           {messages.map((m, i) => {
             const user = m.role === "user";
             const special = m.kind === "drift" || m.kind === "recap";
+            const isError = m.kind === "error";
             return (
               <Box
                 direction="row"
@@ -235,8 +344,14 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
                 paddingY={5}
               >
                 <Box
-                  bg={user ? t.pill : t.chip}
-                  borderColor={special ? t.calmLine : "transparent"}
+                  bg={user ? t.pill : isError ? t.accentSoft : t.chip}
+                  borderColor={
+                    isError
+                      ? t.accentMid
+                      : special
+                        ? t.calmLine
+                        : "transparent"
+                  }
                   borderWidth={1}
                   gap={8}
                   maxWidth={300}
@@ -248,9 +363,27 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
                   <Text color={user ? t.pillText : t.ink} lh={20} size={13.5}>
                     {m.text}
                   </Text>
+                  {isError ? (
+                    <Tap
+                      onPress={retry}
+                      scale={0.95}
+                      style={{ alignSelf: "flex-start" }}
+                    >
+                      <Box
+                        bg={t.accentSoft}
+                        paddingX={12}
+                        paddingY={8}
+                        rounded={10}
+                      >
+                        <Text color={t.accent} size={12} weight="600">
+                          Try again
+                        </Text>
+                      </Box>
+                    </Tap>
+                  ) : null}
                   {m.kind === "drift" ? (
                     <Tap
-                      onPress={onClose}
+                      onPress={close}
                       scale={0.95}
                       style={{ alignSelf: "flex-start" }}
                     >
@@ -283,7 +416,17 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
               </Box>
             );
           })}
-        </ScrollView>
+
+          {ask.isPending ? (
+            <Box direction="row" justify="start" paddingY={5}>
+              <Box bg={t.chip} paddingX={14} paddingY={10} rounded={16}>
+                <Text color={t.sub} size={13.5}>
+                  Reading that back…
+                </Text>
+              </Box>
+            </Box>
+          ) : null}
+        </BottomSheetScrollView>
 
         <Box
           paddingTop={12}
@@ -304,21 +447,19 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
             paddingY={5}
             rounded={24}
           >
-            <TextInput
-              backgroundColor="transparent"
-              borderColor="transparent"
-              borderWidth={0}
-              fontSize={14}
+            <BottomSheetTextInput
               onChangeText={setInput}
               onSubmitEditing={send}
               placeholder="Hey Lexi… ask about this document"
               placeholderTextColor={t.faint}
-              pl={0}
-              py={10}
               returnKeyType="send"
-              rounded={0}
-              style={{ flex: 1, height: undefined, minWidth: 0 }}
-              textColor={t.ink}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                paddingVertical: 10,
+                fontSize: 14,
+                color: t.ink,
+              }}
               value={input}
             />
             <Tap onPress={send} scale={0.92}>
@@ -335,7 +476,7 @@ export function LexiSheet({ onClose }: { onClose: () => void }) {
             </Tap>
           </Box>
         </Box>
-      </Box>
-    </>
+      </BottomSheetView>
+    </GorhomBottomSheetModal>
   );
 }

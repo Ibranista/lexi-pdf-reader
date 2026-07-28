@@ -1,62 +1,51 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
-import * as SecureStore from 'expo-secure-store';
-import { router, type Href } from 'expo-router';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/v1';
+import { ensureSession, resetSession } from '@/services/device-session';
+import {
+  API_BASE_URL,
+  notifySessionLost,
+  tokenStorage,
+  type ApiErrorResponse,
+  type AuthResponse,
+  type AuthTokens,
+  type User,
+} from '@/utils/api-config';
 
-const ACCESS_TOKEN_KEY = 'accessToken';
-const REFRESH_TOKEN_KEY = 'refreshToken';
+export {
+  API_BASE_URL,
+  tokenStorage,
+  type ApiErrorResponse,
+  type AuthResponse,
+  type AuthTokens,
+  type TokenPayload,
+  type User,
+} from '@/utils/api-config';
 
-export interface TokenPayload {
-  token: string;
-  expires: string;
-}
+const SESSION_ENDPOINTS = [
+  '/auth/device',
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh-tokens',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+];
 
-export interface AuthTokens {
-  access: TokenPayload;
-  refresh: TokenPayload;
-}
-
-export interface User {
-  id: number;
-  email: string;
-  name: string;
-  role: 'USER' | 'ADMIN';
-  isEmailVerified: boolean;
-}
-
-export interface AuthResponse {
-  user: User;
-  tokens: AuthTokens;
-}
-
-export interface ApiErrorResponse {
-  code: number;
-  message: string;
-  stack?: string;
-}
-
-export const tokenStorage = {
-  getAccessToken: () => SecureStore.getItem(ACCESS_TOKEN_KEY),
-  getRefreshToken: () => SecureStore.getItem(REFRESH_TOKEN_KEY),
-  setTokens: (tokens: AuthTokens) => {
-    SecureStore.setItem(ACCESS_TOKEN_KEY, tokens.access.token);
-    SecureStore.setItem(REFRESH_TOKEN_KEY, tokens.refresh.token);
-  },
-  clearTokens: async () => {
-    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-  },
-};
+const isSessionEndpoint = (url?: string) =>
+  !!url && SESSION_ENDPOINTS.some((path) => url.includes(path));
 
 export const api: AxiosInstance = axios.create({
-  baseURL: BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
 
 api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  async (config: InternalAxiosRequestConfig) => {
+    if (!tokenStorage.getAccessToken() && !isSessionEndpoint(config.url)) {
+      try {
+        await ensureSession();
+      } catch {}
+    }
     const token = tokenStorage.getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -67,10 +56,10 @@ api.interceptors.request.use(
 );
 
 let isRefreshing = false;
-let refreshQueue: Array<{
+let refreshQueue: {
   resolve: (token: string) => void;
   reject: (error: unknown) => void;
-}> = [];
+}[] = [];
 
 const processQueue = (error: unknown, token: string | null) => {
   refreshQueue.forEach(({ resolve, reject }) => {
@@ -80,9 +69,15 @@ const processQueue = (error: unknown, token: string | null) => {
   refreshQueue = [];
 };
 
-const onAuthFailure = async () => {
-  await tokenStorage.clearTokens();
-  router.replace('/login' as Href);
+const fallBackToAnonymous = async (): Promise<string | null> => {
+  notifySessionLost();
+  try {
+    await resetSession();
+    return tokenStorage.getAccessToken();
+  } catch {
+    await tokenStorage.clearTokens();
+    return null;
+  }
 };
 
 api.interceptors.response.use(
@@ -90,50 +85,55 @@ api.interceptors.response.use(
   async (error: AxiosError<ApiErrorResponse>) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    const isAuthEndpoint =
-      originalRequest?.url?.includes('/auth/login') ||
-      originalRequest?.url?.includes('/auth/register') ||
-      originalRequest?.url?.includes('/auth/refresh-tokens');
+    if (
+      error.response?.status !== 401 ||
+      originalRequest?._retry ||
+      isSessionEndpoint(originalRequest?.url)
+    ) {
+      return Promise.reject(error);
+    }
 
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    originalRequest._retry = true;
+
+    if (isRefreshing) {
+      return new Promise<string>((resolve, reject) => {
+        refreshQueue.push({ resolve, reject });
+      }).then((token) => {
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return api(originalRequest);
+      });
+    }
+
+    isRefreshing = true;
+    try {
       const refreshToken = tokenStorage.getRefreshToken();
-      if (!refreshToken) {
-        await onAuthFailure();
+      let accessToken: string | null = null;
+
+      if (refreshToken) {
+        try {
+          const { data } = await axios.post<AuthTokens>(`${API_BASE_URL}/auth/refresh-tokens`, {
+            refreshToken,
+          });
+          tokenStorage.setTokens(data);
+          accessToken = data.access.token;
+        } catch {
+          accessToken = await fallBackToAnonymous();
+        }
+      } else {
+        accessToken = await fallBackToAnonymous();
+      }
+
+      if (!accessToken) {
+        processQueue(error, null);
         return Promise.reject(error);
       }
 
-      if (isRefreshing) {
-        return new Promise<string>((resolve, reject) => {
-          refreshQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return api(originalRequest);
-        });
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        const { data } = await axios.post<AuthTokens>(`${BASE_URL}/auth/refresh-tokens`, {
-          refreshToken,
-        });
-
-        tokenStorage.setTokens(data);
-        processQueue(null, data.access.token);
-
-        originalRequest.headers.Authorization = `Bearer ${data.access.token}`;
-        return api(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
-        await onAuthFailure();
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
-      }
+      processQueue(null, accessToken);
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+      return api(originalRequest);
+    } finally {
+      isRefreshing = false;
     }
-
-    return Promise.reject(error);
   }
 );
 
@@ -145,6 +145,12 @@ export const getApiErrorMessage = (error: unknown): string => {
 };
 
 export const authApi = {
+  linkEmail: (body: { name: string; email: string; password: string }) =>
+    api.post<AuthResponse>('/auth/link/email', body).then((r) => {
+      tokenStorage.setTokens(r.data.tokens);
+      return r.data;
+    }),
+
   register: (body: { name: string; email: string; password: string }) =>
     api.post<AuthResponse>('/auth/register', body).then((r) => {
       tokenStorage.setTokens(r.data.tokens);
@@ -153,6 +159,18 @@ export const authApi = {
 
   login: (body: { email: string; password: string }) =>
     api.post<AuthResponse>('/auth/login', body).then((r) => {
+      tokenStorage.setTokens(r.data.tokens);
+      return r.data;
+    }),
+
+  google: (idToken: string) =>
+    api.post<AuthResponse>('/auth/google', { idToken }).then((r) => {
+      tokenStorage.setTokens(r.data.tokens);
+      return r.data;
+    }),
+
+  linkGoogle: (idToken: string) =>
+    api.post<AuthResponse>('/auth/link/google', { idToken }).then((r) => {
       tokenStorage.setTokens(r.data.tokens);
       return r.data;
     }),
@@ -174,18 +192,30 @@ export const authApi = {
 };
 
 export const userApi = {
-  getUsers: (params?: { name?: string; role?: string; sortBy?: string; limit?: number; page?: number }) =>
-    api.get<{ results: User[]; page: number; limit: number; totalPages: number; totalResults: number }>('/users', { params }),
+  getUsers: (params?: {
+    name?: string;
+    role?: string;
+    sortBy?: string;
+    limit?: number;
+    page?: number;
+  }) =>
+    api.get<{
+      results: User[];
+      page: number;
+      limit: number;
+      totalPages: number;
+      totalResults: number;
+    }>('/users', { params }),
 
-  getUser: (id: number) => api.get<User>(`/users/${id}`),
+  getUser: (id: string) => api.get<User>(`/users/${id}`),
 
   createUser: (body: { name: string; email: string; password: string; role?: string }) =>
     api.post<User>('/users', body),
 
-  updateUser: (id: number, body: Partial<{ name: string; email: string; password: string }>) =>
+  updateUser: (id: string, body: Partial<{ name: string; email: string; password: string }>) =>
     api.patch<User>(`/users/${id}`, body),
 
-  deleteUser: (id: number) => api.delete(`/users/${id}`),
+  deleteUser: (id: string) => api.delete(`/users/${id}`),
 };
 
 export default api;

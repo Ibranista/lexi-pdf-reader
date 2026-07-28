@@ -58,9 +58,12 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
     return byUri;
   }, [recents]);
 
-  const jumpTo = (uri: string, page: number) => {
-    const doc = docs.get(uri);
-    if (!doc) return;
+  const jumpTo = (uri: string | undefined, page: number) => {
+    const doc = uri ? docs.get(uri) : undefined;
+    if (!uri || !doc) {
+      showToast(tr("library.notes.reopenUnavailable"));
+      return;
+    }
     useReaderJumpStore.getState().request(uri, page);
     if (doc.ext === "PDF") {
       router.push({
@@ -115,9 +118,13 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
             <Tap
               key={v.word}
               onPress={() => {
-                setPage(v.p);
-                openReader();
-                showToast(tr("library.vocab.jumpedToast", { page: v.p }));
+                if (v.uri) {
+                  jumpTo(v.uri, v.p);
+                } else {
+                  setPage(v.p);
+                  openReader();
+                  showToast(tr("library.vocab.jumpedToast", { page: v.p }));
+                }
               }}
               scale={0.985}
             >
@@ -172,6 +179,13 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                     </Text>
                   </Box>
                 </Box>
+                {v.example ? (
+                  <Box bg={t.chip} paddingX={10} paddingY={8} rounded={9}>
+                    <Text color={t.sub} lh={19} serif size={12.5}>
+                      “{v.example}”
+                    </Text>
+                  </Box>
+                ) : null}
               </Card>
             </Tap>
           ))}

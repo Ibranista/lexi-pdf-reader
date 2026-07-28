@@ -1,4 +1,9 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import type { ReadingInterest } from "@/constants/onboarding";
+import { queryKeys } from "@/services/query-client";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import { api } from "@/utils/axios";
 
 export interface BookSuggestion {
   id: string;
@@ -23,8 +28,6 @@ const SEED: Seed[] = [
 ];
 
 export const SUGGESTION_COUNT = SEED.length;
-
-let cache: BookSuggestion[] | null = null;
 
 const COVER_PARAM = 'lexiCover';
 
@@ -97,27 +100,35 @@ async function resolveSeed(seed: Seed): Promise<BookSuggestion> {
   };
 }
 
+async function fetchSuggestions(
+  interests: readonly ReadingInterest[],
+): Promise<BookSuggestion[]> {
+  try {
+    const { data } = await api.get<{ suggestions: BookSuggestion[] }>(
+      "/book-suggestions",
+      {
+        params: {
+          interests: interests.length ? interests.join(",") : undefined,
+          limit: SUGGESTION_COUNT,
+        },
+      },
+    );
+    if (data.suggestions?.length) return data.suggestions;
+  } catch {}
+  return Promise.all(SEED.map(resolveSeed));
+}
+
 export function useBookSuggestions(): {
   suggestions: BookSuggestion[];
   loading: boolean;
 } {
-  const [suggestions, setSuggestions] = useState<BookSuggestion[]>(() => cache ?? []);
-  const [loading, setLoading] = useState(cache === null);
+  const interests = useOnboardingStore((s) => s.interests);
 
-  useEffect(() => {
-    if (cache) return;
-    let cancelled = false;
-    Promise.all(SEED.map(resolveSeed)).then((list) => {
-      cache = list;
-      if (!cancelled) {
-        setSuggestions(list);
-        setLoading(false);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, isPending } = useQuery({
+    queryFn: () => fetchSuggestions(interests),
+    queryKey: queryKeys.bookSuggestions(interests),
+    staleTime: Infinity,
+  });
 
-  return { suggestions, loading };
+  return { suggestions: data ?? [], loading: isPending };
 }

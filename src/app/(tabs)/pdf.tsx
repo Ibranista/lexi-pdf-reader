@@ -42,9 +42,14 @@ import {
   PdfSearchPanel,
   SummarizeSheet,
 } from "@/components/reader";
+import { SignInWall } from "@/components/auth/SignInWall";
+import { NoteCard } from "@/components/reader/NoteCard";
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
+import type { TranslateTarget } from "@/components/reader/TranslateCard";
+import { TranslateCard } from "@/components/reader/TranslateCard";
+import { uploadContext } from "@/services/lexi-ai";
 import { useAnnotationsStore } from "@/stores/annotations-store";
 import {
   useAppStore,
@@ -54,6 +59,7 @@ import {
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
+import { useDocKey } from "@/utils/doc-key";
 import { useProtoTheme } from "@/theme/proto";
 import { expectedReadingMs } from "@/utils/reading-progress";
 
@@ -79,6 +85,7 @@ export default function PdfViewerScreen() {
     name?: string;
     view?: ViewMode;
   }>();
+  const docKey = useDocKey(uri, name);
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
   const bright = useAppStore((s) => s.bright);
@@ -121,6 +128,7 @@ export default function PdfViewerScreen() {
     import("@/components/reader/PdfReflowView").PdfSearchResult[]
   >([]);
   const [indexed, setIndexed] = useState(false);
+  const contextSent = useRef<string | null>(null);
   const [highlight, setHighlight] = useState<{
     query: string;
     index: number;
@@ -139,6 +147,8 @@ export default function PdfViewerScreen() {
     page: number;
   } | null>(null);
   const [clearSelSeq, setClearSelSeq] = useState(0);
+  const [translating, setTranslating] = useState<TranslateTarget | null>(null);
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const annotations = useAnnotationsStore((s) => s.items);
   const highlights = useMemo(
@@ -147,6 +157,10 @@ export default function PdfViewerScreen() {
         .filter((a) => a.uri === uri)
         .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
     [annotations, uri],
+  );
+  const openNote = useMemo(
+    () => annotations.find((a) => a.id === openNoteId) ?? null,
+    [annotations, openNoteId],
   );
   const [pageMarker, setPageMarker] = useState<{
     page: number;
@@ -565,12 +579,7 @@ export default function PdfViewerScreen() {
               chromeOffset={immersive ? 0 : barH}
               clearSelectionSeq={clearSelSeq}
               highlights={highlights}
-              onHighlightPress={(id) =>
-                router.push({
-                  pathname: "/notes",
-                  params: { uri, name: name ?? "Document", focus: id },
-                })
-              }
+              onHighlightPress={setOpenNoteId}
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -582,6 +591,22 @@ export default function PdfViewerScreen() {
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
+              onContext={
+                aiOn && docKey
+                  ? (pages, done) => {
+                      if (contextSent.current === docKey) return;
+                      if (done) contextSent.current = docKey;
+                      if (!pages.length) return;
+                      void uploadContext({
+                        author: undefined,
+                        docKey,
+                        pageCount,
+                        pages,
+                        title: name ?? "Document",
+                      });
+                    }
+                  : undefined
+              }
               onOutline={setReflowOutline}
               onWordCounts={(counts) => {
                 useRecentsStore.getState().setReadingPlan(
@@ -893,8 +918,11 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
-      {lexiOpen && aiOn ? (
-        <LexiSheet onClose={() => setLexiOpen(false)} />
+      {lexiOpen && aiOn && docKey ? (
+        <LexiSheet
+          book={{ docKey, page, title: name ?? "Document" }}
+          onClose={() => setLexiOpen(false)}
+        />
       ) : null}
       {filingOpen ? (
         <CollectionPicker
@@ -902,7 +930,7 @@ export default function PdfViewerScreen() {
           onClose={() => setFilingOpen(false)}
         />
       ) : null}
-      {selection && mode === "reflow" ? (
+      {selection && mode === "reflow" && !translating ? (
         <AnnotateBar
           onBookmark={() => {
             toggleBookmark(selection.page);
@@ -914,12 +942,53 @@ export default function PdfViewerScreen() {
             setSelection(null);
             setClearSelSeq((n) => n + 1);
           }}
+          onTranslate={() => {
+            if (!docKey) {
+              showToast("One moment — still opening this document");
+              return;
+            }
+            setTranslating({
+              docKey,
+              page: selection.page,
+              source: name ?? "Document",
+              text: selection.text,
+              uri,
+            });
+            setClearSelSeq((n) => n + 1);
+          }}
           page={selection.page}
           source={name ?? "Document"}
           text={selection.text}
           uri={uri}
         />
       ) : null}
+
+      {translating ? (
+        <TranslateCard
+          onClose={() => {
+            setTranslating(null);
+            setSelection(null);
+            setClearSelSeq((n) => n + 1);
+          }}
+          onHighlight={(result) => {
+            useAnnotationsStore.getState().add({
+              color: "sage",
+              note: `${result.tr} — ${result.translit ?? result.langName}`,
+              page: translating.page,
+              source: name ?? "Document",
+              text: translating.text,
+              uri,
+            });
+          }}
+          target={translating}
+        />
+      ) : null}
+
+      {openNote ? (
+        <NoteCard annotation={openNote} onClose={() => setOpenNoteId(null)} />
+      ) : null}
+
+      <SignInWall />
     </Box>
   );
 }

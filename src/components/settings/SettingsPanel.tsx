@@ -23,6 +23,7 @@ import {
   Toggle,
 } from "@/components/lexi-components";
 import { useAppStore, useToastStore } from "@/stores/app-store";
+import { accountLabel, useAuthStore } from "@/stores/auth-store";
 import type { ThemeMode } from "@/theme/proto";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -270,11 +271,92 @@ export const SettingsPanel = memo(function SettingsPanel({
               />
             </Box>
           </Card>
+
+          <AccountCard />
         </ScrollView>
       </SafeAreaView>
     </ProtoScreen>
   );
 });
+
+function AccountCard() {
+  const t = useProtoTheme();
+  const showToast = useToastStore((s) => s.showToast);
+  const user = useAuthStore((s) => s.user);
+  const signOut = useAuthStore((s) => s.signOut);
+
+  if (!user) {
+    return (
+      <Card>
+        <Tap onPress={() => router.push("/login")} scale={0.98}>
+          <Box align="center" direction="row" gap={12}>
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              height={34}
+              justify="center"
+              rounded={10}
+              width={34}
+            >
+              <IconSpark color={t.accent} size={17} />
+            </Box>
+            <Box flex={1}>
+              <Text size={14} weight="600">
+                Sign in
+              </Text>
+              <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
+                Keep your library across devices
+              </Text>
+            </Box>
+            <IconChevron color={t.faint} size={16} />
+          </Box>
+        </Tap>
+      </Card>
+    );
+  }
+
+  return (
+    <Card gap={14}>
+      <Box align="center" direction="row" gap={12}>
+        <Box
+          align="center"
+          bg={t.accentSoft}
+          height={34}
+          justify="center"
+          rounded={10}
+          width={34}
+        >
+          <Text color={t.accentText} size={13} weight="600">
+            {accountLabel(user).slice(0, 2).toUpperCase()}
+          </Text>
+        </Box>
+        <Box flex={1}>
+          <Text numberOfLines={1} size={14} weight="600">
+            {accountLabel(user)}
+          </Text>
+          {user.email ? (
+            <Text color={t.sub} numberOfLines={1} size={12} style={{ marginTop: 2 }}>
+              {user.email}
+            </Text>
+          ) : null}
+        </Box>
+      </Box>
+      <Tap
+        onPress={async () => {
+          await signOut();
+          showToast("Logged out");
+        }}
+        scale={0.97}
+      >
+        <Box align="center" bg={t.chip} paddingY={11} rounded={11}>
+          <Text color={t.sub} size={13} weight="600">
+            Log out
+          </Text>
+        </Box>
+      </Tap>
+    </Card>
+  );
+}
 
 function SettingsLink({
   icon,

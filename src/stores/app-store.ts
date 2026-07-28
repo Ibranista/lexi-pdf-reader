@@ -34,6 +34,9 @@ export interface VocabEntry {
   p: number;
   s1: string;
   s2: string;
+  example?: string;
+  uri?: string;
+  source?: string;
 }
 
 export interface NoteItem {

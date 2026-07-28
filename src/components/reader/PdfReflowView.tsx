@@ -4,6 +4,7 @@ import { Animated, Easing } from "react-native";
 import { WebView } from "react-native-webview";
 
 import { Box, Text } from "@/components/atoms";
+import { CONTEXT_CHUNK_PAGES } from "@/services/lexi-ai";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 import { fontStack, READ_WIDTH_PX, softInk } from "@/utils/reader-typography";
@@ -406,6 +407,43 @@ function buildHtml(
   };
 
   window.clearHighlight = function(){ cancelHitTimers(); clearMarks(); };
+
+  /* ---- extracted text, out to the reader ----
+     Lexi answers from the whole document, so the server needs its text
+     (POST /ai/context). Extraction already happened to build this DOM, so
+     this walks what is here rather than parsing the PDF a second time.
+
+     Posted in page-sized batches: a long book's text is several megabytes,
+     and one message that size stalls the bridge and the upload behind it. */
+  window.sendContext = function(batch){
+    var secs = document.querySelectorAll('section[data-page]');
+    var out = [];
+    for (var i = 0; i < secs.length; i++) {
+      var ps = secs[i].querySelectorAll('p');
+      var buf = [];
+      for (var j = 0; j < ps.length; j++) {
+        var txt = ps[j].textContent || '';
+        if (txt) buf.push(txt);
+      }
+      out.push({
+        page: parseInt(secs[i].getAttribute('data-page'), 10),
+        // Double-escaped on purpose: this whole script is a JS template
+        // literal, so a single-escaped newline here would emit a real line
+        // break inside a quoted string in the generated HTML — a syntax error
+        // that kills the entire injected script (which left reflow's skeleton
+        // spinning forever). The doubled form survives into the page as the
+        // newline escape we actually want.
+        text: buf.join('\\n')
+      });
+      if (out.length >= batch) {
+        post({ type: 'context', pages: out, done: false });
+        out = [];
+      }
+    }
+    // Always fires, empty tail included — it's what tells the reader the
+    // document is fully uploaded.
+    post({ type: 'context', pages: out, done: true });
+  };
 
   /* ---- focus mode: scroll-driven spotlight ----
      The block whose box crosses the reading line (45% down the screen — a
@@ -1640,6 +1678,10 @@ function buildHtml(
     var firstPaint = false;
 
     pdfjsLib.getDocument({ data: b64ToBytes('${b64}') }).promise.then(async function(pdf){
+      // pdf.js, its worker and the document all loaded — tell the native side
+      // so its boot watchdog stands down and only genuine load failures (this
+      // message never arriving) surface as an error.
+      post({ type: 'booting', pages: pdf.numPages });
       var wordCounts = [];
       if (INITIAL_PAGE > 1) pendingScroll = INITIAL_PAGE;
       for (var p = 1; p <= pdf.numPages; p++){
@@ -1756,6 +1798,7 @@ interface Props {
   onIndexed?: () => void;
   onOutline?: (entries: PdfOutlineEntry[]) => void;
   onWordCounts?: (counts: number[]) => void;
+  onContext?: (pages: { page: number; text: string }[], done: boolean) => void;
 }
 
 export function PdfReflowView({
@@ -1777,6 +1820,7 @@ export function PdfReflowView({
   onIndexed,
   onOutline,
   onWordCounts,
+  onContext,
 }: Props) {
   const t = useProtoTheme();
   const textSize = useAppStore((s) => s.textSize);
@@ -1789,6 +1833,8 @@ export function PdfReflowView({
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("reading");
+  const bootTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gotFirstMessage = useRef(false);
   const [extractedSeq, setExtractedSeq] = useState(0);
 
   const settings: Settings = useMemo(
@@ -1828,6 +1874,7 @@ export function PdfReflowView({
 
   useEffect(() => {
     let cancelled = false;
+    gotFirstMessage.current = false;
     (async () => {
       try {
         const data = await new File(uri).base64();
@@ -1849,6 +1896,17 @@ export function PdfReflowView({
       cancelled = true;
     };
   }, [uri]);
+
+  useEffect(() => {
+    if (!html) return;
+    if (bootTimer.current) clearTimeout(bootTimer.current);
+    bootTimer.current = setTimeout(() => {
+      if (!gotFirstMessage.current) setStatus("error");
+    }, 25000);
+    return () => {
+      if (bootTimer.current) clearTimeout(bootTimer.current);
+    };
+  }, [html]);
 
   useEffect(() => {
     if (status !== "ready") return;
@@ -1934,7 +1992,9 @@ export function PdfReflowView({
           Couldn&apos;t reflow this document
         </Text>
         <Text align="center" color={t.sub} lh={20} size={13}>
-          It may be a scanned/image-only PDF with no text layer. Try Page view.
+          Reflow needs a connection the first time it opens a document. If
+          you&apos;re online, this may be a scanned/image-only PDF with no text
+          layer — try Page view.
         </Text>
       </Box>
     );
@@ -1947,6 +2007,10 @@ export function PdfReflowView({
           allowFileAccess
           androidLayerType="hardware"
           onMessage={(e) => {
+            if (!gotFirstMessage.current) {
+              gotFirstMessage.current = true;
+              if (bootTimer.current) clearTimeout(bootTimer.current);
+            }
             try {
               const msg = JSON.parse(e.nativeEvent.data) as {
                 type: string;
@@ -1957,6 +2021,8 @@ export function PdfReflowView({
                 results?: PdfSearchResult[];
                 entries?: PdfOutlineEntry[];
                 wordCounts?: number[];
+                pages?: { page: number; text: string }[];
+                done?: boolean;
               };
               if (msg.type === "firstpaint") setStatus("ready");
               else if (msg.type === "page" && msg.page)
@@ -1971,9 +2037,16 @@ export function PdfReflowView({
                 onSearchResults?.(msg.results ?? []);
               else if (msg.type === "outline" && msg.entries?.length)
                 onOutline?.(msg.entries);
+              else if (msg.type === "context")
+                onContext?.(msg.pages ?? [], msg.done ?? false);
               else if (msg.type === "done") {
                 onIndexed?.();
                 onWordCounts?.(msg.wordCounts ?? []);
+                if (onContext) {
+                  webRef.current?.injectJavaScript(
+                    `window.sendContext(${CONTEXT_CHUNK_PAGES}); true;`,
+                  );
+                }
                 setExtractedSeq((n) => n + 1);
                 if (queryRef.current) setIndexSeq((n) => n + 1);
               } else if (msg.type === "progress") {
