@@ -5,6 +5,10 @@
  * and from the axios interceptor when a refresh finally fails — which is why
  * this route has to exist even before anyone chooses to sign in.
  */
+import {
+  GoogleSignin,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
 import { router } from "expo-router";
 import { useState } from "react";
 import { ScrollView } from "react-native";
@@ -22,6 +26,14 @@ import { useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useProtoTheme } from "@/theme/proto";
 import { authApi, getApiErrorMessage, tokenStorage } from "@/utils/axios";
+
+// Native Google sign-in via the on-device account picker — no browser, no
+// redirect scheme (which is what the browser flow kept tripping over). The
+// webClientId makes Google issue an ID token our backend can verify; the
+// Android OAuth client (package + SHA-1) is what gates the request itself.
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+});
 
 type Mode = "register" | "signin";
 
@@ -42,6 +54,53 @@ export default function LoginScreen() {
     email.trim().includes("@") &&
     password.length >= 8 &&
     (!registering || name.trim().length > 0);
+
+  const finishGoogle = async (idToken: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      // An anonymous session is upgraded in place (`/auth/link/google`) so the
+      // reading already saved on it carries over; if that Google identity
+      // already owns an account, sign into it instead (`/auth/google`).
+      let result;
+      if (tokenStorage.getAccessToken()) {
+        try {
+          result = await authApi.linkGoogle(idToken);
+        } catch {
+          result = await authApi.google(idToken);
+        }
+      } else {
+        result = await authApi.google(idToken);
+      }
+      setUser(result.user);
+      showToast("Signed in with Google");
+      router.back();
+    } catch (e) {
+      setError(getApiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    if (busy) return;
+    setError(null);
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const response = await GoogleSignin.signIn();
+      if (response.type === "cancelled") return;
+      const idToken = response.data?.idToken;
+      if (!idToken) {
+        setError("Google didn't return a sign-in token. Try again.");
+        return;
+      }
+      await finishGoogle(idToken);
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      if (code === statusCodes.SIGN_IN_CANCELLED) return;
+      setError("Google sign-in couldn't complete. Try again.");
+    }
+  };
 
   const submit = async () => {
     if (!ready || busy) return;
@@ -86,15 +145,8 @@ export default function LoginScreen() {
           </Text>
         </Box>
 
-        {/* Google needs the native sign-in module before it can do anything —
-            see the note in the handler. The button is here because the flow it
-            belongs to is the one people will reach for first. */}
-        <Tap
-          onPress={() =>
-            showToast("Google sign-in isn't connected yet — use email for now")
-          }
-          scale={0.97}
-        >
+        {/* Native Google sign-in (on-device account picker). */}
+        <Tap disabled={busy} onPress={signInWithGoogle} scale={0.97}>
           <Box
             align="center"
             bg={t.card}
