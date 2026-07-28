@@ -15,6 +15,7 @@ export type LineSpacing = 'airy' | 'comfy' | 'compact';
 export type ReadWidth = 'comfort' | 'full' | 'narrow';
 export type Contrast = 'soft' | 'std';
 export type ExplainStyle = 'advanced' | 'balanced' | 'simple';
+export type ReaderMode = 'reflow' | 'page';
 export type FocusSensitivity = 'balanced' | 'frequent' | 'relaxed';
 export type PaywallPlan = 'annual' | 'monthly';
 export type SortKey = 'date' | 'name' | 'size';
@@ -105,6 +106,7 @@ interface AppState {
   aiOn: boolean;
   lang: Lang;
   explStyle: ExplainStyle;
+  defaultReader: ReaderMode;
   thoughtOn: boolean;
   cardsPerDay: number;
   syncPos: boolean;
@@ -150,6 +152,7 @@ export const useAppStore = create<AppState>()(
       aiOn: true,
       lang: 'am',
       explStyle: 'balanced',
+      defaultReader: 'reflow',
       thoughtOn: true,
       cardsPerDay: 3,
       syncPos: true,
@@ -213,19 +216,24 @@ export const useToastStore = create<ToastState>()((set) => ({
   },
 }));
 
+interface ReaderJump {
+  page: number;
+  flash?: string;
+}
+
 interface ReaderJumpState {
-  pending: { uri: string; page: number } | null;
-  request: (uri: string, page: number) => void;
-  consume: (uri: string) => number | null;
+  pending: ({ uri: string } & ReaderJump) | null;
+  request: (uri: string, page: number, flash?: string) => void;
+  consume: (uri: string) => ReaderJump | null;
 }
 
 export const useReaderJumpStore = create<ReaderJumpState>()((set, get) => ({
   pending: null,
-  request: (uri, page) => set({ pending: { uri, page } }),
+  request: (uri, page, flash) => set({ pending: { uri, page, flash } }),
   consume: (uri) => {
     const { pending } = get();
     if (!pending || pending.uri !== uri) return null;
     set({ pending: null });
-    return pending.page;
+    return { page: pending.page, flash: pending.flash };
   },
 }));

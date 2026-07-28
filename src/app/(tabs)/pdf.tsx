@@ -59,6 +59,9 @@ import {
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useFocusStore } from "@/stores/focus-store";
 import { useRecentsStore } from "@/stores/recents-store";
+import NetInfo from "@react-native-community/netinfo";
+
+import { isOnline } from "@/utils/connectivity";
 import { useDocKey } from "@/utils/doc-key";
 import { useProtoTheme } from "@/theme/proto";
 import { expectedReadingMs } from "@/utils/reading-progress";
@@ -71,9 +74,10 @@ const TITLE_SWAP = LinearTransition.duration(260);
 
 function savedPageFor(uri: string | undefined): number {
   if (!uri) return 1;
-  const saved = useRecentsStore
-    .getState()
-    .recents.find((r) => r.uri === uri)?.page;
+  const state = useRecentsStore.getState();
+  const saved =
+    state.positions[uri] ??
+    state.recents.find((r) => r.uri === uri)?.page;
   return saved && saved > 0 ? saved : 1;
 }
 
@@ -115,7 +119,17 @@ export default function PdfViewerScreen() {
   const startFocus = useFocusStore((s) => s.start);
   const exitFocus = useFocusStore((s) => s.exit);
 
-  const [mode, setMode] = useState<ViewMode>(view === "reflow" ? "reflow" : "page");
+  const defaultReader = useAppStore((s) => s.defaultReader);
+  const [mode, setMode] = useState<ViewMode>(
+    view === "page"
+      ? "page"
+      : view === "reflow"
+        ? "reflow"
+        : !isOnline()
+          ? "page"
+          : defaultReader,
+  );
+  const userPickedView = useRef(false);
   const [page, setPage] = useState(() => savedPageFor(uri));
   const [pageCount, setPageCount] = useState(0);
   const readingVisit = useRef({ uri, page: savedPageFor(uri), startedAt: 0 });
@@ -133,6 +147,7 @@ export default function PdfViewerScreen() {
     query: string;
     index: number;
     seq: number;
+    page?: number;
   } | null>(null);
   const [pageDims, setPageDims] = useState<{ w: number; h: number } | null>(
     null,
@@ -298,6 +313,7 @@ export default function PdfViewerScreen() {
 
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
+    userPickedView.current = true;
     if (next === "page") {
       setPdfPage(page);
     } else {
@@ -305,6 +321,23 @@ export default function PdfViewerScreen() {
     }
     setMode(next);
   };
+
+  useEffect(() => {
+    if (view || userPickedView.current) return;
+    let cancelled = false;
+    NetInfo.fetch()
+      .then((state) => {
+        const offline =
+          state.isConnected === false || state.isInternetReachable === false;
+        if (!cancelled && offline && !userPickedView.current) {
+          setMode((current) => (current === "reflow" ? "page" : current));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
 
   const clampPage = (n: number) =>
     pageCount ? Math.max(1, Math.min(n, pageCount)) : Math.max(1, n);
@@ -328,8 +361,25 @@ export default function PdfViewerScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const target = useReaderJumpStore.getState().consume(uri);
-      if (target) goToPage(target);
+      const jump = useReaderJumpStore.getState().consume(uri);
+      if (!jump) return;
+      const nextPage = clampPage(jump.page);
+      setPage(nextPage);
+      setApp({ page: nextPage });
+      if (jump.flash) {
+        setMode("reflow");
+        setReflowGoto((g) => ({ page: nextPage, seq: g.seq + 1 }));
+        setHighlight((h) => ({
+          query: jump.flash as string,
+          index: 0,
+          page: nextPage,
+          seq: (h?.seq ?? 0) + 1,
+        }));
+      } else if (mode === "page") {
+        setPdfPage(nextPage);
+      } else {
+        setReflowGoto((g) => ({ page: nextPage, seq: g.seq + 1 }));
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [uri]),
   );

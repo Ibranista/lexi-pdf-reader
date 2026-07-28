@@ -11,8 +11,14 @@ import {
 } from "@/components/lexi-components";
 import { useWordLookup } from "@/hooks/use-lexi-ai";
 import { speak, type TranslateResult } from "@/services/lexi-ai";
-import { useAppStore, useToastStore } from "@/stores/app-store";
+import { useAppStore, useToastStore, type Lang } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
+
+const LANGS: { key: Lang; label: string }[] = [
+  { key: "am", label: "አማ" },
+  { key: "ar", label: "ع" },
+  { key: "en", label: "EN" },
+];
 
 export interface TranslateTarget {
   text: string;
@@ -35,6 +41,8 @@ export function TranslateCard({
   const t = useProtoTheme();
   const showToast = useToastStore((s) => s.showToast);
   const addVocab = useAppStore((s) => s.addVocab);
+  const lang = useAppStore((s) => s.lang);
+  const setApp = useAppStore((s) => s.set);
 
   const [heard, setHeard] = useState<{ url: string; seq: number } | null>(null);
   const audioNode = useMemo(() => {
@@ -54,7 +62,7 @@ export function TranslateCard({
   }, [heard]);
 
   const hearIt = async (r: TranslateResult) => {
-    const url = r.audioUrl ?? (await speak(r.tr, r.lang));
+    const url = r.audioUrl ?? (await speak(r.tr ?? r.word, r.lang));
     if (!url) {
       showToast("No audio for this language yet");
       return;
@@ -78,7 +86,7 @@ export function TranslateCard({
       s1: r.s1,
       s2: r.s2,
       source: target.source,
-      tr: r.tr,
+      tr: r.tr ?? "",
       translit: r.translit ?? "—",
       uri: target.uri,
       word: r.word,
@@ -108,6 +116,31 @@ export function TranslateCard({
           elevation: 24,
         }}
       >
+        <Box align="center" direction="row" gap={6} marginBottom={14}>
+          <Text color={t.faint} ls={0.4} size={10} upper weight="700">
+            Explain in
+          </Text>
+          <Box flex={1} />
+          {LANGS.map((l) => (
+            <Tap key={l.key} onPress={() => setApp({ lang: l.key })} scale={0.9}>
+              <Box
+                bg={lang === l.key ? t.accent : t.chip}
+                paddingX={11}
+                paddingY={5}
+                rounded={9}
+              >
+                <Text
+                  color={lang === l.key ? t.onAccent : t.sub}
+                  size={12}
+                  weight="600"
+                >
+                  {l.label}
+                </Text>
+              </Box>
+            </Tap>
+          ))}
+        </Box>
+
         {result ? (
           <>
             <Box
@@ -128,20 +161,25 @@ export function TranslateCard({
               </Box>
             </Box>
 
-            <Box
-              align="center"
-              direction="row"
-              gap={8}
-              marginBottom={14}
-              wrap="wrap"
-            >
-              <Text color={t.accentText} size={22} weight="600">
-                {result.tr}
-              </Text>
-              <Text color={t.sub} size={12}>
-                {result.translit ? `· ${result.translit} ` : ""}· {result.langName}
-              </Text>
-            </Box>
+            {result.tr ? (
+              <Box
+                align="center"
+                direction="row"
+                gap={8}
+                marginBottom={14}
+                wrap="wrap"
+              >
+                <Text color={t.accentText} size={22} weight="600">
+                  {result.tr}
+                </Text>
+                <Text color={t.sub} size={12}>
+                  {result.translit ? `· ${result.translit} ` : ""}·{" "}
+                  {result.langName}
+                </Text>
+              </Box>
+            ) : (
+              <Box marginBottom={10} />
+            )}
 
             <Box bg={t.line} height={1} marginBottom={14} />
 

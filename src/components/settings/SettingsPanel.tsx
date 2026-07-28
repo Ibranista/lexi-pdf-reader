@@ -56,6 +56,7 @@ export const SettingsPanel = memo(function SettingsPanel({
   const lang = useAppStore((s) => s.lang);
   const zoom = useAppStore((s) => s.zoom);
   const syncPos = useAppStore((s) => s.syncPos);
+  const defaultReader = useAppStore((s) => s.defaultReader);
   const setApp = useAppStore((s) => s.set);
 
   const goTo = (pathname: "/plan" | "/reading-comfort" | "/ai-focus") => {
@@ -206,6 +207,46 @@ export const SettingsPanel = memo(function SettingsPanel({
                   </Box>
                 </Tap>
               ))}
+            </Box>
+          </Card>
+
+          <Card gap={12}>
+            <Box
+              align="center"
+              direction="row"
+              gap={10}
+              paddingBottom={4}
+              paddingTop={10}
+            >
+              <Box
+                align="center"
+                bg={t.chip}
+                height={34}
+                justify="center"
+                rounded={10}
+                width={34}
+              >
+                <IconType color={t.ink} size={17} />
+              </Box>
+              <Box flex={1}>
+                <Text size={14} weight="600">
+                  Default reader
+                </Text>
+                <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
+                  How documents open · offline always uses Page
+                </Text>
+              </Box>
+            </Box>
+            <Box paddingLeft={46}>
+              <Segmented
+                items={[
+                  { key: "reflow" as const, label: "Reflow" },
+                  { key: "page" as const, label: "Page" },
+                ]}
+                onChange={(k) => setApp({ defaultReader: k })}
+                size={13}
+                value={defaultReader}
+              />
             </Box>
           </Card>
 

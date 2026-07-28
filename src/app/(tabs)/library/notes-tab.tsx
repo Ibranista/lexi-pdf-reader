@@ -58,13 +58,13 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
     return byUri;
   }, [recents]);
 
-  const jumpTo = (uri: string | undefined, page: number) => {
+  const jumpTo = (uri: string | undefined, page: number, flash?: string) => {
     const doc = uri ? docs.get(uri) : undefined;
     if (!uri || !doc) {
       showToast(tr("library.notes.reopenUnavailable"));
       return;
     }
-    useReaderJumpStore.getState().request(uri, page);
+    useReaderJumpStore.getState().request(uri, page, flash);
     if (doc.ext === "PDF") {
       router.push({
         params: { name: doc.name, uri, view: "reflow" },
@@ -119,7 +119,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
               key={v.word}
               onPress={() => {
                 if (v.uri) {
-                  jumpTo(v.uri, v.p);
+                  jumpTo(v.uri, v.p, v.word);
                 } else {
                   setPage(v.p);
                   openReader();
@@ -153,14 +153,18 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                   wrap="wrap"
                   style={{ alignItems: "baseline" }}
                 >
-                  <Text color={t.accentText} size={17} weight="600">
-                    {v.tr}
-                  </Text>
+                  {v.tr ? (
+                    <Text color={t.accentText} size={17} weight="600">
+                      {v.tr}
+                    </Text>
+                  ) : null}
                   <Text color={t.sub} size={12}>
-                    {tr("library.vocab.translitLine", {
-                      lang: LANG_NAMES[v.lang] ?? v.lang,
-                      translit: v.translit,
-                    })}
+                    {v.tr
+                      ? tr("library.vocab.translitLine", {
+                          lang: LANG_NAMES[v.lang] ?? v.lang,
+                          translit: v.translit,
+                        })
+                      : LANG_NAMES[v.lang] ?? v.lang}
                   </Text>
                 </Box>
                 <Box direction="row" gap={9}>
@@ -260,7 +264,11 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
             );
 
             return doc ? (
-              <Tap key={a.id} onPress={() => jumpTo(a.uri, a.page)} scale={0.985}>
+              <Tap
+                key={a.id}
+                onPress={() => jumpTo(a.uri, a.page, a.text)}
+                scale={0.985}
+              >
                 {card}
               </Tap>
             ) : (

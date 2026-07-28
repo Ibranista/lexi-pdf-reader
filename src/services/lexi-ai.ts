@@ -1,8 +1,10 @@
 import { isAxiosError } from "axios";
+import EventSource from "react-native-sse";
 
 import { DICT, LANG_NAMES } from "@/constants/library";
+import { ensureSession } from "@/services/device-session";
 import type { ExplainStyle, Lang } from "@/stores/app-store";
-import { api } from "@/utils/axios";
+import { API_BASE_URL, api, tokenStorage } from "@/utils/axios";
 
 export interface AiQuota {
   used: number;
@@ -14,7 +16,7 @@ export interface AiQuota {
 export interface TranslateResult {
   word: string;
   pos: string;
-  tr: string;
+  tr?: string;
   translit?: string;
   lang: Lang;
   langName: string;
@@ -189,6 +191,124 @@ function localChat(input: ChatInput): ChatReply {
       : `Happy to chat, but let's park that for later — you were doing well in ${input.title}. Want to carry on?`,
     sessionId: input.sessionId,
   };
+}
+
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  kind: ChatKind;
+  content: string;
+}
+
+export interface ChatStreamHandlers {
+  onToken: (token: string) => void;
+  onDone: (final: { kind: ChatKind; sessionId: string; quota?: AiQuota }) => void;
+  onError: (error: unknown) => void;
+}
+
+export async function streamChat(
+  input: ChatInput,
+  handlers: ChatStreamHandlers,
+): Promise<() => void> {
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {}
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      author: input.author,
+      docKey: input.docKey,
+      excerpt: input.excerpt,
+      message: input.message,
+      page: input.page,
+      sessionId: input.sessionId,
+      style: input.style ?? "balanced",
+      title: input.title,
+    }),
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      t?: string;
+      done?: boolean;
+      kind?: ChatKind;
+      sessionId?: string;
+      quota?: AiQuota;
+      error?: boolean;
+      message?: string;
+    };
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.t) {
+      handlers.onToken(obj.t);
+    } else if (obj.done) {
+      handlers.onDone({
+        kind: obj.kind ?? "normal",
+        sessionId: obj.sessionId ?? input.sessionId,
+        quota: obj.quota,
+      });
+      finish();
+    } else if (obj.error) {
+      handlers.onError(new Error(obj.message ?? "Lexi couldn't finish that."));
+      finish();
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true),
+      );
+    } else {
+      handlers.onError(new Error("Couldn't reach Lexi."));
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
+export async function fetchChatHistory(
+  sessionId: string,
+): Promise<ChatHistoryMessage[]> {
+  try {
+    const { data } = await api.get<{ messages: ChatHistoryMessage[] }>(
+      "/ai/chat/history",
+      { params: { sessionId } },
+    );
+    return data.messages ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function speakText(text: string): Promise<string | undefined> {
+  try {
+    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", { text });
+    return data.audioUrl;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function speak(text: string, lang: Lang): Promise<string | undefined> {

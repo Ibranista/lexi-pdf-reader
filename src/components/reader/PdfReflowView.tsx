@@ -1,6 +1,7 @@
 import { File } from "expo-file-system";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing } from "react-native";
+import { Animated } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
 import { Box, Text } from "@/components/atoms";
@@ -385,12 +386,23 @@ function buildHtml(
     }, 2200);
   }
 
-  window.highlightMatch = function(q, idx){
+  window.highlightMatch = function(q, idx, page){
     cancelHitTimers();
     clearMarks();
     if (!q) return;
     var ql = q.toLowerCase();
-    var secs = document.querySelectorAll('section[data-page]');
+    // When a page is given (a flash from My Notes), look only on that page and
+    // its overflow onto the next section, and take the first occurrence there —
+    // so the tapped note/word lights up where it actually sits rather than at
+    // some earlier mention elsewhere in the book.
+    var secs;
+    if (page) {
+      var pageSec = document.querySelector('section[data-page="' + page + '"]');
+      secs = pageSec ? [pageSec, pageSec.nextElementSibling].filter(Boolean) : [];
+      idx = 0;
+    } else {
+      secs = document.querySelectorAll('section[data-page]');
+    }
     var seen = 0;
     for (var i = 0; i < secs.length; i++) {
       var ps = secs[i].querySelectorAll('p');
@@ -1676,6 +1688,22 @@ function buildHtml(
     pdfjsLib.GlobalWorkerOptions.workerSrc = '${PDFJS_BASE}/pdf.worker.min.js';
     var content = document.getElementById('content');
     var firstPaint = false;
+    // Opening straight to a deep page (from My Notes / Recents): hold the reveal
+    // until that page has been extracted and scrolled into view, so the reader
+    // never sees page 1 first and then a jump. reveal() scrolls first, THEN
+    // uncovers, so what appears is already in place — no flicker.
+    var needTarget = INITIAL_PAGE > 1;
+
+    // pdf is passed in because reveal is defined outside the getDocument().then
+    // callback, so it cannot close over that callback's parameter.
+    function reveal(pdf){
+      if (firstPaint) return;
+      firstPaint = true;
+      tryPendingScroll();
+      document.getElementById('status').className = 'hidden';
+      post({ type: 'firstpaint' });
+      buildOutline(pdf); // not awaited — the outline arrives as pages extract
+    }
 
     pdfjsLib.getDocument({ data: b64ToBytes('${b64}') }).promise.then(async function(pdf){
       // pdf.js, its worker and the document all loaded — tell the native side
@@ -1688,11 +1716,11 @@ function buildHtml(
         try { wordCounts[p - 1] = await processPage(pdf, p, content); }
         catch (e) { /* skip unreadable page */ }
         if (!firstPaint && content.childNodes.length) {
-          firstPaint = true;
-          document.getElementById('status').className = 'hidden';
-          post({ type: 'firstpaint' });
-          // not awaited — the outline arrives while pages keep extracting
-          buildOutline(pdf);
+          // Reveal at once when we're opening at the top; otherwise wait for the
+          // target page's section to exist so we can land on it directly.
+          if (!needTarget || document.querySelector('section[data-page="' + INITIAL_PAGE + '"]')) {
+            reveal(pdf);
+          }
         }
         post({ type: 'progress', page: p, total: pdf.numPages });
         // The page this landed on may be the one being waited for, and may
@@ -1707,6 +1735,9 @@ function buildHtml(
            is what made highlighting a big book feel unresponsive. */
         await new Promise(function(resolve){ setTimeout(resolve, 0); });
       }
+      // Target never materialised (e.g. a page past the end) — reveal anyway
+      // rather than holding the loading state forever.
+      reveal(pdf);
       post({ type: 'done', pages: pdf.numPages, wordCounts: wordCounts });
       tryPendingScroll();
     }).catch(function(err){
@@ -1722,63 +1753,6 @@ function buildHtml(
 </html>`;
 }
 
-const SKELETON_LINES = [
-  [96, 100, 92, 74],
-  [100, 88, 97, 100, 61],
-  [93, 100, 79],
-];
-
-function ReflowSkeleton({ topInset }: { topInset: number }) {
-  const t = useProtoTheme();
-  const [pulse] = useState(() => new Animated.Value(0.35));
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 0.85,
-          duration: 750,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0.35,
-          duration: 750,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
-  return (
-    <Animated.View
-      style={{
-        flex: 1,
-        opacity: pulse,
-        paddingTop: topInset + 24,
-        paddingHorizontal: 22,
-      }}
-    >
-      {SKELETON_LINES.map((para, pi) => (
-        <Box gap={11} key={pi} style={{ marginBottom: 30 }}>
-          {para.map((w, li) => (
-            <Box
-              bg={t.chip}
-              height={13}
-              key={li}
-              rounded={4}
-              style={{ width: `${w}%` }}
-            />
-          ))}
-        </Box>
-      ))}
-    </Animated.View>
-  );
-}
-
 interface Props {
   uri: string;
   initialPage?: number;
@@ -1786,7 +1760,7 @@ interface Props {
   topInset?: number;
   chromeOffset?: number;
   searchQuery?: string;
-  highlight?: { query: string; index: number; seq: number };
+  highlight?: { query: string; index: number; seq: number; page?: number };
   focusMode?: boolean;
   onPageChange?: (page: number) => void;
   onSearchResults?: (results: PdfSearchResult[]) => void;
@@ -1830,9 +1804,12 @@ export function PdfReflowView({
   const readWidth = useAppStore((s) => s.readWidth);
   const contrast = useAppStore((s) => s.contrast);
 
+  const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("reading");
+  const [extracting, setExtracting] = useState(true);
+  const barWidth = useRef(new Animated.Value(0.04)).current;
   const bootTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gotFirstMessage = useRef(false);
   const [extractedSeq, setExtractedSeq] = useState(0);
@@ -1974,7 +1951,7 @@ export function PdfReflowView({
     webRef.current?.injectJavaScript(
       `window.highlightMatch && window.highlightMatch(${JSON.stringify(
         highlight.query,
-      )}, ${highlight.index}); true;`,
+      )}, ${highlight.index}, ${highlight.page ?? 0}); true;`,
     );
   }, [highlight, status]);
 
@@ -2006,6 +1983,22 @@ export function PdfReflowView({
         <WebView
           allowFileAccess
           androidLayerType="hardware"
+          menuItems={[
+            { key: "lexiCopy", label: "Copy" },
+            { key: "lexiSelectAll", label: "Select all" },
+          ]}
+          onCustomMenuSelection={(e) => {
+            const key = e.nativeEvent.key;
+            if (key === "lexiCopy") {
+              webRef.current?.injectJavaScript(
+                `try{document.execCommand('copy');}catch(e){} true;`,
+              );
+            } else if (key === "lexiSelectAll") {
+              webRef.current?.injectJavaScript(
+                `try{document.execCommand('selectAll');}catch(e){} true;`,
+              );
+            }
+          }}
           onMessage={(e) => {
             if (!gotFirstMessage.current) {
               gotFirstMessage.current = true;
@@ -2032,8 +2025,10 @@ export function PdfReflowView({
               else if (msg.type === "selection")
                 onSelection?.(msg.text ?? "", msg.page ?? 0);
               else if (msg.type === "tap") onSingleTap?.();
-              else if (msg.type === "error") setStatus("error");
-              else if (msg.type === "searchresults")
+              else if (msg.type === "error") {
+                setStatus("error");
+                setExtracting(false);
+              } else if (msg.type === "searchresults")
                 onSearchResults?.(msg.results ?? []);
               else if (msg.type === "outline" && msg.entries?.length)
                 onOutline?.(msg.entries);
@@ -2047,9 +2042,21 @@ export function PdfReflowView({
                     `window.sendContext(${CONTEXT_CHUNK_PAGES}); true;`,
                   );
                 }
+                Animated.timing(barWidth, {
+                  toValue: 1,
+                  duration: 180,
+                  useNativeDriver: false,
+                }).start(() => setExtracting(false));
                 setExtractedSeq((n) => n + 1);
                 if (queryRef.current) setIndexSeq((n) => n + 1);
               } else if (msg.type === "progress") {
+                if (msg.total) {
+                  Animated.timing(barWidth, {
+                    toValue: Math.max(0.04, (msg.page ?? 0) / msg.total),
+                    duration: 180,
+                    useNativeDriver: false,
+                  }).start();
+                }
                 if (queryRef.current && msg.page && msg.page % 5 === 0)
                   setIndexSeq((n) => n + 1);
               }
@@ -2063,8 +2070,30 @@ export function PdfReflowView({
       ) : null}
 
       {status !== "ready" ? (
-        <Box bg={t.page} style={{ position: "absolute", inset: 0 }}>
-          <ReflowSkeleton topInset={topInset} />
+        <Box bg={t.page} style={{ position: "absolute", inset: 0 }} />
+      ) : null}
+
+      {extracting ? (
+        <Box
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: insets.bottom,
+            height: 3,
+          }}
+        >
+          <Animated.View
+            style={{
+              height: 3,
+              backgroundColor: t.accent,
+              width: barWidth.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["0%", "100%"],
+              }),
+            }}
+          />
         </Box>
       ) : null}
     </Box>

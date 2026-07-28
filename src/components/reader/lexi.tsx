@@ -15,21 +15,27 @@ import {
   type ComponentProps,
 } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 
 import { Box } from "@/components/atoms";
 import {
   IconClose,
   IconSend,
   IconSpark,
+  IconWave,
   Text,
   Tap,
 } from "@/components/lexi-components";
 import { LEXI_SEED } from "@/constants/library";
-import { useLexiChat } from "@/hooks/use-lexi-ai";
-import { AiQuotaError } from "@/services/lexi-ai";
+import {
+  AiQuotaError,
+  fetchChatHistory,
+  speakText,
+  streamChat,
+} from "@/services/lexi-ai";
 import { useAppStore } from "@/stores/app-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useProtoTheme } from "@/theme/proto";
-import { getApiErrorMessage } from "@/utils/axios";
 
 interface LexiMsg {
   role: "lexi" | "user";
@@ -156,32 +162,63 @@ export function LexiSheet({
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const explStyle = useAppStore((s) => s.explStyle);
-  const ask = useLexiChat();
+  const setQuota = useAuthStore((s) => s.setQuota);
+  const openWall = useAuthStore((s) => s.openWall);
 
   const sheetRef = useRef<GorhomBottomSheetModal>(null);
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
   const snapPoints = useMemo(() => ["86%"], []);
 
-  const [messages, setMessages] = useState<LexiMsg[]>(() =>
-    book
-      ? [
-          {
-            role: "lexi",
-            kind: "normal",
-            text: `I've got ${book.title} open in front of me. Ask me anything about it — what a passage means, why it matters, where an argument is going.`,
-          },
-        ]
-      : LEXI_SEED,
+  const sessionId = book?.docKey ?? "";
+
+  const greeting = useMemo<LexiMsg[]>(
+    () =>
+      book
+        ? [
+            {
+              role: "lexi",
+              kind: "normal",
+              text: `I've got ${book.title} open in front of me. Ask me anything about it — what a passage means, why it matters, where an argument is going.`,
+            },
+          ]
+        : LEXI_SEED,
+    [book],
   );
+
+  const [messages, setMessages] = useState<LexiMsg[]>(greeting);
   const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState<string | null>(null);
+  const busy = streaming !== null;
   const rabbitCount = useRef(0);
   const replyIdx = useRef(0);
-  const sessionId = useRef("");
   const lastQuestion = useRef("");
+  const abortRef = useRef<(() => void) | null>(null);
+  const accRef = useRef("");
 
   useEffect(() => {
     sheetRef.current?.present();
   }, []);
+
+  useEffect(() => {
+    if (!book || !sessionId) return;
+    let cancelled = false;
+    void fetchChatHistory(sessionId).then((history) => {
+      if (cancelled || !history.length) return;
+      setMessages(
+        history.map((m) => ({
+          role: m.role === "user" ? "user" : "lexi",
+          kind: m.kind,
+          text: m.content,
+        })),
+      );
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [book, sessionId]);
+
+  useEffect(() => () => abortRef.current?.(), []);
 
   const close = useCallback(() => sheetRef.current?.dismiss(), []);
 
@@ -189,42 +226,82 @@ export function LexiSheet({
   const scrollToEnd = () =>
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
 
+  const [heard, setHeard] = useState<{ url: string; seq: number } | null>(null);
+  const audioNode = useMemo(() => {
+    if (!heard) return null;
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio autoplay playsinline src="${heard.url}"></audio></body></html>`;
+    return (
+      <WebView
+        allowsInlineMediaPlayback
+        key={heard.seq}
+        mediaPlaybackRequiresUserAction={false}
+        mixedContentMode="always"
+        pointerEvents="none"
+        source={{ html }}
+        style={{ position: "absolute", width: 0, height: 0, opacity: 0 }}
+      />
+    );
+  }, [heard]);
+
+  const hearReply = async (text: string) => {
+    const url = await speakText(text);
+    if (url) setHeard((prev) => ({ url, seq: (prev?.seq ?? 0) + 1 }));
+  };
+
   const runChat = async (q: string) => {
-    if (!sessionId.current) {
-      sessionId.current = `${Date.now().toString(36)}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-    }
-    try {
-      const answer = await ask.mutateAsync({
+    accRef.current = "";
+    setStreaming("");
+    abortRef.current = await streamChat(
+      {
         author: book!.author,
         docKey: book!.docKey,
         excerpt: book!.excerpt,
         message: q,
         page: book!.page,
-        sessionId: sessionId.current,
+        sessionId,
         style: explStyle,
         title: book!.title,
-      });
-      push({ role: "lexi", kind: answer.kind, text: answer.reply });
-    } catch (error) {
-      if (error instanceof AiQuotaError) {
-        close();
-        return;
-      }
-      push({
-        role: "lexi",
-        kind: "error",
-        text: getApiErrorMessage(error),
-      });
-    } finally {
-      scrollToEnd();
-    }
+      },
+      {
+        onToken: (token) => {
+          accRef.current += token;
+          setStreaming(accRef.current);
+          scrollToEnd();
+        },
+        onDone: ({ kind, quota }) => {
+          abortRef.current = null;
+          setStreaming(null);
+          if (quota) setQuota(quota);
+          const text = accRef.current.trim();
+          if (text) push({ role: "lexi", kind, text });
+          scrollToEnd();
+        },
+        onError: (error) => {
+          abortRef.current = null;
+          setStreaming(null);
+          if (error instanceof AiQuotaError) {
+            setQuota(error.quota);
+            if (error.requiresAuth) openWall("quota");
+            close();
+            return;
+          }
+          push({
+            role: "lexi",
+            kind: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Lexi couldn't answer just then.",
+          });
+          scrollToEnd();
+        },
+      },
+    );
   };
 
   const send = () => {
     const q = input.trim();
-    if (!q || ask.isPending) return;
+    if (!q || busy) return;
     push({ role: "user", kind: "normal", text: q });
     setInput("");
     scrollToEnd();
@@ -240,7 +317,7 @@ export function LexiSheet({
   };
 
   const retry = () => {
-    if (!book || ask.isPending || !lastQuestion.current) return;
+    if (!book || busy || !lastQuestion.current) return;
     setMessages((prev) =>
       prev.length && prev[prev.length - 1].kind === "error"
         ? prev.slice(0, -1)
@@ -277,6 +354,7 @@ export function LexiSheet({
       snapPoints={snapPoints}
     >
       <BottomSheetView style={{ flex: 1 }}>
+        {audioNode}
         <Box
           align="center"
           direction="row"
@@ -412,17 +490,48 @@ export function LexiSheet({
                       </Text>
                     </Box>
                   ) : null}
+                  {!user && !isError ? (
+                    <Tap
+                      onPress={() => hearReply(m.text)}
+                      scale={0.9}
+                      style={{ alignSelf: "flex-start" }}
+                    >
+                      <Box
+                        align="center"
+                        direction="row"
+                        gap={5}
+                        paddingY={2}
+                      >
+                        <IconWave color={t.sub} size={13} />
+                        <Text color={t.sub} size={11} weight="600">
+                          Hear it
+                        </Text>
+                      </Box>
+                    </Tap>
+                  ) : null}
                 </Box>
               </Box>
             );
           })}
 
-          {ask.isPending ? (
+          {streaming !== null ? (
             <Box direction="row" justify="start" paddingY={5}>
-              <Box bg={t.chip} paddingX={14} paddingY={10} rounded={16}>
-                <Text color={t.sub} size={13.5}>
-                  Reading that back…
-                </Text>
+              <Box
+                bg={t.chip}
+                paddingX={14}
+                paddingY={10}
+                rounded={16}
+                style={{ maxWidth: "80%" }}
+              >
+                {streaming ? (
+                  <Text color={t.ink} lh={20} size={13.5}>
+                    {streaming}
+                  </Text>
+                ) : (
+                  <Text color={t.sub} size={13.5}>
+                    Reading that back…
+                  </Text>
+                )}
               </Box>
             </Box>
           ) : null}

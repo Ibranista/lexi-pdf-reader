@@ -51,6 +51,9 @@ export function AnnotateBar({
   const showToast = useToastStore((s) => s.showToast);
   const add = useAnnotationsStore((s) => s.add);
 
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const translateLabel = wordCount <= 2 ? "Translate" : "Explain";
+
   const [noteFor, setNoteFor] = useState<boolean>(false);
   const [draft, setDraft] = useState("");
   const [draftHeight, setDraftHeight] = useState(NOTE_MIN_HEIGHT);
@@ -236,7 +239,7 @@ export function AnnotateBar({
           {onTranslate ? (
             <SelAction
               icon={<IconGlobe color="#F6F3EE" size={16} />}
-              label="Translate"
+              label={translateLabel}
               onPress={() => {
                 onTranslate();
               }}
