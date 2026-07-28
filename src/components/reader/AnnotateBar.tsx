@@ -14,6 +14,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { MAX_TRANSLATE_WORDS } from "@/constants/limits";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
@@ -241,6 +242,12 @@ export function AnnotateBar({
               icon={<IconGlobe color="#F6F3EE" size={16} />}
               label={translateLabel}
               onPress={() => {
+                if (wordCount > MAX_TRANSLATE_WORDS) {
+                  showToast(
+                    `Select up to ${MAX_TRANSLATE_WORDS} words to ${translateLabel.toLowerCase()}`,
+                  );
+                  return;
+                }
                 onTranslate();
               }}
             />
