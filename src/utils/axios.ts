@@ -145,6 +145,11 @@ export const getApiErrorMessage = (error: unknown): string => {
 };
 
 export const authApi = {
+  me: () => api.get<{ user: User }>('/auth/me').then((r) => r.data.user),
+
+  setOnboarding: (body: { hasCompletedOnboarding?: boolean; interests?: string[] }) =>
+    api.patch<{ user: User }>('/auth/onboarding', body).then((r) => r.data.user),
+
   linkEmail: (body: { name: string; email: string; password: string }) =>
     api.post<AuthResponse>('/auth/link/email', body).then((r) => {
       tokenStorage.setTokens(r.data.tokens);

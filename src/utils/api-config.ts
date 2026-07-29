@@ -34,6 +34,9 @@ export interface User {
   role: 'USER' | 'ADMIN';
   isEmailVerified: boolean;
   isAnonymous?: boolean;
+  hasCompletedOnboarding?: boolean;
+  interests?: string[];
+  onboardedAt?: number | null;
 }
 
 export interface AuthResponse {
