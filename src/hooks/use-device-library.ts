@@ -7,7 +7,7 @@
  * back to the app's own document storage plus an optional picked folder.
  */
 import { Directory, File, Paths } from "expo-file-system";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type LibrarySort, useAppStore } from "@/stores/app-store";
 import {
@@ -326,17 +326,32 @@ export function useDeviceLibrary() {
     }
   }, [refresh]);
 
-  return {
-    docs,
-    folders,
-    scanning,
-    scanProgress,
-    access,
-    refresh,
-    ensureAccess,
-    pickFolder,
-    importDocuments,
-  };
+  // One stable object per state change — a fresh object every render would
+  // pierce the memoised tabs this gets passed down to.
+  return useMemo(
+    () => ({
+      docs,
+      folders,
+      scanning,
+      scanProgress,
+      access,
+      refresh,
+      ensureAccess,
+      pickFolder,
+      importDocuments,
+    }),
+    [
+      docs,
+      folders,
+      scanning,
+      scanProgress,
+      access,
+      refresh,
+      ensureAccess,
+      pickFolder,
+      importDocuments,
+    ]
+  );
 }
 
 export function formatSize(bytes: number): string {
