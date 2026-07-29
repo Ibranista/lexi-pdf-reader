@@ -28,6 +28,7 @@ interface CollectionsState {
   add: (id: CollectionId, doc: FilableDoc) => void;
   remove: (id: CollectionId, uri: string) => void;
   forget: (uri: string) => void;
+  rename: (uri: string, next: { uri: string; name: string }) => void;
 }
 
 export const useCollectionsStore = create<CollectionsState>()(
@@ -68,6 +69,18 @@ export const useCollectionsStore = create<CollectionsState>()(
             Object.entries(s.items).map(([id, shelf]) => [
               id,
               shelf.filter((d) => d.uri !== uri),
+            ]),
+          ) as Shelves,
+        })),
+
+      rename: (uri, next) =>
+        set((s) => ({
+          items: Object.fromEntries(
+            Object.entries(s.items).map(([id, shelf]) => [
+              id,
+              shelf.map((d) =>
+                d.uri === uri ? { ...d, uri: next.uri, name: next.name } : d,
+              ),
             ]),
           ) as Shelves,
         })),

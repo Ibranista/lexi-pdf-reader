@@ -21,6 +21,7 @@ import {
   type SwipeTabItem,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
+import { DocMenu } from "@/components/library/DocMenu";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
 import { bookCoverFromUri, bookReadUrl } from "@/hooks/use-book-suggestions";
@@ -60,6 +61,7 @@ export default function LibraryScreen() {
   const [openFolderUri, setOpenFolderUri] = useState<string | null>(null);
   const [openShelf, setOpenShelf] = useState<CollectionId | null>(null);
   const [filing, setFiling] = useState<FilableDoc | null>(null);
+  const [menuDoc, setMenuDoc] = useState<FilableDoc | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [pulled, setPulled] = useState(false);
@@ -77,6 +79,10 @@ export default function LibraryScreen() {
       const onBack = () => {
         if (settingsOpen) {
           setSettingsOpen(false);
+          return true;
+        }
+        if (menuDoc) {
+          setMenuDoc(null);
           return true;
         }
         if (filing) {
@@ -113,6 +119,7 @@ export default function LibraryScreen() {
       };
     }, [
       settingsOpen,
+      menuDoc,
       filing,
       searching,
       tab,
@@ -198,6 +205,7 @@ export default function LibraryScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setFiling(doc);
   }, []);
+  const openDocMenu = useCallback((doc: FilableDoc) => setMenuDoc(doc), []);
 
   const contentPad = useMemo(
     () => ({
@@ -228,6 +236,7 @@ export default function LibraryScreen() {
           lib={lib}
           openCollections={openCollections}
           openDoc={openDoc}
+          openDocMenu={openDocMenu}
           refreshControl={refreshControl}
         />
       ) : key === "files" ? (
@@ -236,6 +245,7 @@ export default function LibraryScreen() {
           lib={lib}
           openCollections={openCollections}
           openDoc={openDoc}
+          openDocMenu={openDocMenu}
           openUri={openFolderUri}
           refreshControl={refreshControl}
           setOpenUri={setOpenFolderUri}
@@ -270,6 +280,7 @@ export default function LibraryScreen() {
       openBook,
       openCollections,
       openDoc,
+      openDocMenu,
       openFolderUri,
       openReader,
       openShelf,
@@ -373,6 +384,7 @@ export default function LibraryScreen() {
             lib={lib}
             openCollections={openCollections}
             openDoc={openDoc}
+            openDocMenu={openDocMenu}
             query={query}
             refreshControl={refreshControl}
           />
@@ -382,6 +394,14 @@ export default function LibraryScreen() {
 
         {filing ? (
           <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
+        ) : null}
+
+        {menuDoc ? (
+          <DocMenu
+            doc={menuDoc}
+            onChanged={lib.refresh}
+            onClose={() => setMenuDoc(null)}
+          />
         ) : null}
       </ProtoScreen>
     </Drawer>

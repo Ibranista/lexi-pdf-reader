@@ -15,6 +15,7 @@ import Reanimated, {
 import { Box } from "@/components/atoms";
 import {
   IconChevron,
+  IconDots,
   IconGrid,
   IconList,
   IconStar,
@@ -44,6 +45,27 @@ export interface ScrollerProps {
 }
 
 export type OpenCollections = (doc: FilableDoc) => void;
+
+export type OpenDocMenu = (doc: FilableDoc) => void;
+
+export function DotsButton({
+  bg,
+  color,
+  onPress,
+}: {
+  bg?: string;
+  color?: string;
+  onPress: () => void;
+}) {
+  const t = useProtoTheme();
+  return (
+    <Tap onPress={onPress} scale={0.88}>
+      <Box align="center" bg={bg} height={28} justify="center" rounded={14} width={28}>
+        <IconDots color={color ?? t.sub} size={16} />
+      </Box>
+    </Tap>
+  );
+}
 
 export function PdfThumb({
   doc,
@@ -260,12 +282,14 @@ export function DocRow({
   doc,
   meta,
   onLongPress,
+  onMore,
   onPress,
   trailing,
 }: {
   doc: { uri: string; name: string; ext: string };
   meta: string;
   onLongPress?: () => void;
+  onMore?: () => void;
   onPress: () => void;
   trailing?: ReactNode;
 }) {
@@ -292,7 +316,8 @@ export function DocRow({
           </Text>
         </Box>
         {filed ? <IconStar color={t.accent} fill={t.accent} size={14} /> : null}
-        {trailing ?? <IconChevron color={t.faint} size={16} />}
+        {trailing ?? (onMore ? null : <IconChevron color={t.faint} size={16} />)}
+        {onMore ? <DotsButton onPress={onMore} /> : null}
       </Box>
     </Tap>
   );

@@ -26,6 +26,7 @@ interface RecentsState {
   recordReadingTime: (uri: string, page: number, elapsedMs: number) => void;
   toggleBookmark: (uri: string, page: number) => void;
   remove: (uri: string) => void;
+  rename: (uri: string, next: { uri: string; name: string }) => void;
   clear: () => void;
 }
 
@@ -120,6 +121,20 @@ export const useRecentsStore = create<RecentsState>()(
 
       remove: (uri) =>
         set((s) => ({ recents: s.recents.filter((r) => r.uri !== uri) })),
+
+      rename: (uri, next) =>
+        set((s) => {
+          const { [uri]: movedPosition, ...positions } = s.positions;
+          return {
+            positions:
+              movedPosition === undefined
+                ? s.positions
+                : { ...positions, [next.uri]: movedPosition },
+            recents: s.recents.map((r) =>
+              r.uri === uri ? { ...r, uri: next.uri, name: next.name } : r,
+            ),
+          };
+        }),
 
       clear: () => set({ recents: [] }),
     }),

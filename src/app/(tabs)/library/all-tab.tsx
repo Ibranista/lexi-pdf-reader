@@ -21,11 +21,13 @@ import { useProtoTheme } from "@/theme/proto";
 import {
   docMeta,
   DocRow,
+  DotsButton,
   GRID_COLUMNS,
   PdfThumb,
   SortBar,
   SwipeToFavorite,
   type OpenCollections,
+  type OpenDocMenu,
   type ScrollerProps,
 } from "./shared";
 
@@ -34,11 +36,13 @@ export function AllTab({
   lib,
   openCollections,
   openDoc,
+  openDocMenu,
   refreshControl,
 }: ScrollerProps & {
   lib: DeviceLibrary;
   openCollections: OpenCollections;
   openDoc: (doc: DeviceDoc) => void;
+  openDocMenu: OpenDocMenu;
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
@@ -148,7 +152,16 @@ export function AllTab({
             style={{ paddingHorizontal: 7, paddingBottom: 16 }}
           >
             <Box gap={7}>
-              <PdfThumb doc={item} style={{ aspectRatio: 3 / 4 }} />
+              <Box>
+                <PdfThumb doc={item} style={{ aspectRatio: 3 / 4 }} />
+                <Box style={{ position: "absolute", right: 4, top: 4 }}>
+                  <DotsButton
+                    bg="rgba(20,16,12,0.45)"
+                    color="#FFFFFF"
+                    onPress={() => openDocMenu(item)}
+                  />
+                </Box>
+              </Box>
               <Box gap={2}>
                 <Text lh={15} numberOfLines={2} size={11.5} weight="500">
                   {item.name}
@@ -165,6 +178,7 @@ export function AllTab({
               doc={item}
               meta={docMeta(item.size, item.modifiedAt)}
               onLongPress={() => openCollections(item)}
+              onMore={() => openDocMenu(item)}
               onPress={() => openDoc(item)}
             />
           </SwipeToFavorite>

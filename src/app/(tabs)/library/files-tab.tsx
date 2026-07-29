@@ -25,6 +25,7 @@ import {
   SortBar,
   SwipeToFavorite,
   type OpenCollections,
+  type OpenDocMenu,
   type ScrollerProps,
 } from "./shared";
 
@@ -33,6 +34,7 @@ export function FilesTab({
   lib,
   openCollections,
   openDoc,
+  openDocMenu,
   openUri,
   refreshControl,
   setOpenUri,
@@ -40,6 +42,7 @@ export function FilesTab({
   lib: DeviceLibrary;
   openCollections: OpenCollections;
   openDoc: (doc: DeviceDoc) => void;
+  openDocMenu: OpenDocMenu;
   openUri: string | null;
   setOpenUri: (uri: string | null) => void;
 }) {
@@ -107,6 +110,7 @@ export function FilesTab({
               doc={item}
               meta={docMeta(item.size, item.modifiedAt)}
               onLongPress={() => openCollections(item)}
+              onMore={() => openDocMenu(item)}
               onPress={() => openDoc(item)}
             />
           </SwipeToFavorite>
