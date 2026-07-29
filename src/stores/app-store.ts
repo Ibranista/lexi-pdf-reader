@@ -1,30 +1,30 @@
-import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
-import { zustandStorage } from '@/utils/storage';
+import { zustandStorage } from "@/utils/storage";
 
-export type Lang = 'am' | 'ar' | 'en';
+export type Lang = "am" | "ar" | "en";
 
 export const LINE_SPACING = {
   compact: 1.55,
   comfy: 1.75,
   airy: 2.05,
 } as const;
-export type FontFam = 'dys' | 'sans' | 'serif';
-export type LineSpacing = 'airy' | 'comfy' | 'compact';
-export type ReadWidth = 'comfort' | 'full' | 'narrow';
-export type Contrast = 'soft' | 'std';
-export type ExplainStyle = 'advanced' | 'balanced' | 'simple';
-export type ReaderMode = 'reflow' | 'page';
-export type FocusSensitivity = 'balanced' | 'frequent' | 'relaxed';
-export type PaywallPlan = 'annual' | 'monthly';
-export type SortKey = 'date' | 'name' | 'size';
-export type SortDir = 'asc' | 'desc';
+export type FontFam = "dys" | "sans" | "serif";
+export type LineSpacing = "airy" | "comfy" | "compact";
+export type ReadWidth = "comfort" | "full" | "narrow";
+export type Contrast = "soft" | "std";
+export type ExplainStyle = "advanced" | "balanced" | "simple";
+export type ReaderMode = "reflow" | "page";
+export type FocusSensitivity = "balanced" | "frequent" | "relaxed";
+export type PaywallPlan = "annual" | "monthly";
+export type SortKey = "date" | "name" | "size";
+export type SortDir = "asc" | "desc";
 export interface LibrarySort {
   key: SortKey;
   dir: SortDir;
 }
-export type LibraryView = 'grid' | 'list';
+export type LibraryView = "grid" | "list";
 
 export interface VocabEntry {
   word: string;
@@ -44,48 +44,37 @@ export interface NoteItem {
   p: number;
   ch: number;
   text: string;
-  color: 'amber' | 'green';
+  color: "amber" | "green";
   note: string;
   when: string;
 }
 
-const SEED_VOCAB: VocabEntry[] = [
-  {
-    word: 'rationed',
-    pos: 'verb (past)',
-    tr: 'የተመጠነ',
-    translit: 'yetemeṭene',
-    lang: 'am',
-    p: 47,
-    s1: 'It means reading was limited to small amounts because candles and oil were costly.',
-    s2: 'This sets up the contrast: electric light made reading an everyday pleasure.',
-  },
-];
+const SEED_VOCAB: VocabEntry[] = [];
 
 const SEED_NOTES: NoteItem[] = [
   {
     p: 47,
     ch: 3,
     text: '"What Edison sold, in the end, was not illumination but time."',
-    color: 'amber',
-    note: 'Great thesis line — reuse in my essay on technological externalities.',
-    when: 'Today',
+    color: "amber",
+    note: "Great thesis line — reuse in my essay on technological externalities.",
+    when: "Today",
   },
   {
     p: 45,
     ch: 3,
     text: '"…night had become optional."',
-    color: 'green',
-    note: '',
-    when: 'Today',
+    color: "green",
+    note: "",
+    when: "Today",
   },
   {
     p: 23,
     ch: 2,
     text: '"Gaslight was the first subscription utility: light, delivered monthly, by pipe."',
-    color: 'amber',
-    note: 'Compare with modern SaaS framing.',
-    when: 'Yesterday',
+    color: "amber",
+    note: "Compare with modern SaaS framing.",
+    when: "Yesterday",
   },
 ];
 
@@ -138,21 +127,21 @@ export const useAppStore = create<AppState>()(
       page: 147,
       bookmarks: [23],
       zoom: 125,
-      fontFam: 'serif',
+      fontFam: "serif",
       textSize: 17,
-      lineSp: 'comfy',
-      readWidth: 'comfort',
+      lineSp: "comfy",
+      readWidth: "comfort",
       bright: 90,
-      contrast: 'std',
+      contrast: "std",
       focusRem: true,
-      focusSens: 'balanced',
+      focusSens: "balanced",
       flowRead: true,
       fmTimer: true,
 
       aiOn: true,
-      lang: 'am',
-      explStyle: 'balanced',
-      defaultReader: 'reflow',
+      lang: "am",
+      explStyle: "balanced",
+      defaultReader: "reflow",
       thoughtOn: true,
       cardsPerDay: 3,
       syncPos: true,
@@ -160,7 +149,7 @@ export const useAppStore = create<AppState>()(
       syncRv: false,
 
       pro: false,
-      pwPlan: 'annual',
+      pwPlan: "annual",
 
       vocab: SEED_VOCAB,
       items: SEED_NOTES,
@@ -169,8 +158,8 @@ export const useAppStore = create<AppState>()(
       libRootUri: null,
       libRootName: null,
       storageAsked: false,
-      librarySort: { key: 'date', dir: 'desc' },
-      libraryView: 'grid',
+      librarySort: { key: "date", dir: "desc" },
+      libraryView: "grid",
 
       setPage: (page) => set({ page }),
 
@@ -182,7 +171,11 @@ export const useAppStore = create<AppState>()(
         })),
 
       addBookmark: (page) =>
-        set((s) => (s.bookmarks.includes(page) ? s : { bookmarks: [...s.bookmarks, page] })),
+        set((s) =>
+          s.bookmarks.includes(page)
+            ? s
+            : { bookmarks: [...s.bookmarks, page] },
+        ),
 
       set: (patch) => set(patch),
 
@@ -194,7 +187,7 @@ export const useAppStore = create<AppState>()(
       addNote: (note) => set((s) => ({ items: [note, ...s.items] })),
     }),
     {
-      name: 'lexipdf-app',
+      name: "lexipdf-app",
       storage: createJSONStorage(() => zustandStorage),
     },
   ),
@@ -208,11 +201,11 @@ interface ToastState {
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useToastStore = create<ToastState>()((set) => ({
-  toast: '',
+  toast: "",
   showToast: (message) => {
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast: message });
-    toastTimer = setTimeout(() => set({ toast: '' }), 1700);
+    toastTimer = setTimeout(() => set({ toast: "" }), 1700);
   },
 }));
 
