@@ -3,7 +3,15 @@ import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import type { GestureType } from "react-native-gesture-handler";
 import type { SharedValue } from "react-native-reanimated";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
@@ -26,7 +34,7 @@ const ACTIVATE_X = 18;
 const FAIL_Y = 14;
 const EDGE_RESISTANCE = 0.32;
 const FLING_VELOCITY = 420;
-const DRAWER_EDGE = 44;
+export const DRAWER_EDGE = 44;
 const BAR_PAD = 3;
 
 export interface SwipeTabItem<K extends string = string> {
@@ -95,43 +103,56 @@ export function useSwipeTabs<K extends string>({
     onChange(key);
   };
 
-  const gesture = Gesture.Pan()
-    .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
-    .failOffsetY([-FAIL_Y, FAIL_Y])
-    .onTouchesDown((event, manager) => {
-      const touch = event.allTouches[0];
-      if (touch && touch.absoluteX < DRAWER_EDGE) manager.fail();
-    })
-    .onBegin(() => {
-      from.value = Math.round(progress.value);
-    })
-    .onUpdate((event) => {
-      const raw = from.value - event.translationX / (width.value || 1);
-      const last = count - 1;
-      progress.value =
-        raw < 0
-          ? raw * EDGE_RESISTANCE
-          : raw > last
-            ? last + (raw - last) * EDGE_RESISTANCE
-            : raw;
-    })
-    .onEnd((event) => {
-      const flung = Math.abs(event.velocityX) > FLING_VELOCITY;
-      const landed = flung
-        ? event.velocityX < 0
-          ? Math.ceil(progress.value)
-          : Math.floor(progress.value)
-        : Math.round(progress.value);
-      const target = Math.min(
-        count - 1,
-        Math.max(0, Math.min(from.value + 1, Math.max(from.value - 1, landed))),
-      );
-      progress.value = withSpring(target, SPRING);
-      if (target !== from.value) runOnJS(commit)(target);
-    })
-    .onFinalize((_event, success) => {
-      if (!success) progress.value = withSpring(from.value, SPRING);
-    });
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+  const commitJS = useCallback((target: number) => {
+    commitRef.current(target);
+  }, []);
+
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
+        .failOffsetY([-FAIL_Y, FAIL_Y])
+        .onTouchesDown((event, manager) => {
+          const touch = event.allTouches[0];
+          if (touch && touch.absoluteX < DRAWER_EDGE) manager.fail();
+        })
+        .onBegin(() => {
+          from.value = Math.round(progress.value);
+        })
+        .onUpdate((event) => {
+          const raw = from.value - event.translationX / (width.value || 1);
+          const last = count - 1;
+          progress.value =
+            raw < 0
+              ? raw * EDGE_RESISTANCE
+              : raw > last
+                ? last + (raw - last) * EDGE_RESISTANCE
+                : raw;
+        })
+        .onEnd((event) => {
+          const flung = Math.abs(event.velocityX) > FLING_VELOCITY;
+          const landed = flung
+            ? event.velocityX < 0
+              ? Math.ceil(progress.value)
+              : Math.floor(progress.value)
+            : Math.round(progress.value);
+          const target = Math.min(
+            count - 1,
+            Math.max(
+              0,
+              Math.min(from.value + 1, Math.max(from.value - 1, landed)),
+            ),
+          );
+          progress.value = withSpring(target, SPRING);
+          if (target !== from.value) runOnJS(commitJS)(target);
+        })
+        .onFinalize((_event, success) => {
+          if (!success) progress.value = withSpring(from.value, SPRING);
+        }),
+    [commitJS, count, from, progress, width],
+  );
 
   const setWidth = (next: number) => {
     width.value = next;

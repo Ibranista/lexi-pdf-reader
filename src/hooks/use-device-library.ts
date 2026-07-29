@@ -1,5 +1,5 @@
 import { Directory, File, Paths } from "expo-file-system";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type LibrarySort, useAppStore } from "@/stores/app-store";
 import {
@@ -264,17 +264,30 @@ export function useDeviceLibrary() {
     }
   }, [refresh]);
 
-  return {
-    docs,
-    folders,
-    scanning,
-    scanProgress,
-    access,
-    refresh,
-    ensureAccess,
-    pickFolder,
-    importDocuments,
-  };
+  return useMemo(
+    () => ({
+      docs,
+      folders,
+      scanning,
+      scanProgress,
+      access,
+      refresh,
+      ensureAccess,
+      pickFolder,
+      importDocuments,
+    }),
+    [
+      docs,
+      folders,
+      scanning,
+      scanProgress,
+      access,
+      refresh,
+      ensureAccess,
+      pickFolder,
+      importDocuments,
+    ]
+  );
 }
 
 export function formatSize(bytes: number): string {
