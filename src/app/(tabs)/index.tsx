@@ -11,7 +11,6 @@ import {
   HeaderButton,
   IconSearch,
   IconSliders,
-  IconSun,
   ProtoScreen,
   SwipeTabsBar,
   SwipeTabsPager,
@@ -23,10 +22,7 @@ import {
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
-import {
-  bookCoverFromUri,
-  bookReadUrl,
-} from "@/hooks/use-book-suggestions";
+import { bookCoverFromUri, bookReadUrl } from "@/hooks/use-book-suggestions";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import type { FilableDoc } from "@/stores/collections-store";
@@ -35,9 +31,9 @@ import { useProtoTheme } from "@/theme/proto";
 import { AllTab as AllLibraryTab } from "./library/all-tab";
 import { CollectionsTab } from "./library/collections-tab";
 import { FilesTab as FilesLibraryTab } from "./library/files-tab";
+import { NotesTab as NotesLibraryTab } from "./library/notes-tab";
 import { RecentTab as RecentLibraryTab } from "./library/recent-tab";
 import { SearchResults as SearchLibraryResults } from "./library/search-results";
-import { NotesTab as NotesLibraryTab } from "./library/notes-tab";
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
 
@@ -130,7 +126,7 @@ export default function LibraryScreen() {
       openShelf,
       showToast,
       tr,
-    ])
+    ]),
   );
 
   // ask for device-wide storage access once, on first open of the library
@@ -165,7 +161,7 @@ export default function LibraryScreen() {
   // screen re-renders mid-drag rather than being rebuilt each time
   const renderSettings = useCallback(
     () => <SettingsPanel onClose={closeSettings} />,
-    [closeSettings]
+    [closeSettings],
   );
 
   const openReader = () => router.push("/reader");
@@ -247,18 +243,16 @@ export default function LibraryScreen() {
     >
       <ProtoScreen>
         {/* top icon row */}
-        <Box
+        {/* <Box
           align="center"
           direction="row"
           justify="between"
           paddingLeft={20}
           paddingRight={20}
           paddingTop={8}
-        >
-          <HeaderButton onPress={openSettings}>
-            <IconSliders bg={t.bg} color={t.ink} size={20} />
-          </HeaderButton>
-          <Box direction="row" gap={10}>
+        > */}
+
+        {/* <Box direction="row" gap={10}>
             <HeaderButton onPress={() => router.push("/today")}>
               <IconSun color={t.ink} size={19} />
             </HeaderButton>
@@ -273,8 +267,8 @@ export default function LibraryScreen() {
                 SB
               </Text>
             </HeaderButton>
-          </Box>
-        </Box>
+          </Box> */}
+        {/* </Box> */}
 
         {searching ? (
           <Box
@@ -336,9 +330,14 @@ export default function LibraryScreen() {
               paddingRight={20}
               paddingTop={18}
             >
-              <Text ls={-0.3} serif size={30} weight="600">
-                {tr("library.title")}
-              </Text>
+              <Box direction="row" align="center" gap={10}>
+                <HeaderButton onPress={openSettings}>
+                  <IconSliders bg={t.bg} color={t.ink} size={20} />
+                </HeaderButton>
+                <Text ls={-0.3} serif size={30} weight="600">
+                  {tr("library.title")}
+                </Text>
+              </Box>
               <HeaderButton onPress={() => setSearching(true)}>
                 <IconSearch color={t.ink} size={19} />
               </HeaderButton>
