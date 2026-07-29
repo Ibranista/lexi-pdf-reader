@@ -12,11 +12,18 @@ import NetInfo, { type NetInfoState } from "@react-native-community/netinfo";
 
 let online = true;
 
+const reconnectHandlers = new Set<() => void>();
+
 const readState = (state: NetInfoState) => {
   // isInternetReachable is null while NetInfo is still probing — treat unknown
   // as online; only an explicit false (no network, or network without internet)
   // counts as offline.
-  online = state.isConnected !== false && state.isInternetReachable !== false;
+  const next = state.isConnected !== false && state.isInternetReachable !== false;
+  const regained = next && !online;
+  online = next;
+  // Fired on the offline → online edge only, so a handler can retry the writes
+  // that failed while there was no network without polling for the chance.
+  if (regained) reconnectHandlers.forEach((handler) => handler());
 };
 
 // Subscribe once, at module load, so `isOnline()` is warm by the time a reader
@@ -28,4 +35,16 @@ NetInfo.fetch().then(readState).catch(() => {});
  *  NetInfo result. */
 export function isOnline(): boolean {
   return online;
+}
+
+/**
+ * Run `handler` each time the device comes back online after being known
+ * offline. Returns an unsubscribe. Never fires for the optimistic "online"
+ * we start out assuming — only for a real recovery.
+ */
+export function onReconnect(handler: () => void): () => void {
+  reconnectHandlers.add(handler);
+  return () => {
+    reconnectHandlers.delete(handler);
+  };
 }

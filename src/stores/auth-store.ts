@@ -14,6 +14,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { AiQuota } from "@/services/lexi-ai";
+import { adoptOnboarding, syncOnboarding } from "@/stores/onboarding-store";
 import { onSessionLost } from "@/utils/api-config";
 import { authApi, type User } from "@/utils/axios";
 import { zustandStorage } from "@/utils/storage";
@@ -46,7 +47,13 @@ export const useAuthStore = create<AuthState>()(
 
       signedIn: () => get().user !== null,
 
-      setUser: (user) => set({ user, wall: user ? null : get().wall }),
+      setUser: (user) => {
+        set({ user, wall: user ? null : get().wall });
+        // The account the reader just signed into may already have onboarded —
+        // on their other phone, or before a reinstall. Its answer comes back on
+        // this very response, so take it rather than asking again.
+        adoptOnboarding(user);
+      },
 
       // Endpoints echo the quota on every response; undefined means this one
       // didn't, which is not the same as "no allowance left".
@@ -71,6 +78,11 @@ export const useAuthStore = create<AuthState>()(
           // either way, or the reader is stuck signed in to nothing.
         }
         set({ user: null, quota: null, wall: null });
+        // The next request re-registers this device and gets a fresh anonymous
+        // row. The server carries the onboarding answer onto it — signing out
+        // shouldn't walk the reader back through onboarding — so re-read it
+        // rather than assuming either way.
+        void syncOnboarding();
       },
     }),
     {

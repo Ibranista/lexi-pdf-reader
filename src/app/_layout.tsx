@@ -7,11 +7,10 @@ import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
-import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import "@/i18n";
 import { ensureSession } from "@/services/device-session";
 import { queryClient } from "@/services/query-client";
-import { useOnboardingStore } from "@/stores/onboarding-store";
+import { syncOnboarding, useOnboardingStore } from "@/stores/onboarding-store";
 import { ThemeProvider as AppThemeProvider } from "@/theme";
 import { fontAssets } from "@/theme/app-fonts";
 import { useThemeModeStore } from "@/theme/proto";
@@ -35,11 +34,30 @@ export default function RootLayout() {
   // in), so the first word looked up isn't the request that has to wait for it.
   // The axios interceptor does this too — this only moves the cost off the
   // reader's first tap. Failures are ignored: it retries on the next request.
+  //
+  // Then reconcile onboarding with the server, which is what decides the guard
+  // below. The guard itself reads the local mirror, so this never blocks the
+  // first paint — offline it simply doesn't land, and the store retries.
   useEffect(() => {
-    void ensureSession().catch(() => {});
+    void (async () => {
+      try {
+        await ensureSession();
+      } catch {
+        // Offline on first launch; syncOnboarding retries the session too.
+      }
+      await syncOnboarding();
+    })();
   }, []);
 
   if (!loaded) return null;
+
+  // Hides the native splash (the static logo from app.json) only once this
+  // root view has actually been laid out on screen — hiding it any earlier
+  // (e.g. from an effect keyed on `loaded`) can win a race against the GPU
+  // paint and flash the window's default white background for a frame.
+  const onRootLayout = () => {
+    void SplashScreen.hideAsync();
+  };
 
   return (
     // gesture root + modal provider are required by @gorhom/bottom-sheet;
@@ -47,7 +65,7 @@ export default function RootLayout() {
     // anything anchored above the keyboard tracks it — Android runs
     // edge-to-edge, so the window no longer resizes and RN's own
     // KeyboardAvoidingView has nothing to react to.
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onRootLayout}>
       {/* Every network call goes through react-query over the axios instance,
           so caching and retries are decided in one place and the interceptors
           keep owning tokens. */}
@@ -56,7 +74,6 @@ export default function RootLayout() {
           <AppThemeProvider storage={storage}>
             <ThemeProvider value={dark ? DarkTheme : (DefaultTheme as any)}>
               <BottomSheetModalProvider>
-                <AnimatedSplashOverlay />
                 <Stack screenOptions={{ headerShown: false }}>
                   <Stack.Protected guard={hasCompletedOnboarding}>
                     <Stack.Screen name="(tabs)" />
