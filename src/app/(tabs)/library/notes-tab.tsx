@@ -48,6 +48,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
   const setPage = useAppStore((s) => s.setPage);
   const showToast = useToastStore((s) => s.showToast);
   const annotations = useAnnotationsStore((s) => s.items);
+  const removeAnnotation = useAnnotationsStore((s) => s.remove);
   const recents = useRecentsStore((s) => s.recents);
 
   const docs = useMemo(() => {
@@ -234,6 +235,23 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                   <Text color={t.faint} size={11}>
                     {whenLabel(a.createdAt)}
                   </Text>
+                  <Tap
+                    onPress={() => {
+                      removeAnnotation(a.id);
+                      showToast(
+                        section === "highlights"
+                          ? tr("library.notes.highlightRemoved")
+                          : tr("library.notes.noteRemoved"),
+                      );
+                    }}
+                    scale={0.86}
+                  >
+                    <Box paddingLeft={6} paddingY={2}>
+                      <Text color={t.faint} size={14}>
+                        ✕
+                      </Text>
+                    </Box>
+                  </Tap>
                 </Box>
 
                 <Box direction="row" gap={9}>

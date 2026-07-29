@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { AiQuota } from "@/services/lexi-ai";
 import { adoptOnboarding, syncOnboarding } from "@/stores/onboarding-store";
+import { useSyncStore } from "@/stores/sync-store";
 import { onSessionLost } from "@/utils/api-config";
 import { authApi, type User } from "@/utils/axios";
 import { zustandStorage } from "@/utils/storage";
@@ -34,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => {
         set({ user, wall: user ? null : get().wall });
         adoptOnboarding(user);
+        useSyncStore.getState().reset();
       },
 
       setQuota: (quota) => {
@@ -54,6 +56,7 @@ export const useAuthStore = create<AuthState>()(
         } catch {}
         set({ user: null, quota: null, wall: null });
         void syncOnboarding();
+        useSyncStore.getState().reset();
       },
     }),
     {
@@ -66,6 +69,7 @@ export const useAuthStore = create<AuthState>()(
 
 onSessionLost(() => {
   useAuthStore.setState({ user: null, quota: null });
+  useSyncStore.getState().reset();
 });
 
 export function accountLabel(user: User): string {
