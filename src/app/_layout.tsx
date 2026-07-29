@@ -10,6 +10,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import "@/i18n";
 import { ensureSession } from "@/services/device-session";
 import { queryClient } from "@/services/query-client";
+import { startSync } from "@/services/sync";
 import { syncOnboarding, useOnboardingStore } from "@/stores/onboarding-store";
 import { ThemeProvider as AppThemeProvider } from "@/theme";
 import { fontAssets } from "@/theme/app-fonts";
@@ -48,6 +49,11 @@ export default function RootLayout() {
       await syncOnboarding();
     })();
   }, []);
+
+  // Highlights and notes are written locally and rendered from there; this only
+  // carries them to the server and folds back what other devices did. It starts
+  // here rather than at module load so the persisted stores are already read.
+  useEffect(() => startSync(), []);
 
   if (!loaded) return null;
 

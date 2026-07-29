@@ -132,7 +132,9 @@
             "emptyHighlights": "No highlights yet.\nSelect a passage while reading, then pick a colour.",
             "emptyNotes": "No notes yet.\nSelect a passage while reading, then “Note”.",
             "jumpedToast": "Jumped to page {{page}}",
-            "reopenUnavailable": "That document isn’t open anymore — reopen it from your library first."
+            "reopenUnavailable": "That document isn’t open anymore — reopen it from your library first.",
+            "noteRemoved": "Note deleted",
+            "highlightRemoved": "Highlight deleted"
         }
     },
     "hero": {

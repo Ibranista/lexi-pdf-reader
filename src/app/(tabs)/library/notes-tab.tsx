@@ -55,6 +55,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
   const setPage = useAppStore((s) => s.setPage);
   const showToast = useToastStore((s) => s.showToast);
   const annotations = useAnnotationsStore((s) => s.items);
+  const removeAnnotation = useAnnotationsStore((s) => s.remove);
   const recents = useRecentsStore((s) => s.recents);
 
   /** Document behind each annotation, for its name and how to reopen it. */
@@ -263,6 +264,25 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                   <Text color={t.faint} size={11}>
                     {whenLabel(a.createdAt)}
                   </Text>
+                  {/* Sits inside the card's own Tap: the inner pressable takes
+                      the touch, so deleting never also reopens the document. */}
+                  <Tap
+                    onPress={() => {
+                      removeAnnotation(a.id);
+                      showToast(
+                        section === "highlights"
+                          ? tr("library.notes.highlightRemoved")
+                          : tr("library.notes.noteRemoved"),
+                      );
+                    }}
+                    scale={0.86}
+                  >
+                    <Box paddingLeft={6} paddingY={2}>
+                      <Text color={t.faint} size={14}>
+                        ✕
+                      </Text>
+                    </Box>
+                  </Tap>
                 </Box>
 
                 <Box direction="row" gap={9}>
