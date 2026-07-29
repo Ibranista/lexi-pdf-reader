@@ -60,7 +60,14 @@ export function DotsButton({
   const t = useProtoTheme();
   return (
     <Tap onPress={onPress} scale={0.88}>
-      <Box align="center" bg={bg} height={28} justify="center" rounded={14} width={28}>
+      <Box
+        align="center"
+        bg={bg}
+        height={28}
+        justify="center"
+        rounded={14}
+        width={28}
+      >
         <IconDots color={color ?? t.sub} size={16} />
       </Box>
     </Tap>
@@ -316,7 +323,8 @@ export function DocRow({
           </Text>
         </Box>
         {filed ? <IconStar color={t.accent} fill={t.accent} size={14} /> : null}
-        {trailing ?? (onMore ? null : <IconChevron color={t.faint} size={16} />)}
+        {trailing ??
+          (onMore ? null : <IconChevron color={t.faint} size={16} />)}
         {onMore ? <DotsButton onPress={onMore} /> : null}
       </Box>
     </Tap>
