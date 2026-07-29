@@ -154,6 +154,35 @@ export function IconChevron({
   );
 }
 
+/** Vertical kebab — "more actions" on a row end or a grid cell corner. */
+export function IconDots({ size, color = "#000" }: IconProps) {
+  return (
+    <Frame size={size}>
+      <Circle cx="10" cy="4.5" fill={color} r="1.5" />
+      <Circle cx="10" cy="10" fill={color} r="1.5" />
+      <Circle cx="10" cy="15.5" fill={color} r="1.5" />
+    </Frame>
+  );
+}
+
+export function IconTrash({
+  size,
+  color = "#000",
+  strokeWidth = 1.6,
+}: IconProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M3.5 5.5h13M8 5.5V4.2c0-.7.5-1.2 1.2-1.2h1.6c.7 0 1.2.5 1.2 1.2v1.3M5.5 5.5l.7 10.1c.06.8.7 1.4 1.5 1.4h4.6c.8 0 1.44-.6 1.5-1.4l.7-10.1M8.3 8.8v4.9M11.7 8.8v4.9"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={strokeWidth}
+      />
+    </Frame>
+  );
+}
+
 export function IconPlus({ size, color = "#000", strokeWidth = 2 }: IconProps) {
   return (
     <Frame size={size}>

@@ -36,6 +36,20 @@
         "docViewer": {
             "pdfOnly": "{{ext}} reading isn't supported yet"
         },
+        "docMenu": {
+            "label": "DOCUMENT",
+            "rename": "Rename",
+            "share": "Share",
+            "delete": "Delete",
+            "deleteConfirm": "Tap again to delete",
+            "renamePlaceholder": "Give it a new name",
+            "save": "Save",
+            "renamedToast": "Renamed to “{{name}}”",
+            "deletedToast": "Deleted “{{name}}”",
+            "renameFailed": "That name didn't stick — try another",
+            "deleteFailed": "Couldn't delete this file",
+            "shareFailed": "Sharing isn't available for this file"
+        },
         "sort": {
             "label": "Sort by",
             "date": "Date",
