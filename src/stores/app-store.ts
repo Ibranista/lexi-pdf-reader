@@ -178,7 +178,7 @@ export const useAppStore = create<AppState>()(
       storageAsked: false,
       // newest first — matches how the scan already presents documents
       librarySort: { key: "date", dir: "desc" },
-      libraryView: "grid",
+      libraryView: "list",
 
       setPage: (page) => set({ page }),
 
