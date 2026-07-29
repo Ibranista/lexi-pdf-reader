@@ -5,10 +5,11 @@ import { useTranslation } from "react-i18next";
 import type { RefreshControlProps } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from "react-native-reanimated";
 
 import { Box } from "@/components/atoms";
@@ -232,7 +233,11 @@ export function SwipeToFavorite({
     })
     .onEnd(() => {
       if (tx.value <= -SWIPE_COMMIT) runOnJS(commit)();
-      tx.value = withSpring(0, { damping: 22, stiffness: 240 });
+      // Ease out rather than spring back — the row settles with no bounce.
+      tx.value = withTiming(0, {
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+      });
     });
   const pan = pager ? swipe.blocksExternalGesture(pager) : swipe;
 
