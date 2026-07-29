@@ -281,7 +281,6 @@ export function DocRow({
         direction="row"
         gap={14}
         paddingY={12}
-        style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
       >
         <PdfThumb doc={doc} rounded={8} style={{ width: 44, height: 58 }} />
         <Box flex={1}>

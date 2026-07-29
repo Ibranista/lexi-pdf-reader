@@ -159,7 +159,7 @@ export const useAppStore = create<AppState>()(
       libRootName: null,
       storageAsked: false,
       librarySort: { key: "date", dir: "desc" },
-      libraryView: "grid",
+      libraryView: "list",
 
       setPage: (page) => set({ page }),
 
