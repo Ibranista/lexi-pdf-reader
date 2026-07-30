@@ -20,6 +20,7 @@ import {
   useSwipeTabs,
   type SwipeTabItem,
 } from "@/components/lexi-components";
+import type { Anchor } from "@/components/library/AnchoredPopover";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { DocMenu } from "@/components/library/DocMenu";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -62,6 +63,8 @@ export default function LibraryScreen() {
   const [openShelf, setOpenShelf] = useState<CollectionId | null>(null);
   const [filing, setFiling] = useState<FilableDoc | null>(null);
   const [menuDoc, setMenuDoc] = useState<FilableDoc | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<Anchor | undefined>(undefined);
+  const [filingAnchor, setFilingAnchor] = useState<Anchor | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [pulled, setPulled] = useState(false);
@@ -201,11 +204,15 @@ export default function LibraryScreen() {
     },
     [showToast, tr],
   );
-  const openCollections = useCallback((doc: FilableDoc) => {
+  const openCollections = useCallback((doc: FilableDoc, anchor?: Anchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setFilingAnchor(anchor);
     setFiling(doc);
   }, []);
-  const openDocMenu = useCallback((doc: FilableDoc) => setMenuDoc(doc), []);
+  const openDocMenu = useCallback((doc: FilableDoc, anchor?: Anchor) => {
+    setMenuAnchor(anchor);
+    setMenuDoc(doc);
+  }, []);
 
   const contentPad = useMemo(
     () => ({
@@ -393,11 +400,16 @@ export default function LibraryScreen() {
         )}
 
         {filing ? (
-          <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
+          <CollectionPicker
+            anchor={filingAnchor}
+            doc={filing}
+            onClose={() => setFiling(null)}
+          />
         ) : null}
 
         {menuDoc ? (
           <DocMenu
+            anchor={menuAnchor}
             doc={menuDoc}
             onChanged={lib.refresh}
             onClose={() => setMenuDoc(null)}

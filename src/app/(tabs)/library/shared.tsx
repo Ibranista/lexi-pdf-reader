@@ -2,7 +2,10 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { type ReactElement, type ReactNode, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import type { RefreshControlProps } from "react-native";
+import type {
+  GestureResponderEvent,
+  RefreshControlProps,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
   Easing,
@@ -23,6 +26,10 @@ import {
   Text,
   usePagerGesture,
 } from "@/components/lexi-components";
+import {
+  anchorOf,
+  type Anchor,
+} from "@/components/library/AnchoredPopover";
 import { FAVORITE_COLLECTION } from "@/constants/collections";
 import { bookCoverFromUri } from "@/hooks/use-book-suggestions";
 import { formatSize, formatWhen } from "@/hooks/use-device-library";
@@ -44,9 +51,9 @@ export interface ScrollerProps {
   refreshControl: ReactElement<RefreshControlProps>;
 }
 
-export type OpenCollections = (doc: FilableDoc) => void;
+export type OpenCollections = (doc: FilableDoc, anchor?: Anchor) => void;
 
-export type OpenDocMenu = (doc: FilableDoc) => void;
+export type OpenDocMenu = (doc: FilableDoc, anchor?: Anchor) => void;
 
 export function DotsButton({
   bg,
@@ -55,11 +62,11 @@ export function DotsButton({
 }: {
   bg?: string;
   color?: string;
-  onPress: () => void;
+  onPress: (anchor?: Anchor) => void;
 }) {
   const t = useProtoTheme();
   return (
-    <Tap onPress={onPress} scale={0.88}>
+    <Tap onPress={(e) => onPress(anchorOf(e))} scale={0.88}>
       <Box
         align="center"
         bg={bg}
@@ -295,8 +302,8 @@ export function DocRow({
 }: {
   doc: { uri: string; name: string; ext: string };
   meta: string;
-  onLongPress?: () => void;
-  onMore?: () => void;
+  onLongPress?: (event: GestureResponderEvent) => void;
+  onMore?: (anchor?: Anchor) => void;
   onPress: () => void;
   trailing?: ReactNode;
 }) {

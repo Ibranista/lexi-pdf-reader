@@ -16,6 +16,7 @@ import {
   type DeviceDoc,
   type DeviceLibrary,
 } from "@/hooks/use-device-library";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import { useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
@@ -109,8 +110,8 @@ export function FilesTab({
             <DocRow
               doc={item}
               meta={docMeta(item.size, item.modifiedAt)}
-              onLongPress={() => openCollections(item)}
-              onMore={() => openDocMenu(item)}
+              onLongPress={(e) => openCollections(item, anchorOf(e))}
+              onMore={(anchor) => openDocMenu(item, anchor)}
               onPress={() => openDoc(item)}
             />
           </SwipeToFavorite>
