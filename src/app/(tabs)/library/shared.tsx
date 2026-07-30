@@ -2,7 +2,10 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { type ReactElement, type ReactNode, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import type { RefreshControlProps } from "react-native";
+import type {
+  GestureResponderEvent,
+  RefreshControlProps,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
   Easing,
@@ -23,6 +26,10 @@ import {
   Text,
   usePagerGesture,
 } from "@/components/lexi-components";
+import {
+  anchorOf,
+  type Anchor,
+} from "@/components/library/AnchoredPopover";
 import { FAVORITE_COLLECTION } from "@/constants/collections";
 import { bookCoverFromUri } from "@/hooks/use-book-suggestions";
 import { formatSize, formatWhen } from "@/hooks/use-device-library";
@@ -46,11 +53,15 @@ export interface ScrollerProps {
   refreshControl: ReactElement<RefreshControlProps>;
 }
 
-/** Long-press hook every document surface shares: opens the collection sheet. */
-export type OpenCollections = (doc: FilableDoc) => void;
+/**
+ * Long-press hook every document surface shares: opens the collection sheet.
+ * The anchor is the touch point, so the picker opens beside the document
+ * rather than in a corner of the screen.
+ */
+export type OpenCollections = (doc: FilableDoc, anchor?: Anchor) => void;
 
 /** ⋮ hook: opens the document actions menu (rename / share / delete). */
-export type OpenDocMenu = (doc: FilableDoc) => void;
+export type OpenDocMenu = (doc: FilableDoc, anchor?: Anchor) => void;
 
 /**
  * The ⋮ that opens a document's actions — sized for the end of a row or,
@@ -63,11 +74,12 @@ export function DotsButton({
 }: {
   bg?: string;
   color?: string;
-  onPress: () => void;
+  /** Handed the touch point, so the menu can open next to this ⋮. */
+  onPress: (anchor?: Anchor) => void;
 }) {
   const t = useProtoTheme();
   return (
-    <Tap onPress={onPress} scale={0.88}>
+    <Tap onPress={(e) => onPress(anchorOf(e))} scale={0.88}>
       <Box
         align="center"
         bg={bg}
@@ -331,9 +343,9 @@ export function DocRow({
 }: {
   doc: { uri: string; name: string; ext: string };
   meta: string;
-  onLongPress?: () => void;
+  onLongPress?: (event: GestureResponderEvent) => void;
   /** When set, a ⋮ ends the row (replacing the decorative chevron). */
-  onMore?: () => void;
+  onMore?: (anchor?: Anchor) => void;
   onPress: () => void;
   trailing?: ReactNode;
 }) {

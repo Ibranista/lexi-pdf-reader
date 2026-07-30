@@ -20,6 +20,7 @@ import {
   useSwipeTabs,
   type SwipeTabItem,
 } from "@/components/lexi-components";
+import type { Anchor } from "@/components/library/AnchoredPopover";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
 import { DocMenu } from "@/components/library/DocMenu";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -69,6 +70,9 @@ export default function LibraryScreen() {
   const [filing, setFiling] = useState<FilableDoc | null>(null);
   // the document whose ⋮ actions menu (rename / share / delete) is open
   const [menuDoc, setMenuDoc] = useState<FilableDoc | null>(null);
+  // Touch points the two popovers open around; undefined falls back to centred.
+  const [menuAnchor, setMenuAnchor] = useState<Anchor | undefined>(undefined);
+  const [filingAnchor, setFilingAnchor] = useState<Anchor | undefined>(undefined);
   // whether the Settings drawer is showing
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -231,13 +235,19 @@ export default function LibraryScreen() {
     },
     [showToast, tr],
   );
-  // long-press anywhere a document is listed: file it into a collection
-  const openCollections = useCallback((doc: FilableDoc) => {
+  // long-press anywhere a document is listed: file it into a collection.
+  // The anchor is where the finger landed, so the picker opens beside the
+  // document instead of in the corner of the screen.
+  const openCollections = useCallback((doc: FilableDoc, anchor?: Anchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setFilingAnchor(anchor);
     setFiling(doc);
   }, []);
   // ⋮ anywhere a document is listed: rename, share or delete it
-  const openDocMenu = useCallback((doc: FilableDoc) => setMenuDoc(doc), []);
+  const openDocMenu = useCallback((doc: FilableDoc, anchor?: Anchor) => {
+    setMenuAnchor(anchor);
+    setMenuDoc(doc);
+  }, []);
 
   // Shared by every tab's scroller. One memoised refresh element serves them
   // all — a React element is just a description, so the same one can sit in
@@ -466,11 +476,16 @@ export default function LibraryScreen() {
         )}
 
         {filing ? (
-          <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
+          <CollectionPicker
+            anchor={filingAnchor}
+            doc={filing}
+            onClose={() => setFiling(null)}
+          />
         ) : null}
 
         {menuDoc ? (
           <DocMenu
+            anchor={menuAnchor}
             doc={menuDoc}
             onChanged={lib.refresh}
             onClose={() => setMenuDoc(null)}

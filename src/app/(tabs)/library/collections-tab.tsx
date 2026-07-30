@@ -16,6 +16,7 @@ import {
   type CollectionId,
   resolveCollectionColor,
 } from "@/constants/collections";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import { COLLECTIONS } from "@/constants/library";
 import { SUGGESTION_COUNT, useBookSuggestions } from "@/hooks/use-book-suggestions";
 import { useCollectionsStore } from "@/stores/collections-store";
@@ -107,7 +108,7 @@ export function CollectionsTab({
                   day: "numeric",
                 }),
               })}
-              onLongPress={() => openCollections(doc)}
+              onLongPress={(e) => openCollections(doc, anchorOf(e))}
               onPress={() => openDoc(doc)}
             />
           ))

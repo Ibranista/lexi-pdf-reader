@@ -15,6 +15,7 @@ import {
   type DeviceDoc,
   type DeviceLibrary,
 } from "@/hooks/use-device-library";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import { useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
@@ -148,7 +149,7 @@ export function AllTab({
       renderItem={({ item }) =>
         grid ? (
           <Tap
-            onLongPress={() => openCollections(item)}
+            onLongPress={(e) => openCollections(item, anchorOf(e))}
             onPress={() => openDoc(item)}
             scale={0.96}
             style={{ paddingHorizontal: 7, paddingBottom: 16 }}
@@ -161,7 +162,7 @@ export function AllTab({
                   <DotsButton
                     bg="rgba(20,16,12,0.45)"
                     color="#FFFFFF"
-                    onPress={() => openDocMenu(item)}
+                    onPress={(anchor) => openDocMenu(item, anchor)}
                   />
                 </Box>
               </Box>
@@ -180,8 +181,8 @@ export function AllTab({
             <DocRow
               doc={item}
               meta={docMeta(item.size, item.modifiedAt)}
-              onLongPress={() => openCollections(item)}
-              onMore={() => openDocMenu(item)}
+              onLongPress={(e) => openCollections(item, anchorOf(e))}
+              onMore={(anchor) => openDocMenu(item, anchor)}
               onPress={() => openDoc(item)}
             />
           </SwipeToFavorite>
