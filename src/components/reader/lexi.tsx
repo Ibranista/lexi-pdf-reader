@@ -2,11 +2,17 @@
  * "Hey Lexi" — the reading companion bubble and chat sheet, with the
  * prototype's drift / rabbit-hole redirection behavior.
  *
- * The sheet is a @gorhom/bottom-sheet modal so it inherits real keyboard
- * avoidance: `keyboardBehavior="interactive"` lifts the whole sheet with the
- * keyboard, keeping the composer and the latest replies visible. On Android's
- * edge-to-edge window the OS no longer resizes anything, so this is the only
- * thing that keeps the input off the keyboard.
+ * The sheet is a @gorhom/bottom-sheet modal that opens at half height, and
+ * keyboard avoidance is left entirely to the sheet — no keyboard-controller
+ * padding, no sticky view. `keyboardBehavior="extend"` sends it to the top
+ * detent on focus and, crucially, shortens the content area by the keyboard's
+ * height, so a bottom-anchored composer lands right on top of the keyboard and
+ * the message list flexes into whatever is left.
+ *
+ * That shortening only happens because `android_keyboardInputMode` matches the
+ * manifest's real `adjustPan` (app.json `softwareKeyboardLayoutMode: "pan"`).
+ * Claiming `adjustResize` makes the sheet assume the OS shrinks the window for
+ * it and zero out the keyboard height — which it doesn't, under edge-to-edge.
  */
 import {
   BottomSheetBackdrop,
@@ -16,6 +22,7 @@ import {
   BottomSheetModal as GorhomBottomSheetModal,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
+import { Keyboard } from "react-native";
 import {
   useCallback,
   useEffect,
@@ -33,8 +40,8 @@ import {
   IconSend,
   IconSpark,
   IconWave,
-  Text,
   Tap,
+  Text,
 } from "@/components/lexi-components";
 import { LEXI_SEED } from "@/constants/library";
 import {
@@ -195,9 +202,10 @@ export function LexiSheet({
 
   const sheetRef = useRef<GorhomBottomSheetModal>(null);
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
-  // A fixed height (not dynamic sizing) so the messages list can flex and the
-  // composer sits at the bottom, where `keyboardBehavior` can lift it.
-  const snapPoints = useMemo(() => ["86%"], []);
+  // Opens at a conversational half-height; dragging or focusing the composer
+  // takes it to the top detent. Fixed heights (not dynamic sizing) so the
+  // messages list can flex and the composer sits at the bottom.
+  const snapPoints = useMemo(() => ["55%", "95%"], []);
 
   // The conversation is keyed to the book itself (its docKey), so reopening the
   // sheet on the same document continues the same thread rather than starting a
@@ -259,6 +267,21 @@ export function LexiSheet({
 
   // Abort any in-flight stream if the sheet unmounts mid-reply.
   useEffect(() => () => abortRef.current?.(), []);
+
+  // The list shrinks when the keyboard opens; keep the newest replies in view.
+  // When it closes, settle back to the resting half-height detent.
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      scrollRef.current?.scrollToEnd({ animated: true }),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      sheetRef.current?.snapToIndex(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const close = useCallback(() => sheetRef.current?.dismiss(), []);
 
@@ -343,6 +366,8 @@ export function LexiSheet({
     );
   };
 
+  const canSend = input.trim().length > 0 && !busy;
+
   const send = () => {
     const q = input.trim();
     if (!q || busy) return;
@@ -387,13 +412,14 @@ export function LexiSheet({
 
   return (
     <GorhomBottomSheetModal
-      android_keyboardInputMode="adjustResize"
+      android_keyboardInputMode="adjustPan"
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: t.card }}
+      enableBlurKeyboardOnGesture
       enableDynamicSizing={false}
       handleIndicatorStyle={{ backgroundColor: t.line }}
       index={0}
-      keyboardBehavior="interactive"
+      keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       onDismiss={onClose}
       ref={sheetRef}
@@ -409,29 +435,11 @@ export function LexiSheet({
           paddingY={12}
           style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
         >
-          <Box
-            align="center"
-            bg={t.accentSoft}
-            height={36}
-            justify="center"
-            rounded={12}
-            width={36}
-          >
-            <IconSpark color={t.accent} size={18} />
-          </Box>
           <Box flex={1}>
-            <Text size={15} weight="600">
-              Lexi
-            </Text>
             <Text color={t.sub} numberOfLines={1} size={11}>
               {book
                 ? `${book.title} · p. ${book.page}`
                 : "Your reading companion · Ch. 3"}
-            </Text>
-          </Box>
-          <Box bg={t.calmSoft} paddingX={10} paddingY={4} rounded={12}>
-            <Text color={t.calm} size={11} weight="600">
-              You’re on track ✓
             </Text>
           </Box>
           <Tap onPress={close}>
@@ -470,11 +478,7 @@ export function LexiSheet({
                 <Box
                   bg={user ? t.pill : isError ? t.accentSoft : t.chip}
                   borderColor={
-                    isError
-                      ? t.accentMid
-                      : special
-                        ? t.calmLine
-                        : "transparent"
+                    isError ? t.accentMid : special ? t.calmLine : "transparent"
                   }
                   borderWidth={1}
                   gap={8}
@@ -543,12 +547,7 @@ export function LexiSheet({
                       scale={0.9}
                       style={{ alignSelf: "flex-start" }}
                     >
-                      <Box
-                        align="center"
-                        direction="row"
-                        gap={5}
-                        paddingY={2}
-                      >
+                      <Box align="center" direction="row" gap={5} paddingY={2}>
                         <IconWave color={t.sub} size={13} />
                         <Text color={t.sub} size={11} weight="600">
                           Hear it
@@ -585,50 +584,56 @@ export function LexiSheet({
           ) : null}
         </BottomSheetScrollView>
 
+        {/* Static padding only — when the keyboard is up the sheet has already
+            shortened the content area by its height, so there is nothing left
+            to animate around. */}
         <Box
-          paddingTop={12}
-          paddingX={16}
+          paddingTop={10}
+          paddingX={12}
           style={{
-            paddingBottom: 14 + insets.bottom,
+            paddingBottom: insets.bottom + 10,
             borderTopWidth: 1,
             borderTopColor: t.line,
           }}
         >
           <Box
-            align="center"
+            align="end"
             bg={t.chip}
             direction="row"
-            gap={9}
+            gap={8}
             paddingLeft={16}
-            paddingRight={5}
-            paddingY={5}
+            paddingRight={6}
+            paddingY={6}
             rounded={24}
           >
             <BottomSheetTextInput
+              multiline
               onChangeText={setInput}
-              onSubmitEditing={send}
               placeholder="Hey Lexi… ask about this document"
               placeholderTextColor={t.faint}
-              returnKeyType="send"
               style={{
                 flex: 1,
                 minWidth: 0,
-                paddingVertical: 10,
-                fontSize: 14,
+                // ~5 lines, then the draft scrolls inside the pill.
+                maxHeight: 104,
+                paddingTop: 8,
+                paddingBottom: 8,
+                fontSize: 15,
+                lineHeight: 20,
                 color: t.ink,
               }}
               value={input}
             />
-            <Tap onPress={send} scale={0.92}>
+            <Tap disabled={!canSend} onPress={send} scale={0.92}>
               <Box
                 align="center"
-                bg={t.accent}
+                bg={canSend ? t.accent : t.line}
                 height={36}
                 justify="center"
                 rounded={18}
                 width={36}
               >
-                <IconSend color={t.onAccent} size={15} />
+                <IconSend color={canSend ? t.onAccent : t.sub} size={15} />
               </Box>
             </Tap>
           </Box>
