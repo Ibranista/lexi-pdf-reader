@@ -794,6 +794,11 @@ export default function PdfViewerScreen() {
                   uri,
                   counts.map((count) => expectedReadingMs(count || 275)),
                 );
+                // One entry per page — fills the page indicator's total when
+                // the native layer never got to report it (its error screen,
+                // or a document only reflow could open). The native count
+                // stays authoritative when it exists.
+                if (counts.length) setPageCount((c) => c || counts.length);
               }}
               onSearchResults={setSearchResults}
               onSelection={(text, selPage) => {
@@ -963,7 +968,11 @@ export default function PdfViewerScreen() {
       </Animated.View>
 
       {/* Page indicator matches the example reader. It also opens Reading
-          settings, replacing the previous bottom grabber. */}
+          settings, replacing the previous bottom grabber. Unlike the rest of
+          the chrome it never fully leaves: tied to `bar` it vanished the
+          moment a tap cleared the toolbar, which read as the page number
+          being gone — so in distraction-free reading it only dims, and taps
+          pass through it to the document. */}
       <Animated.View
         pointerEvents={immersive ? "none" : "auto"}
         style={{
@@ -973,15 +982,10 @@ export default function PdfViewerScreen() {
           right: 0,
           alignItems: "center",
           zIndex: 10,
-          opacity: bar,
-          transform: [
-            {
-              translateY: bar.interpolate({
-                inputRange: [0, 1],
-                outputRange: [24, 0],
-              }),
-            },
-          ],
+          opacity: bar.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.4, 1],
+          }),
         }}
       >
         <Tap onPress={openSettings} scale={0.96}>
