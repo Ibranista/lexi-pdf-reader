@@ -1072,17 +1072,35 @@ function buildHtml(
       var y = it.transform ? it.transform[5] : 0;
       var x = it.transform ? it.transform[4] : 0;
       var w = it.width || 0;
-      if (cur && Math.abs(y - cur.y) < 3) {
-        cur.text += str;
+      var h = it.height || 0;
+      // Baseline tolerance scales with the type size. A flat 3 units split
+      // superscripts, footnote markers and inline font changes off the line
+      // they visually belong to, and each orphan then became its own
+      // paragraph — the "one word on a line of its own" symptom.
+      var tol = cur ? Math.max(3, Math.min(cur.h, h || cur.h) * 0.55) : 3;
+      if (cur && Math.abs(y - cur.y) <= tol) {
+        // pdf.js only emits a space character when the font actually draws
+        // one; a wide x-jump is a word boundary the stream left implicit.
+        var needSpace = str && cur.text &&
+          !/\\s$/.test(cur.text) && !/^\\s/.test(str) &&
+          x - cur.x1 > Math.max(1, cur.h * 0.2);
+        cur.text += (needSpace ? ' ' : '') + str;
         cur.x0 = Math.min(cur.x0, x);
         cur.x1 = Math.max(cur.x1, x + w);
-        cur.h = Math.max(cur.h, it.height || 0);
+        cur.h = Math.max(cur.h, h);
       }
       else {
         if (cur) lines.push(cur);
-        cur = { y: y, text: str, item: it, x0: x, x1: x + w, h: it.height || 10 };
+        cur = { y: y, text: str, item: it, x0: x, x1: x + w, h: h || 10 };
       }
-      if (it.hasEOL && cur) { lines.push(cur); cur = null; }
+      // hasEOL ends a line in the content stream, which is not always the
+      // end of a visual line — a wrapped run can be chopped mid-line. Trust
+      // it only when the next fragment really does sit on another baseline.
+      if (it.hasEOL && cur) {
+        var nxt = items[i + 1];
+        var ny = nxt && nxt.transform ? nxt.transform[5] : null;
+        if (ny === null || Math.abs(ny - cur.y) > tol) { lines.push(cur); cur = null; }
+      }
     }
     if (cur) lines.push(cur);
     return lines;
@@ -1275,26 +1293,109 @@ function buildHtml(
     return { rows: best.rows, header: best.header, tableItems: best.tableItems };
   }
 
-  /* Merge lines into paragraphs, carrying color. */
+  /* Merge lines into the paragraphs the printed page shows, carrying color.
+
+     A vertical gap alone is a weak signal: it fires on every heading and
+     figure, and misses the flush paragraph breaks that carry no extra
+     leading. So we measure the block first — its body leading and its left
+     and right margins — and then read the same cues a person does: a line
+     that stops short of the right margin ended its paragraph, and a line
+     that starts in from the left margin began one. */
   function toParagraphs(lines){
+    // Body leading, as the median of the *tight* gaps. Taking the median of
+    // every gap let one heading or figure gap drag the estimate up until real
+    // paragraph breaks stopped clearing the threshold.
     var gaps = [];
     for (var j = 1; j < lines.length; j++){
       var g = lines[j-1].y - lines[j].y;
-      if (g > 0) gaps.push(g);
+      if (g > 1) gaps.push(g);
     }
     gaps.sort(function(a,b){ return a-b; });
     var median = gaps.length ? gaps[Math.floor(gaps.length/2)] : 0;
+    if (gaps.length > 4 && median > 0) {
+      var tight = [];
+      for (var tg = 0; tg < gaps.length; tg++){
+        if (gaps[tg] <= median * 1.25) tight.push(gaps[tg]);
+      }
+      if (tight.length) median = tight[Math.floor(tight.length/2)];
+    }
+
+    // Margins of the *dominant* text block, found by bucketing left edges and
+    // taking the most popular one. Page-wide margins are meaningless as soon
+    // as a page carries a sidebar, a figure or two columns: the leftmost
+    // element sets the left margin and the widest sets the right, and then
+    // every line of a narrow column reads as indented and gets split off.
+    var real = [];
+    for (var m = 0; m < lines.length; m++){
+      if ((lines[m].text || '').trim()) real.push(lines[m]);
+    }
+    var span = 0;
+    for (var s1 = 0; s1 < real.length; s1++){
+      if (real[s1].x1 > span) span = real[s1].x1;
+    }
+    var eps = Math.max(6, span * 0.012);
+
+    var block = null;
+    for (var a = 0; a < real.length; a++){
+      var n = 0, lo = real[a].x0, hi = -Infinity;
+      for (var b = 0; b < real.length; b++){
+        if (Math.abs(real[b].x0 - real[a].x0) <= eps) {
+          n++;
+          if (real[b].x0 < lo) lo = real[b].x0;
+          if (real[b].x1 > hi) hi = real[b].x1;
+        }
+      }
+      if (!block || n > block.n) block = { n: n, left: lo, right: hi };
+    }
+    var left = block ? block.left : 0;
+    var right = block ? block.right : 0;
+    var width = right - left;
+    if (!(width > 0)) width = 0;
+
+    // The short-line rule only means something in justified text, where
+    // nearly every line reaches the right margin. In ragged-right text line
+    // ends vary by design, and trusting them would cut every single line into
+    // its own paragraph — the worst version of this bug.
+    var flush = 0, counted = 0;
+    for (var f = 0; f < real.length; f++){
+      if (Math.abs(real[f].x0 - left) > eps) continue;   // block lines only
+      counted++;
+      if (real[f].x1 >= right - Math.max(6, width * 0.02)) flush++;
+    }
+    var justified = counted >= 4 && width > 0 && flush / counted >= 0.6;
+
+    var shortBy = Math.max(12, width * 0.12);   // stops short of the margin
+    var indentBy = Math.max(6, width * 0.03);   // starts in from the margin
+
+    // Only lines sitting inside the dominant block's horizontal span get the
+    // margin cues; anything else (other column, caption, diagram label) falls
+    // back to vertical spacing alone.
+    function inBlock(l){
+      return width > 0 && l.x0 >= left - eps && l.x1 <= right + eps;
+    }
 
     var paras = [];
     var buf = null;
-    var prevY = null;
+    var prev = null;
     for (var k = 0; k < lines.length; k++){
       var text = (lines[k].text || '').replace(/\\s+/g, ' ').trim();
-      if (!text) { if (buf) { paras.push(buf); buf = null; } prevY = null; continue; }
+      if (!text) { if (buf) { paras.push(buf); buf = null; } prev = null; continue; }
       var brk = false;
-      if (prevY !== null) {
-        var gap = prevY - lines[k].y;
-        if (gap < 0 || (median > 0 && gap > median * 1.5)) brk = true;
+      if (prev) {
+        var gap = prev.y - lines[k].y;
+        var lead = median > 0 ? median : Math.max(prev.h, lines[k].h, 8) * 1.2;
+        if (gap < -lead * 0.35) {
+          brk = true;             // jumped back up the page: new column/block
+        } else if (gap > lead * 1.55) {
+          brk = true;             // blank space opened up between the lines
+        } else if (gap > lead * 0.5 && inBlock(prev) && inBlock(lines[k])) {
+          // A genuine next line within the body block — only now do the margin
+          // cues apply. Skipping this guard let leftover same-baseline
+          // fragments, whose x1 is of course short, break a paragraph
+          // mid-sentence.
+          if (justified && prev.x1 < right - shortBy) brk = true;
+          else if (lines[k].x0 > left + indentBy) brk = true;
+        }
       }
       if (brk && buf) { paras.push(buf); buf = null; }
       if (!buf) buf = { y: lines[k].y, y2: lines[k].y, runs: [], geo: [] };
@@ -1302,7 +1403,7 @@ function buildHtml(
       // one geometry record per run: the source line's box in page space
       buf.geo.push({ x0: lines[k].x0, x1: lines[k].x1, y: lines[k].y, h: lines[k].h || 10 });
       buf.y2 = lines[k].y;   // last line — bottom of the paragraph
-      prevY = lines[k].y;
+      prev = lines[k];
     }
     if (buf) paras.push(buf);
     return paras;

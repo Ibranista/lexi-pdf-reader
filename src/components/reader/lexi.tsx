@@ -6,6 +6,7 @@ import {
   BottomSheetModal as GorhomBottomSheetModal,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
+import { Keyboard } from "react-native";
 import {
   useCallback,
   useEffect,
@@ -23,8 +24,8 @@ import {
   IconSend,
   IconSpark,
   IconWave,
-  Text,
   Tap,
+  Text,
 } from "@/components/lexi-components";
 import { LEXI_SEED } from "@/constants/library";
 import {
@@ -167,7 +168,7 @@ export function LexiSheet({
 
   const sheetRef = useRef<GorhomBottomSheetModal>(null);
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
-  const snapPoints = useMemo(() => ["86%"], []);
+  const snapPoints = useMemo(() => ["55%", "95%"], []);
 
   const sessionId = book?.docKey ?? "";
 
@@ -219,6 +220,19 @@ export function LexiSheet({
   }, [book, sessionId]);
 
   useEffect(() => () => abortRef.current?.(), []);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      scrollRef.current?.scrollToEnd({ animated: true }),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      sheetRef.current?.snapToIndex(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const close = useCallback(() => sheetRef.current?.dismiss(), []);
 
@@ -299,6 +313,8 @@ export function LexiSheet({
     );
   };
 
+  const canSend = input.trim().length > 0 && !busy;
+
   const send = () => {
     const q = input.trim();
     if (!q || busy) return;
@@ -341,13 +357,14 @@ export function LexiSheet({
 
   return (
     <GorhomBottomSheetModal
-      android_keyboardInputMode="adjustResize"
+      android_keyboardInputMode="adjustPan"
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: t.card }}
+      enableBlurKeyboardOnGesture
       enableDynamicSizing={false}
       handleIndicatorStyle={{ backgroundColor: t.line }}
       index={0}
-      keyboardBehavior="interactive"
+      keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       onDismiss={onClose}
       ref={sheetRef}
@@ -363,29 +380,11 @@ export function LexiSheet({
           paddingY={12}
           style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
         >
-          <Box
-            align="center"
-            bg={t.accentSoft}
-            height={36}
-            justify="center"
-            rounded={12}
-            width={36}
-          >
-            <IconSpark color={t.accent} size={18} />
-          </Box>
           <Box flex={1}>
-            <Text size={15} weight="600">
-              Lexi
-            </Text>
             <Text color={t.sub} numberOfLines={1} size={11}>
               {book
                 ? `${book.title} · p. ${book.page}`
                 : "Your reading companion · Ch. 3"}
-            </Text>
-          </Box>
-          <Box bg={t.calmSoft} paddingX={10} paddingY={4} rounded={12}>
-            <Text color={t.calm} size={11} weight="600">
-              You’re on track ✓
             </Text>
           </Box>
           <Tap onPress={close}>
@@ -424,11 +423,7 @@ export function LexiSheet({
                 <Box
                   bg={user ? t.pill : isError ? t.accentSoft : t.chip}
                   borderColor={
-                    isError
-                      ? t.accentMid
-                      : special
-                        ? t.calmLine
-                        : "transparent"
+                    isError ? t.accentMid : special ? t.calmLine : "transparent"
                   }
                   borderWidth={1}
                   gap={8}
@@ -496,12 +491,7 @@ export function LexiSheet({
                       scale={0.9}
                       style={{ alignSelf: "flex-start" }}
                     >
-                      <Box
-                        align="center"
-                        direction="row"
-                        gap={5}
-                        paddingY={2}
-                      >
+                      <Box align="center" direction="row" gap={5} paddingY={2}>
                         <IconWave color={t.sub} size={13} />
                         <Text color={t.sub} size={11} weight="600">
                           Hear it
@@ -538,49 +528,51 @@ export function LexiSheet({
         </BottomSheetScrollView>
 
         <Box
-          paddingTop={12}
-          paddingX={16}
+          paddingTop={10}
+          paddingX={12}
           style={{
-            paddingBottom: 14 + insets.bottom,
+            paddingBottom: insets.bottom + 10,
             borderTopWidth: 1,
             borderTopColor: t.line,
           }}
         >
           <Box
-            align="center"
+            align="end"
             bg={t.chip}
             direction="row"
-            gap={9}
+            gap={8}
             paddingLeft={16}
-            paddingRight={5}
-            paddingY={5}
+            paddingRight={6}
+            paddingY={6}
             rounded={24}
           >
             <BottomSheetTextInput
+              multiline
               onChangeText={setInput}
-              onSubmitEditing={send}
               placeholder="Hey Lexi… ask about this document"
               placeholderTextColor={t.faint}
-              returnKeyType="send"
               style={{
                 flex: 1,
                 minWidth: 0,
-                paddingVertical: 10,
-                fontSize: 14,
+                maxHeight: 104,
+                paddingTop: 8,
+                paddingBottom: 8,
+                fontSize: 15,
+                lineHeight: 20,
                 color: t.ink,
               }}
               value={input}
             />
-            <Tap onPress={send} scale={0.92}>
+            <Tap disabled={!canSend} onPress={send} scale={0.92}>
               <Box
                 align="center"
-                bg={t.accent}
+                bg={canSend ? t.accent : t.line}
                 height={36}
                 justify="center"
                 rounded={18}
                 width={36}
               >
-                <IconSend color={t.onAccent} size={15} />
+                <IconSend color={canSend ? t.onAccent : t.sub} size={15} />
               </Box>
             </Tap>
           </Box>
