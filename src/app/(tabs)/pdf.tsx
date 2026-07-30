@@ -23,12 +23,9 @@ import { Box, Text } from "@/components/atoms";
 import {
   HeaderButton,
   IconBack,
-  IconBookmark,
   IconFocus,
-  IconPencil,
-  IconReflow,
   IconSearch,
-  IconSpark,
+  IconSliders,
   Tap,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
@@ -548,9 +545,11 @@ export default function PdfViewerScreen() {
     outputRange: [0, barH],
   });
 
-  // Settings sheet: opened by the grabber, or by swiping up from the very
-  // bottom edge (which works in distraction-free mode too, where the
-  // grabber is hidden). Closing is gorhom's — drag down or tap the backdrop.
+  // Settings sheet: opened by the toolbar's options button or the page
+  // indicator. The swipe-up-from-the-bottom-edge gesture that used to open it
+  // was removed — it sat on the same edge as the Android system gestures and
+  // fired while scrolling, so the sheet kept appearing unasked.
+  // Closing is gorhom's — drag down or tap the backdrop.
   const sheetRef = useRef<BottomSheetModalReference>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const openSettings = () => setSettingsOpen(true);
@@ -559,13 +558,6 @@ export default function PdfViewerScreen() {
   useEffect(() => {
     if (settingsOpen) sheetRef.current?.present();
   }, [settingsOpen]);
-
-  const swipeUpFromBottom = Gesture.Pan()
-    .runOnJS(true)
-    .activeOffsetY([-20, 20])
-    .onEnd((e) => {
-      if (e.translationY < -30) setSettingsOpen(true);
-    });
 
   // Swipe in from the left edge opens Contents, mirroring the search panel
   // on the right. Only armed when the document actually has an outline.
@@ -905,61 +897,22 @@ export default function PdfViewerScreen() {
               exiting={FadeOut.duration(140)}
               layout={TITLE_SWAP}
             >
+              {/* Search and Focus stay out here — both are reading actions
+                  wanted mid-page, without a detour through a sheet. View mode,
+                  AI, notes and bookmark live in the settings sheet behind the
+                  options button, which is also the only way in now that the
+                  swipe-up-from-the-bottom-edge gesture is gone. Focus is still
+                  mirrored by the sheet's own toggle; the two share one handler,
+                  so they can't disagree. */}
               <Box direction="row" gap={2}>
-                <HeaderButton
-                  onPress={() =>
-                    switchTo(mode === "reflow" ? "page" : "reflow")
-                  }
-                >
-                  <IconReflow
-                    color={mode === "reflow" ? t.accent : t.ink}
-                    size={18}
-                  />
-                </HeaderButton>
-                <HeaderButton
-                  onPress={() => {
-                    const next = !aiOn;
-                    setApp({ aiOn: next });
-                    showToast(next ? "AI companion on" : "AI companion off");
-                  }}
-                >
-                  <IconSpark color={aiOn ? t.accent : t.ink} size={18} />
-                </HeaderButton>
                 <HeaderButton onPress={toggleFocus}>
                   <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
                 </HeaderButton>
                 <HeaderButton onPress={() => setSearchOpen(true)}>
                   <IconSearch color={t.ink} size={18} />
                 </HeaderButton>
-                {/* Only in Reflow: highlights and notes come from selecting
-                    text, which Page view's bitmap can't do. */}
-                {mode === "reflow" ? (
-                  <HeaderButton
-                    onPress={() =>
-                      router.push({
-                        pathname: "/notes",
-                        params: { uri, name: name ?? "Document" },
-                      })
-                    }
-                  >
-                    <IconPencil color={t.ink} size={18} />
-                  </HeaderButton>
-                ) : null}
-                <HeaderButton
-                  onPress={() => {
-                    toggleBookmark(page);
-                    showToast(
-                      bookmarks.includes(page)
-                        ? "Bookmark removed"
-                        : `Page ${page} bookmarked`,
-                    );
-                  }}
-                >
-                  <IconBookmark
-                    color={bookmarks.includes(page) ? t.accent : t.ink}
-                    fill={bookmarks.includes(page) ? t.accent : "none"}
-                    size={18}
-                  />
+                <HeaderButton onPress={openSettings}>
+                  <IconSliders color={t.ink} size={18} />
                 </HeaderButton>
               </Box>
             </Reanimated.View>
@@ -1049,22 +1002,8 @@ export default function PdfViewerScreen() {
         </GestureDetector>
       ) : null}
 
-      {/* Always-on swipe-up catcher at the very bottom edge — works in
-          distraction-free mode too, where the grabber is hidden. */}
-      <GestureDetector gesture={swipeUpFromBottom}>
-        <Box
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: insets.bottom + 28,
-            zIndex: 9,
-          }}
-        />
-      </GestureDetector>
-
       <ReaderSettingsSheet
+        bookmarked={bookmarks.includes(page)}
         filed={filedSomewhere}
         focusMode={focusOn}
         onClose={() => setSettingsOpen(false)}
@@ -1073,8 +1012,31 @@ export default function PdfViewerScreen() {
           setSettingsOpen(false);
           setFilingOpen(true);
         }}
+        // Reflow only: highlights and notes come from selecting text, which
+        // Page view's bitmap can't do — same condition the toolbar button had.
+        onOpenNotes={
+          mode === "reflow"
+            ? () => {
+                sheetRef.current?.dismiss();
+                setSettingsOpen(false);
+                router.push({
+                  pathname: "/notes",
+                  params: { uri, name: name ?? "Document" },
+                });
+              }
+            : undefined
+        }
+        onToggleBookmark={() => {
+          toggleBookmark(page);
+          showToast(
+            bookmarks.includes(page)
+              ? "Bookmark removed"
+              : `Page ${page} bookmarked`,
+          );
+        }}
         onToggleFocusMode={toggleFocus}
         onViewModeChange={switchTo}
+        page={page}
         ref={sheetRef}
         viewMode={mode}
       />
