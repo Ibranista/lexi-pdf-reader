@@ -11,7 +11,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Box } from "@/components/atoms";
 import {
   Divider,
+  IconBookmark,
   IconChevron,
+  IconPencil,
   IconStar,
   ProtoSlider,
   SectionLabel,
@@ -226,10 +228,14 @@ const SmartZoomControl = memo(function SmartZoomControl() {
 });
 
 interface Props {
+  bookmarked?: boolean;
   filed?: boolean;
   focusMode?: boolean;
   onClose?: () => void;
   onOpenCollections?: () => void;
+  onOpenNotes?: () => void;
+  onToggleBookmark?: () => void;
+  page?: number;
   onToggleFocusMode?: () => void;
   onViewModeChange?: (mode: ViewMode) => void;
   showViewModes?: boolean;
@@ -240,12 +246,16 @@ interface Props {
 export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
   (
     {
+      bookmarked = false,
       filed = false,
       focusMode = false,
       onClose,
       onOpenCollections,
+      onOpenNotes,
+      onToggleBookmark,
       onToggleFocusMode,
       onViewModeChange,
+      page,
       showSmartZoom = true,
       showViewModes = true,
       viewMode = "page",
@@ -312,6 +322,64 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
               <IconChevron color={filed ? t.accentText : t.faint} size={15} />
             </Box>
           </Tap>
+        ) : null}
+
+        {onToggleBookmark || onOpenNotes ? (
+          <Box direction="row" gap={8} marginTop={8}>
+            {onToggleBookmark ? (
+              <Box flex={1}>
+                <Tap onPress={onToggleBookmark} scale={0.97}>
+                  <Box
+                    align="center"
+                    bg={bookmarked ? t.accentSoft : t.chip}
+                    direction="row"
+                    gap={9}
+                    paddingX={14}
+                    paddingY={12}
+                    rounded={12}
+                  >
+                    <IconBookmark
+                      color={bookmarked ? t.accentText : t.ink}
+                      fill={bookmarked ? t.accentText : "none"}
+                      size={17}
+                    />
+                    <Text
+                      color={bookmarked ? t.accentText : t.ink}
+                      numberOfLines={1}
+                      size={13.5}
+                      weight="600"
+                    >
+                      {bookmarked
+                        ? "Bookmarked"
+                        : page
+                          ? `Bookmark p. ${page}`
+                          : "Bookmark"}
+                    </Text>
+                  </Box>
+                </Tap>
+              </Box>
+            ) : null}
+            {onOpenNotes ? (
+              <Box flex={1}>
+                <Tap onPress={onOpenNotes} scale={0.97}>
+                  <Box
+                    align="center"
+                    bg={t.chip}
+                    direction="row"
+                    gap={9}
+                    paddingX={14}
+                    paddingY={12}
+                    rounded={12}
+                  >
+                    <IconPencil color={t.ink} size={17} />
+                    <Text numberOfLines={1} size={13.5} weight="600">
+                      Notes
+                    </Text>
+                  </Box>
+                </Tap>
+              </Box>
+            ) : null}
+          </Box>
         ) : null}
 
         {showViewModes ? (

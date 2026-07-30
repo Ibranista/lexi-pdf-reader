@@ -23,12 +23,9 @@ import { Box, Text } from "@/components/atoms";
 import {
   HeaderButton,
   IconBack,
-  IconBookmark,
   IconFocus,
-  IconPencil,
-  IconReflow,
   IconSearch,
-  IconSpark,
+  IconSliders,
   Tap,
 } from "@/components/lexi-components";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
@@ -454,13 +451,6 @@ export default function PdfViewerScreen() {
     if (settingsOpen) sheetRef.current?.present();
   }, [settingsOpen]);
 
-  const swipeUpFromBottom = Gesture.Pan()
-    .runOnJS(true)
-    .activeOffsetY([-20, 20])
-    .onEnd((e) => {
-      if (e.translationY < -30) setSettingsOpen(true);
-    });
-
   const swipeFromLeftEdge = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetX([-20, 20])
@@ -762,58 +752,14 @@ export default function PdfViewerScreen() {
               layout={TITLE_SWAP}
             >
               <Box direction="row" gap={2}>
-                <HeaderButton
-                  onPress={() =>
-                    switchTo(mode === "reflow" ? "page" : "reflow")
-                  }
-                >
-                  <IconReflow
-                    color={mode === "reflow" ? t.accent : t.ink}
-                    size={18}
-                  />
-                </HeaderButton>
-                <HeaderButton
-                  onPress={() => {
-                    const next = !aiOn;
-                    setApp({ aiOn: next });
-                    showToast(next ? "AI companion on" : "AI companion off");
-                  }}
-                >
-                  <IconSpark color={aiOn ? t.accent : t.ink} size={18} />
-                </HeaderButton>
                 <HeaderButton onPress={toggleFocus}>
                   <IconFocus color={focusOn ? t.accent : t.ink} size={18} />
                 </HeaderButton>
                 <HeaderButton onPress={() => setSearchOpen(true)}>
                   <IconSearch color={t.ink} size={18} />
                 </HeaderButton>
-                {mode === "reflow" ? (
-                  <HeaderButton
-                    onPress={() =>
-                      router.push({
-                        pathname: "/notes",
-                        params: { uri, name: name ?? "Document" },
-                      })
-                    }
-                  >
-                    <IconPencil color={t.ink} size={18} />
-                  </HeaderButton>
-                ) : null}
-                <HeaderButton
-                  onPress={() => {
-                    toggleBookmark(page);
-                    showToast(
-                      bookmarks.includes(page)
-                        ? "Bookmark removed"
-                        : `Page ${page} bookmarked`,
-                    );
-                  }}
-                >
-                  <IconBookmark
-                    color={bookmarks.includes(page) ? t.accent : t.ink}
-                    fill={bookmarks.includes(page) ? t.accent : "none"}
-                    size={18}
-                  />
+                <HeaderButton onPress={openSettings}>
+                  <IconSliders color={t.ink} size={18} />
                 </HeaderButton>
               </Box>
             </Reanimated.View>
@@ -894,20 +840,8 @@ export default function PdfViewerScreen() {
         </GestureDetector>
       ) : null}
 
-      <GestureDetector gesture={swipeUpFromBottom}>
-        <Box
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: insets.bottom + 28,
-            zIndex: 9,
-          }}
-        />
-      </GestureDetector>
-
       <ReaderSettingsSheet
+        bookmarked={bookmarks.includes(page)}
         filed={filedSomewhere}
         focusMode={focusOn}
         onClose={() => setSettingsOpen(false)}
@@ -916,8 +850,29 @@ export default function PdfViewerScreen() {
           setSettingsOpen(false);
           setFilingOpen(true);
         }}
+        onOpenNotes={
+          mode === "reflow"
+            ? () => {
+                sheetRef.current?.dismiss();
+                setSettingsOpen(false);
+                router.push({
+                  pathname: "/notes",
+                  params: { uri, name: name ?? "Document" },
+                });
+              }
+            : undefined
+        }
+        onToggleBookmark={() => {
+          toggleBookmark(page);
+          showToast(
+            bookmarks.includes(page)
+              ? "Bookmark removed"
+              : `Page ${page} bookmarked`,
+          );
+        }}
         onToggleFocusMode={toggleFocus}
         onViewModeChange={switchTo}
+        page={page}
         ref={sheetRef}
         viewMode={mode}
       />
