@@ -663,6 +663,7 @@ export default function PdfViewerScreen() {
                   uri,
                   counts.map((count) => expectedReadingMs(count || 275)),
                 );
+                if (counts.length) setPageCount((c) => c || counts.length);
               }}
               onSearchResults={setSearchResults}
               onSelection={(text, selPage) => {
@@ -829,15 +830,10 @@ export default function PdfViewerScreen() {
           right: 0,
           alignItems: "center",
           zIndex: 10,
-          opacity: bar,
-          transform: [
-            {
-              translateY: bar.interpolate({
-                inputRange: [0, 1],
-                outputRange: [24, 0],
-              }),
-            },
-          ],
+          opacity: bar.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.4, 1],
+          }),
         }}
       >
         <Tap onPress={openSettings} scale={0.96}>
