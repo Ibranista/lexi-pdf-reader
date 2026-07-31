@@ -21,31 +21,27 @@ interface Seed {
   kind: string;
 }
 
-const SEED: Seed[] = [
-  { q: "Pride and Prejudice Jane Austen", collection: "📖 Reading Later", kind: "Classic" },
-  { q: "Frankenstein Mary Shelley", collection: "🔖 To Read", kind: "Classic" },
-  { q: "The Adventures of Sherlock Holmes Doyle", collection: "💛 Favorites", kind: "Classic" },
-];
+const SEED: Seed[] = [];
 
-export const SUGGESTION_COUNT = SEED.length;
+export const SUGGESTION_COUNT = 5;
 
-const COVER_PARAM = 'lexiCover';
+const COVER_PARAM = "lexiCover";
 
 const COVER_RE = new RegExp(`[?&]${COVER_PARAM}=([^&]+)`);
 
 export function bookDocUri(
-  book: Pick<BookSuggestion, 'coverUrl' | 'readUrl'>,
+  book: Pick<BookSuggestion, "coverUrl" | "readUrl">,
 ): string {
   if (!book.coverUrl) return book.readUrl;
-  const sep = book.readUrl.includes('?') ? '&' : '?';
+  const sep = book.readUrl.includes("?") ? "&" : "?";
   return `${book.readUrl}${sep}${COVER_PARAM}=${encodeURIComponent(book.coverUrl)}`;
 }
 
 export function bookReadUrl(uri: string): string {
   const stripped = uri.replace(COVER_RE, (match) =>
-    match[0] === '?' ? '?' : '',
+    match[0] === "?" ? "?" : "",
   );
-  return stripped.replace('?&', '?').replace(/\?$/, '');
+  return stripped.replace("?&", "?").replace(/\?$/, "");
 }
 
 export function bookCoverFromUri(uri: string): string | undefined {
