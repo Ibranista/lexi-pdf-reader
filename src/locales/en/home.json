@@ -90,6 +90,10 @@
             "filedIn": "Filed in {{collection}}",
             "filedInBy": "{{author}} · Filed in {{collection}}",
             "tapSuggestion": "Tap a suggestion to move it — nothing files without you seeing it.",
+            "suggestOffline": "We couldn't bring in any picks — there's no connection right now. Get back online and we'll find books that fit what you read.",
+            "suggestFailed": "We couldn't reach our picks just now. Give it another try in a moment.",
+            "suggestNow": "Suggest books for me",
+            "suggestRetry": "Try again",
             "names": {
                 "studying": "Studying",
                 "later": "Reading Later",

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import type { ReadingInterest } from "@/constants/onboarding";
 import { queryKeys } from "@/services/query-client";
@@ -98,6 +99,7 @@ async function resolveSeed(seed: Seed): Promise<BookSuggestion> {
 
 async function fetchSuggestions(
   interests: readonly ReadingInterest[],
+  refreshes: number,
 ): Promise<BookSuggestion[]> {
   try {
     const { data } = await api.get<{ suggestions: BookSuggestion[] }>(
@@ -106,25 +108,41 @@ async function fetchSuggestions(
         params: {
           interests: interests.length ? interests.join(",") : undefined,
           limit: SUGGESTION_COUNT,
+          refresh: refreshes || undefined,
         },
       },
     );
     if (data.suggestions?.length) return data.suggestions;
   } catch {}
-  return Promise.all(SEED.map(resolveSeed));
+  const seeded = await Promise.all(SEED.map(resolveSeed));
+  if (seeded.length) return seeded;
+  throw new Error("no-suggestions");
 }
 
 export function useBookSuggestions(): {
   suggestions: BookSuggestion[];
   loading: boolean;
+  failed: boolean;
+  refreshing: boolean;
+  refresh: () => void;
 } {
   const interests = useOnboardingStore((s) => s.interests);
+  const refreshes = useRef(0);
 
-  const { data, isPending } = useQuery({
-    queryFn: () => fetchSuggestions(interests),
+  const { data, isError, isFetching, isPending, refetch } = useQuery({
+    queryFn: () => fetchSuggestions(interests, refreshes.current),
     queryKey: queryKeys.bookSuggestions(interests),
     staleTime: Infinity,
   });
 
-  return { suggestions: data ?? [], loading: isPending };
+  return {
+    failed: isError,
+    loading: isPending,
+    refresh: () => {
+      refreshes.current += 1;
+      void refetch();
+    },
+    refreshing: isFetching && !isPending,
+    suggestions: data ?? [],
+  };
 }
