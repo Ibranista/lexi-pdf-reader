@@ -14,6 +14,7 @@
  * web page loads reliably, so that's what we use.)
  */
 import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import type { ReadingInterest } from "@/constants/onboarding";
 import { queryKeys } from "@/services/query-client";
@@ -145,6 +146,7 @@ async function resolveSeed(seed: Seed): Promise<BookSuggestion> {
  */
 async function fetchSuggestions(
   interests: readonly ReadingInterest[],
+  refreshes: number,
 ): Promise<BookSuggestion[]> {
   try {
     const { data } = await api.get<{ suggestions: BookSuggestion[] }>(
@@ -153,6 +155,12 @@ async function fetchSuggestions(
         params: {
           interests: interests.length ? interests.join(",") : undefined,
           limit: SUGGESTION_COUNT,
+          // How many times this reader has asked for a different shelf. Same
+          // interests would otherwise be the same question, so the backend can
+          // rotate its picks off this rather than replaying the first five.
+          // Deliberately not part of the query key: bumping it must not throw
+          // away the cached shelf we're still showing.
+          refresh: refreshes || undefined,
         },
       },
     );
@@ -160,23 +168,54 @@ async function fetchSuggestions(
   } catch {
     // no backend yet, or offline — the seeds below still read as a shelf
   }
-  return Promise.all(SEED.map(resolveSeed));
+  const seeded = await Promise.all(SEED.map(resolveSeed));
+  if (seeded.length) return seeded;
+  // Nothing reachable and nothing curated to fall back on. Failing the query
+  // beats resolving to an empty array: the shelf can then say *why* it's empty
+  // and offer a retry, instead of leaving a blank gap under the heading.
+  throw new Error("no-suggestions");
 }
 
 export function useBookSuggestions(): {
   suggestions: BookSuggestion[];
+  /** First load, nothing to show yet — render skeleton rows. */
   loading: boolean;
+  /** The picks couldn't be fetched (usually: no connection). */
+  failed: boolean;
+  /** A retry is in flight over an already-settled shelf. */
+  refreshing: boolean;
+  /** Re-ask for picks — the refresh icon and the "suggest me now" button. */
+  refresh: () => void;
 } {
   // What the reader said they read, in onboarding. Re-picking them is a new
   // query key, so the shelf refreshes rather than showing the old cache.
   const interests = useOnboardingStore((s) => s.interests);
+  // Bumped by `refresh`, read inside the query function. A ref, not state, so
+  // asking for new picks doesn't re-render before the fetch even starts.
+  const refreshes = useRef(0);
 
-  const { data, isPending } = useQuery({
-    queryFn: () => fetchSuggestions(interests),
+  const { data, isError, isFetching, isPending, refetch } = useQuery({
+    queryFn: () => fetchSuggestions(interests, refreshes.current),
     queryKey: queryKeys.bookSuggestions(interests),
-    // The picks don't change while the app is open.
+    // The picks don't change on their own while the app is open — only when the
+    // reader asks. `refetch` ignores staleTime, so the refresh control always
+    // reaches the network; a plain remount keeps showing the cached shelf.
     staleTime: Infinity,
   });
 
-  return { suggestions: data ?? [], loading: isPending };
+  return {
+    failed: isError,
+    loading: isPending,
+    refresh: () => {
+      refreshes.current += 1;
+      void refetch();
+    },
+    // A fetch over a shelf that has already settled once — either a shelf we're
+    // still showing, or one that errored. `isPending` is only ever the very
+    // first load, so the two never overlap.
+    refreshing: isFetching && !isPending,
+    // React Query keeps the last successful data through an error, so a refresh
+    // that fails leaves the reader's existing picks on screen.
+    suggestions: data ?? [],
+  };
 }
