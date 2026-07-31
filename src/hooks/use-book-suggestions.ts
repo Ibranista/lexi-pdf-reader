@@ -42,14 +42,10 @@ interface Seed {
 }
 
 /** Curated public-domain picks — the API supplies covers, read links & titles. */
-const SEED: Seed[] = [
-  { q: "Pride and Prejudice Jane Austen", collection: "📖 Reading Later", kind: "Classic" },
-  { q: "Frankenstein Mary Shelley", collection: "🔖 To Read", kind: "Classic" },
-  { q: "The Adventures of Sherlock Holmes Doyle", collection: "💛 Favorites", kind: "Classic" },
-];
+const SEED: Seed[] = [];
 
 /** Number of skeleton rows to show while the first fetch is in flight. */
-export const SUGGESTION_COUNT = SEED.length;
+export const SUGGESTION_COUNT = 5;
 
 /**
  * Query parameter a suggested book's cover rides in on. A filed book is stored
@@ -57,16 +53,16 @@ export const SUGGESTION_COUNT = SEED.length;
  * to keep a separate cover — packing it into the uri means the thumbnail can be
  * rendered from the filed row alone, with no second lookup.
  */
-const COVER_PARAM = 'lexiCover';
+const COVER_PARAM = "lexiCover";
 
 const COVER_RE = new RegExp(`[?&]${COVER_PARAM}=([^&]+)`);
 
 /** The uri to file a suggested book under — its readable page plus its cover. */
 export function bookDocUri(
-  book: Pick<BookSuggestion, 'coverUrl' | 'readUrl'>,
+  book: Pick<BookSuggestion, "coverUrl" | "readUrl">,
 ): string {
   if (!book.coverUrl) return book.readUrl;
-  const sep = book.readUrl.includes('?') ? '&' : '?';
+  const sep = book.readUrl.includes("?") ? "&" : "?";
   return `${book.readUrl}${sep}${COVER_PARAM}=${encodeURIComponent(book.coverUrl)}`;
 }
 
@@ -80,9 +76,9 @@ export function bookReadUrl(uri: string): string {
   // Keep the '?' when the cover was the first parameter, or a later one would
   // be left dangling after the host; drop it if nothing follows.
   const stripped = uri.replace(COVER_RE, (match) =>
-    match[0] === '?' ? '?' : '',
+    match[0] === "?" ? "?" : "",
   );
-  return stripped.replace('?&', '?').replace(/\?$/, '');
+  return stripped.replace("?&", "?").replace(/\?$/, "");
 }
 
 export function bookCoverFromUri(uri: string): string | undefined {
