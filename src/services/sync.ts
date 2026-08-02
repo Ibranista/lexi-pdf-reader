@@ -21,22 +21,22 @@
  * adds those must add them here, not in a second sync loop, or this one will
  * step over their changes.
  */
-import { AppState } from 'react-native';
+import { AppState } from "react-native";
 
-import { deviceId, ensureSession } from '@/services/device-session';
+import { deviceId, ensureSession } from "@/services/device-session";
 import {
   pendingAnnotations,
   useAnnotationsStore,
   type Annotation,
   type RemoteAnnotation,
   type Tombstone,
-} from '@/stores/annotations-store';
-import { useRecentsStore } from '@/stores/recents-store';
-import { useSyncStore } from '@/stores/sync-store';
-import { api } from '@/utils/axios';
-import { onReconnect } from '@/utils/connectivity';
-import { docKeyFor } from '@/utils/doc-key';
-import axios from 'axios';
+} from "@/stores/annotations-store";
+import { useRecentsStore } from "@/stores/recents-store";
+import { useSyncStore } from "@/stores/sync-store";
+import { api } from "@/utils/axios";
+import { onReconnect } from "@/utils/connectivity";
+import { docKeyFor } from "@/utils/doc-key";
+import axios from "axios";
 
 /** Long enough to swallow a burst of edits, short enough to feel immediate. */
 const DEBOUNCE_MS = 2500;
@@ -58,7 +58,7 @@ const toWire = (a: Annotation | Tombstone, docKey: string) => ({
   note: a.note,
   createdAt: a.createdAt,
   updatedAt: a.updatedAt,
-  deletedAt: 'deletedAt' in a ? a.deletedAt : null,
+  deletedAt: "deletedAt" in a ? a.deletedAt : null,
 });
 
 /**
@@ -97,7 +97,7 @@ async function documentKeys(): Promise<{
 function conflictedIds(error: unknown): string[] | null {
   if (!axios.isAxiosError(error) || error.response?.status !== 409) return null;
   const body = error.response.data as { reason?: string; ids?: string[] };
-  return body?.reason === 'ID_CONFLICT' ? (body.ids ?? []) : null;
+  return body?.reason === "ID_CONFLICT" ? (body.ids ?? []) : null;
 }
 
 async function roundTrip(): Promise<void> {
@@ -110,9 +110,9 @@ async function roundTrip(): Promise<void> {
   const dirty = pendingAnnotations(state).filter((a) => a.docKey);
   const buried = state.deleted.filter((d) => d.docKey);
 
-  const { data } = await api.post<SyncResponse>('/sync', {
+  const { data } = await api.post<SyncResponse>("/sync", {
     cursor: useSyncStore.getState().cursor,
-    deviceId: deviceId(),
+    deviceId: await deviceId(),
     changes: {
       annotations: [
         ...dirty.map((a) => toWire(a, a.docKey!)),
@@ -209,7 +209,8 @@ export function startSync(): () => void {
   const unsubscribeStore = useAnnotationsStore.subscribe((state, previous) => {
     // `applyRemote` writes to the same store; only a local change is worth a
     // round trip, and a local change is one that leaves something unsent.
-    if (state.items === previous.items && state.deleted === previous.deleted) return;
+    if (state.items === previous.items && state.deleted === previous.deleted)
+      return;
     if (hasPending()) syncSoon();
   });
 
@@ -217,10 +218,10 @@ export function startSync(): () => void {
     void syncNow();
   });
 
-  const appState = AppState.addEventListener('change', (next) => {
+  const appState = AppState.addEventListener("change", (next) => {
     // Coming back to the app is the moment another device's changes are most
     // likely to be waiting, and the moment a failed push is worth retrying.
-    if (next === 'active') void syncNow();
+    if (next === "active") void syncNow();
   });
 
   void syncNow();
