@@ -211,6 +211,9 @@ importers:
       react-native-blob-util:
         specifier: ^0.24.10
         version: 0.24.10(react-native@0.86.0(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
+      react-native-device-info:
+        specifier: ^15.0.2
+        version: 15.0.2(react-native@0.86.0(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))
       react-native-drawer-layout:
         specifier: 4.2.7
         version: 4.2.7(b018143972a837ca413e6b7668a04b68)
@@ -5270,6 +5273,11 @@ packages:
         optional: true
       react-native-svg:
         optional: true
+
+  react-native-device-info@15.0.2:
+    resolution: {integrity: sha512-dd71eXG2l3Cwp66IvKNadMTB8fhU3PEjyVddI97sYan+D4bgIAUmgGDhbSOFvHcGavksb2U17kiQYaDiK2WK2g==}
+    peerDependencies:
+      react-native: '*'
 
   react-native-drawer-layout@4.2.7:
     resolution: {integrity: sha512-hhD+E0QmUPkP2Sj1MsUdrvU7GeOiHChPAFPtKahroTwlBGnpgJsUVSL0GWOy5cG3oCZfnu4Pb+gIzOa4ItGNuA==}
@@ -12568,6 +12576,10 @@ snapshots:
       react-native-svg: 15.15.4(react-native@0.86.0(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
     transitivePeerDependencies:
       - supports-color
+
+  react-native-device-info@15.0.2(react-native@0.86.0(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3)):
+    dependencies:
+      react-native: 0.86.0(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3)
 
   react-native-drawer-layout@4.2.7(b018143972a837ca413e6b7668a04b68):
     dependencies:

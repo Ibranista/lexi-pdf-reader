@@ -1,24 +1,23 @@
-import axios from 'axios';
-import Constants from 'expo-constants';
-import * as Crypto from 'expo-crypto';
-import * as Device from 'expo-device';
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import axios from "axios";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
+import { Platform } from "react-native";
+import DeviceInfo from "react-native-device-info";
 
-import { API_BASE_URL, tokenStorage, type AuthResponse } from '@/utils/api-config';
+import {
+  API_BASE_URL,
+  tokenStorage,
+  type AuthResponse,
+} from "@/utils/api-config";
 
-const DEVICE_ID_KEY = 'deviceId';
-
-export function deviceId(): string {
-  const existing = SecureStore.getItem(DEVICE_ID_KEY);
-  if (existing) return existing;
-  const minted = Crypto.randomUUID();
-  SecureStore.setItem(DEVICE_ID_KEY, minted);
-  return minted;
+export function deviceId(): Promise<string> {
+  return DeviceInfo.getUniqueId();
 }
 
-function platform(): 'ios' | 'android' | 'web' {
-  return Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : 'web';
+function platform(): "ios" | "android" | "web" {
+  return Platform.OS === "ios" || Platform.OS === "android"
+    ? Platform.OS
+    : "web";
 }
 
 function locale(): string | undefined {
@@ -30,14 +29,17 @@ function locale(): string | undefined {
 }
 
 async function register(): Promise<void> {
-  const { data } = await axios.post<AuthResponse>(`${API_BASE_URL}/auth/device`, {
-    appVersion: Constants.expoConfig?.version,
-    deviceId: deviceId(),
-    locale: locale(),
-    model: Device.modelName ?? undefined,
-    osVersion: Device.osVersion ?? undefined,
-    platform: platform(),
-  });
+  const { data } = await axios.post<AuthResponse>(
+    `${API_BASE_URL}/auth/device`,
+    {
+      appVersion: Constants.expoConfig?.version,
+      deviceId: await deviceId(),
+      locale: locale(),
+      model: Device.modelName ?? undefined,
+      osVersion: Device.osVersion ?? undefined,
+      platform: platform(),
+    },
+  );
   tokenStorage.setTokens(data.tokens);
 }
 

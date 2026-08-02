@@ -27,7 +27,7 @@ import {
   type CollectionId,
   resolveCollectionColor,
 } from "@/constants/collections";
-import { COLLECTIONS } from "@/constants/library";
+import { COLLECTIONS, SPIN_MS } from "@/constants/library";
 import {
   SUGGESTION_COUNT,
   useBookSuggestions,
@@ -277,26 +277,17 @@ export function CollectionsTab({
                 <Text numberOfLines={1} size={14} weight="600">
                   {book.title}
                 </Text>
-                <Text
-                  color={t.sub}
-                  numberOfLines={1}
-                  size={12}
-                  style={{ marginTop: 3 }}
+                <Box
+                  bg={t.accentSoft}
+                  paddingX={10}
+                  paddingY={4}
+                  rounded={20}
+                  style={{ alignSelf: 'flex-start' }}
                 >
-                  {book.author
-                    ? tr("library.collections.filedInBy", {
-                        author: book.author,
-                        collection: book.collection,
-                      })
-                    : tr("library.collections.filedIn", {
-                        collection: book.collection,
-                      })}
-                </Text>
-              </Box>
-              <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
-                <Text color={t.accentText} size={11} weight="500">
-                  {book.kind}
-                </Text>
+                  <Text color={t.accentText} size={11} weight="500">
+                    {book.kind}
+                  </Text>
+                </Box>
               </Box>
             </Box>
           </Tap>
@@ -306,8 +297,6 @@ export function CollectionsTab({
     </>
   );
 }
-
-const SPIN_MS = 900;
 
 function SpinningSync({
   color,

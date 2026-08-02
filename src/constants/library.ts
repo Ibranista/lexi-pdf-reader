@@ -417,3 +417,6 @@ export const SUMMARY_POINTS = [
   "Cheap light reshaped daily life — factory shifts, evening papers, and household reading all expanded quickly.",
   "The shift destroyed the gas industry and its workers; the author argues Edison ultimately sold reclaimed time, not light.",
 ];
+
+/** One full turn of the refresh glyph, in ms. [for the collection refreshing] */
+export const SPIN_MS = 900;
