@@ -82,6 +82,8 @@ async function roundTrip(): Promise<void> {
     },
   });
 
+  console.log("error->", data);
+
   useAnnotationsStore.getState().applyRemote(data.changes.annotations ?? []);
   useAnnotationsStore.getState().markPushed(
     Object.fromEntries(dirty.map((a) => [a.id, a.updatedAt])),

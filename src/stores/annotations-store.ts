@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { palette } from "@/constants/colors";
 import { zustandStorage } from "@/utils/storage";
 
 export type HighlightColor = "amber" | "rose" | "sage" | "sky";
@@ -13,10 +14,10 @@ export const HIGHLIGHT_COLORS: { key: HighlightColor; label: string }[] = [
 ];
 
 export const HIGHLIGHT_FILL: Record<HighlightColor, string> = {
-  amber: "#EFC57E",
-  sage: "#B4D4B4",
-  sky: "#AECBE8",
-  rose: "#E8B8B4",
+  amber: palette.pen.amber,
+  sage: palette.pen.sage,
+  sky: palette.pen.sky,
+  rose: palette.pen.rose,
 };
 
 export interface Annotation {

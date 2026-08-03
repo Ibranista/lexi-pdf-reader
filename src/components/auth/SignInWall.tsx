@@ -7,8 +7,8 @@ import { useProtoTheme } from "@/theme/proto";
 
 const COPY: Record<WallReason, { body: string; title: string }> = {
   quota: {
-    body: "You've used the free credits for Lexi, translations and summaries. Sign in to keep going — your highlights and notes stay exactly where they are either way.",
-    title: "Carry on with Lexi",
+    body: "You've used the free credits for Liqrai, translations and summaries. Sign in to keep going — your highlights and notes stay exactly where they are either way.",
+    title: "Carry on with Liqrai",
   },
   sync: {
     body: "Sign in to keep your highlights, notes and reading position on every device you read on.",

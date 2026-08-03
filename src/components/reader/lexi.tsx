@@ -138,7 +138,7 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
       >
         <IconSpark color={t.accent} size={16} />
         <Text size={13} weight="600">
-          Hey Lexi
+          Hey Liqrai
         </Text>
       </Box>
     </Tap>
@@ -305,7 +305,7 @@ export function LexiSheet({
             text:
               error instanceof Error
                 ? error.message
-                : "Lexi couldn't answer just then.",
+                : "Liqrai couldn't answer just then.",
           });
           scrollToEnd();
         },
@@ -549,7 +549,7 @@ export function LexiSheet({
             <BottomSheetTextInput
               multiline
               onChangeText={setInput}
-              placeholder="Hey Lexi… ask about this document"
+              placeholder="Hey Liqrai… ask about this document"
               placeholderTextColor={t.faint}
               style={{
                 flex: 1,

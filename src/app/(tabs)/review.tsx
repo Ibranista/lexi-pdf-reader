@@ -12,6 +12,7 @@ import {
   SectionLabel,
   Tap,
 } from "@/components/lexi-components";
+import { palette } from "@/constants/colors";
 import { REVIEW_CARDS } from "@/constants/library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -89,7 +90,12 @@ export default function ReviewScreen() {
             paddingY={10}
             rounded={12}
           >
-            <Box bg="#F2CE93" height={28} rounded={2} width={4} />
+            <Box
+              bg={palette.highlight.amberStrong}
+              height={28}
+              rounded={2}
+              width={4}
+            />
             <Box flex={1}>
               <Text color={t.sub} lh={17} size={11.5}>
                 From your highlight · The Age of Light · p. {card.p} ·{" "}

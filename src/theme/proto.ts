@@ -45,23 +45,23 @@ export const protoDark: ProtoTheme = {
   faint: "#6E6558",
   line: "rgba(241,235,226,.08)",
   chip: "rgba(241,235,226,.07)",
-  accent: "#C17756", // mix(78%, ink)
-  accentMid: "#633722", // mix(45%, card)
-  accentSoft: "#3B271B", // mix(18%, card)
-  accentText: "#D09980", // mix(55%, ink)
+  accent: "#6FA376", // mix(78%, ink)
+  accentMid: "#335034", // mix(45%, card)
+  accentSoft: "#283223", // mix(18%, card)
+  accentText: "#95B896", // mix(55%, ink)
   onAccent: "#16130F",
   coverA: "#2B2620",
   coverB: "#332D25",
   glass: "rgba(22,19,15,.88)",
   pill: "#F1EBE2",
   pillText: "#201B15",
-  hl: "#653F2C",
-  glow: "rgba(180,86,47,.4)",
-  calm: "#8FC9A5",
-  calmSoft: "rgba(38,66,52,.5)",
-  calmLine: "rgba(78,116,95,.45)",
-  accentHi: "#BA6541",
-  accentLo: "#944929",
+  hl: "#2F4C36",
+  glow: "rgba(74,143,88,.4)",
+  calm: "#7FC7CB",
+  calmSoft: "rgba(30,62,64,.5)",
+  calmLine: "rgba(70,112,115,.45)",
+  accentHi: "#7CB183",
+  accentLo: "#4B8659",
 };
 
 export const protoLight: ProtoTheme = {
@@ -75,23 +75,23 @@ export const protoLight: ProtoTheme = {
   faint: "#B4AA9B",
   line: "rgba(32,27,21,.08)",
   chip: "rgba(32,27,21,.06)",
-  accent: "#B4562F",
-  accentMid: "#D6A28D", // mix(55%, white)
-  accentSoft: "#F5E9E4", // mix(13%, white)
-  accentText: "#A24F2C", // mix(88%, ink)
+  accent: "#4A8F58",
+  accentMid: "#9BC1A3", // mix(55%, white)
+  accentSoft: "#E7F0E9", // mix(13%, white)
+  accentText: "#3C7546", // mix(88%, ink), darkened to clear 4.5:1 on paper
   onAccent: "#FFFFFF",
   coverA: "#ECE6DD",
   coverB: "#E2DACE",
   glass: "rgba(251,248,243,.9)",
   pill: "#201B15",
   pillText: "#F6F3EE",
-  hl: "#EAC9B6",
-  glow: "rgba(180,86,47,.38)",
-  calm: "#2E6B4C",
-  calmSoft: "#DFF0E4",
-  calmLine: "#A8D4B8",
-  accentHi: "#BA6440",
-  accentLo: "#934727",
+  hl: "#CBE3D0",
+  glow: "rgba(74,143,88,.38)",
+  calm: "#1F6F73",
+  calmSoft: "#DCEFF0",
+  calmLine: "#A3D2D4",
+  accentHi: "#5AA268",
+  accentLo: "#3A7446",
 };
 
 export type ThemeMode = "auto" | "dark" | "light";

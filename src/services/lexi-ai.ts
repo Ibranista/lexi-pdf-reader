@@ -126,6 +126,104 @@ export async function translate(input: TranslateInput): Promise<TranslateResult>
   }
 }
 
+export type TranslateField =
+  | "word"
+  | "pos"
+  | "tr"
+  | "translit"
+  | "s1"
+  | "s2"
+  | "example";
+
+export type PartialCard = Partial<Record<TranslateField, string>>;
+
+export interface TranslateStreamHandlers {
+  onField: (field: TranslateField, value: string) => void;
+  onDone: (result: TranslateResult) => void;
+  onError: (error: unknown) => void;
+}
+
+export async function streamTranslate(
+  input: TranslateInput,
+  handlers: TranslateStreamHandlers,
+): Promise<() => void> {
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {}
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/translate/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      context: input.context,
+      docKey: input.docKey,
+      page: input.page,
+      style: input.style ?? "balanced",
+      targetLang: input.targetLang,
+      text: input.text,
+    }),
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      f?: TranslateField;
+      t?: string;
+      done?: boolean;
+      error?: boolean;
+      message?: string;
+    } & Partial<TranslateResult>;
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.done) {
+      const { done, f, t, error, message, ...card } = obj;
+      handlers.onDone(card as TranslateResult);
+      finish();
+    } else if (obj.error) {
+      handlers.onError(new Error(obj.message ?? "Liqrai couldn't finish that."));
+      finish();
+    } else if (obj.f) {
+      handlers.onField(obj.f, obj.t ?? "");
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true),
+      );
+    } else {
+      const local = localTranslate(input);
+      if (local) {
+        handlers.onDone(local);
+      } else {
+        handlers.onError(new Error("Couldn't reach Liqrai."));
+      }
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
 function localTranslate(input: TranslateInput): TranslateResult | undefined {
   const key = input.text.trim().toLowerCase().replace(/[^a-z'-]/g, "");
   const entry = DICT[key];
@@ -267,7 +365,7 @@ export async function streamChat(
       });
       finish();
     } else if (obj.error) {
-      handlers.onError(new Error(obj.message ?? "Lexi couldn't finish that."));
+      handlers.onError(new Error(obj.message ?? "Liqrai couldn't finish that."));
       finish();
     }
   });
@@ -280,7 +378,7 @@ export async function streamChat(
         new AiQuotaError("You've used your free AI credits.", null, true),
       );
     } else {
-      handlers.onError(new Error("Couldn't reach Lexi."));
+      handlers.onError(new Error("Couldn't reach Liqrai."));
     }
     finish();
   });

@@ -1,12 +1,14 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   AiQuotaError,
   chat,
-  translate,
+  streamTranslate,
   type ChatInput,
   type ChatReply,
+  type PartialCard,
+  type TranslateField,
   type TranslateInput,
   type TranslateResult,
 } from "@/services/lexi-ai";
@@ -29,30 +31,103 @@ function useQuotaSink() {
   );
 }
 
-export function useWordLookup(
+export function useWordLookupStream(
   input: Omit<TranslateInput, "style" | "targetLang"> | null,
 ) {
   const lang = useAppStore((s) => s.lang);
   const style = useAppStore((s) => s.explStyle);
   const setQuota = useAuthStore((s) => s.setQuota);
   const sinkQuota = useQuotaSink();
+  const queryClient = useQueryClient();
 
-  const query = useQuery<TranslateResult>({
-    enabled: input !== null,
-    queryFn: async () => {
-      const result = await translate({ ...input!, style, targetLang: lang });
-      setQuota(result.quota);
-      return result;
-    },
-    queryKey: queryKeys.translate(input?.text ?? "", input?.page ?? 0, lang, style),
-  });
+  const key = input
+    ? queryKeys.translate(input.text, input.page, lang, style)
+    : null;
+  const keyId = key ? JSON.stringify(key) : null;
 
-  const { error } = query;
+  const [state, setState] = useState<{
+    keyId: string | null;
+    partial: PartialCard;
+    data: TranslateResult | null;
+    error: unknown;
+  }>({ data: null, error: null, keyId: null, partial: {} });
+  const abortRef = useRef<(() => void) | null>(null);
+
+  const current =
+    state.keyId === keyId
+      ? state
+      : { data: null, error: null, keyId, partial: {} as PartialCard };
+  const cached = key ? queryClient.getQueryData<TranslateResult>(key) : undefined;
+  const data = cached ?? current.data;
+
   useEffect(() => {
-    if (error) sinkQuota(error);
-  }, [error, sinkQuota]);
+    if (!input || !key || queryClient.getQueryData(key)) return;
 
-  return { ...query, quotaBlocked: error instanceof AiQuotaError };
+    let live = true;
+    const update = (
+      patch: Partial<{
+        partial: PartialCard;
+        data: TranslateResult | null;
+        error: unknown;
+      }>,
+      mergeField?: { field: TranslateField; value: string },
+    ) =>
+      setState((prev) => {
+        const base =
+          prev.keyId === keyId
+            ? prev
+            : { data: null, error: null, keyId, partial: {} as PartialCard };
+        return {
+          ...base,
+          ...patch,
+          keyId,
+          partial: mergeField
+            ? { ...base.partial, [mergeField.field]: mergeField.value }
+            : (patch.partial ?? base.partial),
+        };
+      });
+
+    void streamTranslate(
+      { ...input, style, targetLang: lang },
+      {
+        onField: (field, value) => {
+          if (live) update({}, { field, value });
+        },
+        onDone: (result) => {
+          if (!live) return;
+          abortRef.current = null;
+          update({ data: result, error: null });
+          if (result.quota) setQuota(result.quota);
+          queryClient.setQueryData(key, result);
+        },
+        onError: (streamError) => {
+          if (!live) return;
+          abortRef.current = null;
+          update({ error: streamError });
+          sinkQuota(streamError);
+        },
+      },
+    ).then((abort) => {
+      if (live) abortRef.current = abort;
+      else abort();
+    });
+
+    return () => {
+      live = false;
+      abortRef.current?.();
+      abortRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyId]);
+
+  return {
+    data,
+    error: current.error,
+    isError: current.error !== null,
+    partial: current.partial,
+    quotaBlocked: current.error instanceof AiQuotaError,
+    streaming: data === null && current.error === null && input !== null,
+  };
 }
 
 export function useLexiChat() {

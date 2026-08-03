@@ -19,6 +19,7 @@ import {
   Segmented,
   Tap,
 } from "@/components/lexi-components";
+import { palette } from "@/constants/colors";
 import {
   BOOK_PAGES,
   BOOK_TITLE,
@@ -342,10 +343,10 @@ export function WordPopover({
 }
 
 const SEL_COLORS = [
-  { name: "Amber", bg: "#EFC57E" },
-  { name: "Sage", bg: "#B4D4B4" },
-  { name: "Sky", bg: "#AECBE8" },
-  { name: "Rose", bg: "#E8B8B4" },
+  { name: "Amber", bg: palette.pen.amber },
+  { name: "Sage", bg: palette.pen.sage },
+  { name: "Sky", bg: palette.pen.sky },
+  { name: "Rose", bg: palette.pen.rose },
 ];
 
 export function SelectionMenu({
@@ -392,7 +393,7 @@ export function SelectionMenu({
         >
           <SelAction
             highlight
-            icon={<IconHighlighter color="#E8B778" size={16} />}
+            icon={<IconHighlighter color={palette.pen.amberInk} size={16} />}
             label="Highlight"
             onPress={act("Highlighted ✓ — find it in My Notes")}
           />
@@ -416,7 +417,7 @@ export function SelectionMenu({
             onPress={act("Translated inline — tap the passage to toggle")}
           />
           <SelAction
-            icon={<IconSpark color="#D98E4A" size={16} />}
+            icon={<IconSpark color={palette.accent[400]} size={16} />}
             label="Ask AI"
             onPress={onAskAI}
           />
@@ -554,7 +555,7 @@ export function ExplainSheet({ onClose }: { onClose: () => void }) {
           marginBottom={16}
           style={{
             borderLeftWidth: 3,
-            borderLeftColor: "#EFC57E",
+            borderLeftColor: palette.pen.amber,
             paddingLeft: 12,
           }}
         >

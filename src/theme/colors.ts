@@ -12,6 +12,19 @@ export type ColorScale = {
 };
 
 export const colors = {
+  accent: {
+    100: "#DCEEE0",
+    200: "#B7DCC0",
+    300: "#8FC79C",
+    400: "#5FA96D",
+    50: "#F1F8F2",
+    500: "#4A8F58",
+    600: "#3C7546",
+    700: "#2A5F37",
+    800: "#1F4A2B",
+    900: "#153320",
+  },
+
   dark: {
     0: "#000",
     100: "#202020",
@@ -62,10 +75,10 @@ export const colors = {
   },
 
   primary: {
-    100: "#830AD1",
-    200: "#830AD1",
-    "100/50": "#2962DF",
-    "primary-transparent": "#830AD1",
+    100: "#4A8F58",
+    200: "#3C7546",
+    "100/50": "#9BC1A3",
+    "primary-transparent": "rgba(74,143,88,0.5)",
   },
 
   secondary: {

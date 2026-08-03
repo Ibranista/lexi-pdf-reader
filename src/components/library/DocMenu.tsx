@@ -16,6 +16,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { palette } from "@/constants/colors";
 import { useToastStore } from "@/stores/app-store";
 import {
   useCollectionsStore,
@@ -24,7 +25,7 @@ import {
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
-const DANGER = "#C0554A";
+const DANGER = palette.danger;
 
 function uriExtension(uri: string): string {
   const name = decodeURIComponent(uri.slice(uri.lastIndexOf("/") + 1));

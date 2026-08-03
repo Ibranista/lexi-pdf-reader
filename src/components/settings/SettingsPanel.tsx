@@ -99,7 +99,7 @@ export const SettingsPanel = memo(function SettingsPanel({
               onPress={() => goTo("/plan")}
               sub={
                 pro
-                  ? "LexiPDF Pro · trial active"
+                  ? "Liqrai Pro · trial active"
                   : "Free — reading forever free"
               }
               title="Your plan"
