@@ -1,5 +1,5 @@
 /**
- * "Hey Lexi" — the reading companion bubble and chat sheet, with the
+ * "Hey Liqrai" — the reading companion bubble and chat sheet, with the
  * prototype's drift / rabbit-hole redirection behavior.
  *
  * The sheet is a @gorhom/bottom-sheet modal that opens at half height, and
@@ -160,14 +160,14 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
       >
         <IconSpark color={t.accent} size={16} />
         <Text size={13} weight="600">
-          Hey Lexi
+          Hey Liqrai
         </Text>
       </Box>
     </Tap>
   );
 }
 
-/** The document Lexi is allowed to talk about. */
+/** The document Liqrai is allowed to talk about. */
 export interface LexiBook {
   title: string;
   author?: string;
@@ -175,7 +175,7 @@ export interface LexiBook {
    * Sync key of the document (64 hex, from `docKeyFor`), so the model can reach
    * its indexed text. Required — `/ai/chat` rejects a turn without one, so a
    * screen that hasn't derived it yet should hold the sheet closed rather than
-   * open it on a document Lexi can't look up.
+   * open it on a document Liqrai can't look up.
    */
   docKey: string;
   page: number;
@@ -358,7 +358,7 @@ export function LexiSheet({
             text:
               error instanceof Error
                 ? error.message
-                : "Lexi couldn't answer just then.",
+                : "Liqrai couldn't answer just then.",
           });
           scrollToEnd();
         },
@@ -540,7 +540,7 @@ export function LexiSheet({
                       </Text>
                     </Box>
                   ) : null}
-                  {/* Hear the reply read aloud in Lexi's voice. */}
+                  {/* Hear the reply read aloud in Liqrai's voice. */}
                   {!user && !isError ? (
                     <Tap
                       onPress={() => hearReply(m.text)}
@@ -609,7 +609,7 @@ export function LexiSheet({
             <BottomSheetTextInput
               multiline
               onChangeText={setInput}
-              placeholder="Hey Lexi… ask about this document"
+              placeholder="Hey Liqrai… ask about this document"
               placeholderTextColor={t.faint}
               style={{
                 flex: 1,

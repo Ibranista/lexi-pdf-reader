@@ -475,7 +475,7 @@ export function buildHtml(
   window.clearHighlight = function(){ cancelHitTimers(); clearMarks(); };
 
   /* ---- extracted text, out to the reader ----
-     Lexi answers from the whole document, so the server needs its text
+     Liqrai answers from the whole document, so the server needs its text
      (POST /ai/context). Extraction already happened to build this DOM, so
      this walks what is here rather than parsing the PDF a second time.
 
@@ -2184,7 +2184,7 @@ interface Props {
   onWordCounts?: (counts: number[]) => void;
   /**
    * The document's text, batched, once extraction has finished — for
-   * `POST /ai/context`, so Lexi can answer from the book and not just the page
+   * `POST /ai/context`, so Liqrai can answer from the book and not just the page
    * in view. `done` marks the final batch. Omit the prop and nothing is walked.
    */
   onContext?: (pages: { page: number; text: string }[], done: boolean) => void;

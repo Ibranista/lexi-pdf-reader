@@ -2,7 +2,7 @@
  * Shown the first time an AI action is refused for want of an account.
  *
  * Everything the reader has done so far — highlights, notes, bookmarks, words —
- * is already saved locally and is not being held hostage; only Lexi is. The
+ * is already saved locally and is not being held hostage; only Liqrai is. The
  * copy says so, because a wall that looks like it's taken your work is the
  * fastest way to lose someone at exactly the wrong moment.
  */
@@ -15,8 +15,8 @@ import { useProtoTheme } from "@/theme/proto";
 
 const COPY: Record<WallReason, { body: string; title: string }> = {
   quota: {
-    body: "You've used the free credits for Lexi, translations and summaries. Sign in to keep going — your highlights and notes stay exactly where they are either way.",
-    title: "Carry on with Lexi",
+    body: "You've used the free credits for Liqrai, translations and summaries. Sign in to keep going — your highlights and notes stay exactly where they are either way.",
+    title: "Carry on with Liqrai",
   },
   sync: {
     body: "Sign in to keep your highlights, notes and reading position on every device you read on.",

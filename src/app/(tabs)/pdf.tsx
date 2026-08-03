@@ -759,7 +759,7 @@ export default function PdfViewerScreen() {
                 setApp({ page: nextPage });
               }}
               onIndexed={() => setIndexed(true)}
-              // Hands the extracted text to the server so Lexi answers from
+              // Hands the extracted text to the server so Liqrai answers from
               // the whole book rather than only the page in view. Batches are
               // uploaded as they arrive rather than buffered, so a long book
               // doesn't sit in memory twice; failures are the service's to

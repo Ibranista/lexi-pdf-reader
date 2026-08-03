@@ -121,6 +121,8 @@ async function roundTrip(): Promise<void> {
     },
   });
 
+  console.log("error->", data);
+
   // Order matters: adopt the server's view first, then mark what went up as
   // sent. The other way round, a row the server overrode would be left looking
   // clean while holding the version it just lost with.

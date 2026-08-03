@@ -376,7 +376,7 @@ export default function ReaderScreen() {
         />
       ) : null}
 
-      {/* Hey Lexi */}
+      {/* Hey Liqrai */}
       {!overlayOpen && !focusMode && app.aiOn ? (
         <LexiBubble
           onPress={() => {

@@ -23,6 +23,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { palette } from "@/constants/colors";
 import { useToastStore } from "@/stores/app-store";
 import {
   useCollectionsStore,
@@ -31,8 +32,8 @@ import {
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
 
-/** No danger token in the proto theme; a warm red that sits in its palette. */
-const DANGER = "#C0554A";
+/** No danger token in the proto theme; the warm red from the shared palette. */
+const DANGER = palette.danger;
 
 /** The real extension ("​.pdf"), read off the uri — `doc.ext` is a display badge. */
 function uriExtension(uri: string): string {

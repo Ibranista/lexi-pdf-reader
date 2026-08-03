@@ -131,7 +131,7 @@ export interface ContextInput {
 export const CONTEXT_CHUNK_PAGES = 20;
 
 /**
- * Hands the document's text to the server so Lexi can answer from the book
+ * Hands the document's text to the server so Liqrai can answer from the book
  * rather than from the page in view. Uploaded in chunks, in order, because a
  * long book exceeds both the payload cap and any sensible request timeout.
  *
@@ -194,6 +194,123 @@ export async function translate(input: TranslateInput): Promise<TranslateResult>
   }
 }
 
+/** The card fields the stream fills in, in the order the server writes them. */
+export type TranslateField =
+  | "word"
+  | "pos"
+  | "tr"
+  | "translit"
+  | "s1"
+  | "s2"
+  | "example";
+
+/** What the card knows mid-stream: whichever fields have arrived so far. */
+export type PartialCard = Partial<Record<TranslateField, string>>;
+
+export interface TranslateStreamHandlers {
+  /** A field grew. `value` is everything written for it so far, not a delta. */
+  onField: (field: TranslateField, value: string) => void;
+  /** The card finished — the same shape `translate` resolves to. */
+  onDone: (result: TranslateResult) => void;
+  /** Network/server failure, or an AiQuotaError when the wall should rise. */
+  onError: (error: unknown) => void;
+}
+
+/**
+ * The word card, streamed. The server writes one field per line and sends a
+ * `data: { f, t }` per update — `f` the field name, `t` its value so far — then
+ * a final `data: { done, ...card }` with the finished, clamped result. The card
+ * fills in as it's written instead of waiting on the whole lookup.
+ *
+ * Returns an abort function so a closing card can cancel an in-flight lookup.
+ */
+export async function streamTranslate(
+  input: TranslateInput,
+  handlers: TranslateStreamHandlers,
+): Promise<() => void> {
+  // The EventSource bypasses the axios interceptors, so guarantee a session.
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {
+    // offline on first launch — the connection below fails and onError fires
+  }
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/translate/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      context: input.context,
+      docKey: input.docKey,
+      page: input.page,
+      style: input.style ?? "balanced",
+      targetLang: input.targetLang,
+      text: input.text,
+    }),
+    // One-shot: never auto-reconnect after the card ends or fails.
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      f?: TranslateField;
+      t?: string;
+      done?: boolean;
+      error?: boolean;
+      message?: string;
+    } & Partial<TranslateResult>;
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.done) {
+      const { done, f, t, error, message, ...card } = obj;
+      handlers.onDone(card as TranslateResult);
+      finish();
+    } else if (obj.error) {
+      handlers.onError(new Error(obj.message ?? "Liqrai couldn't finish that."));
+      finish();
+    } else if (obj.f) {
+      handlers.onField(obj.f, obj.t ?? "");
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true),
+      );
+    } else {
+      // Unreachable and the word is in the bundled dictionary: answer from it
+      // rather than showing a failure, same as the non-streaming path.
+      const local = localTranslate(input);
+      if (local) {
+        handlers.onDone(local);
+      } else {
+        handlers.onError(new Error("Couldn't reach Liqrai."));
+      }
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
 /** The bundled dictionary, shaped like a response. Undefined for unknown words. */
 function localTranslate(input: TranslateInput): TranslateResult | undefined {
   const key = input.text.trim().toLowerCase().replace(/[^a-z'-]/g, "");
@@ -219,7 +336,7 @@ function localTranslate(input: TranslateInput): TranslateResult | undefined {
 
 export interface ChatInput {
   sessionId: string;
-  /** What Lexi is allowed to talk about. */
+  /** What Liqrai is allowed to talk about. */
   title: string;
   author?: string;
   /** 64-hex document key from `docKeyFor`; the endpoint 400s without it. */
@@ -366,7 +483,7 @@ export async function streamChat(
       });
       finish();
     } else if (obj.error) {
-      handlers.onError(new Error(obj.message ?? "Lexi couldn't finish that."));
+      handlers.onError(new Error(obj.message ?? "Liqrai couldn't finish that."));
       finish();
     }
   });
@@ -381,7 +498,7 @@ export async function streamChat(
         new AiQuotaError("You've used your free AI credits.", null, true),
       );
     } else {
-      handlers.onError(new Error("Couldn't reach Lexi."));
+      handlers.onError(new Error("Couldn't reach Liqrai."));
     }
     finish();
   });

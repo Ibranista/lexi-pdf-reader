@@ -11,6 +11,7 @@ import {
   type LanguageOption,
 } from "../../../constants/languageOptions";
 import { useAppStore } from "@/stores/appStore";
+import { palette } from "@/constants/colors";
 
 type LanguageSelectorProps = {
   readonly modalTitle?: string;
@@ -97,7 +98,7 @@ function LanguageSelector({
 const styles = StyleSheet.create({
   languageCheck: {
     alignItems: "center",
-    backgroundColor: "#830AD1",
+    backgroundColor: palette.accent[500],
     borderRadius: 999,
     height: 20,
     justifyContent: "center",

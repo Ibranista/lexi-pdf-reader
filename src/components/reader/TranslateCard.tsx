@@ -16,7 +16,8 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
-import { useWordLookup } from "@/hooks/use-lexi-ai";
+import { LANG_NAMES } from "@/constants/library";
+import { useWordLookupStream } from "@/hooks/use-lexi-ai";
 import { speak, type TranslateResult } from "@/services/lexi-ai";
 import { useAppStore, useToastStore, type Lang } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -102,9 +103,36 @@ export function TranslateCard({
     showToast(`🔊 ${r.tr}`);
   };
 
-  // Cached per word+page+language, so re-opening a word you've already looked
-  // up costs nothing and lands instantly.
-  const { data: result, isError, quotaBlocked } = useWordLookup(target);
+  // Streamed field by field, and cached per word+page+language — so a word
+  // you've already looked up lands instantly and costs nothing.
+  const {
+    data: result,
+    isError,
+    partial,
+    quotaBlocked,
+    streaming,
+  } = useWordLookupStream(target);
+
+  // What the card renders: the finished result once it lands, and until then
+  // whichever fields have streamed in. Null before the first one arrives, which
+  // is what still shows the skeleton. "(none)" is the model's way of saying a
+  // field doesn't apply — it must never reach the screen.
+  const blank = (value?: string) =>
+    !value || value === "(none)" ? undefined : value;
+  const shown = result
+    ? result
+    : partial.word
+      ? {
+          example: blank(partial.example),
+          langName: LANG_NAMES[lang] ?? lang,
+          pos: blank(partial.pos),
+          s1: blank(partial.s1),
+          s2: blank(partial.s2),
+          tr: blank(partial.tr),
+          translit: blank(partial.translit),
+          word: partial.word,
+        }
+      : null;
 
   // Out of credits: the wall is already up behind this, and stacking the card
   // on top of it would bury the thing being asked for.
@@ -178,7 +206,7 @@ export function TranslateCard({
           ))}
         </Box>
 
-        {result ? (
+        {shown ? (
           <>
             <Box
               direction="row"
@@ -188,19 +216,21 @@ export function TranslateCard({
             >
               <Box flex={1}>
                 <Text numberOfLines={1} serif size={20} weight="600">
-                  {result.word}
+                  {shown.word}
                 </Text>
               </Box>
-              <Box bg={t.chip} paddingX={9} paddingY={3} rounded={14}>
-                <Text color={t.sub} size={11} weight="500">
-                  {result.pos}
-                </Text>
-              </Box>
+              {shown.pos ? (
+                <Box bg={t.chip} paddingX={9} paddingY={3} rounded={14}>
+                  <Text color={t.sub} size={11} weight="500">
+                    {shown.pos}
+                  </Text>
+                </Box>
+              ) : null}
             </Box>
 
             {/* Translation line — omitted when the selection is already in the
                 target language, so the card is just the explanation. */}
-            {result.tr ? (
+            {shown.tr ? (
               <Box
                 align="center"
                 direction="row"
@@ -209,11 +239,11 @@ export function TranslateCard({
                 wrap="wrap"
               >
                 <Text color={t.accentText} size={22} weight="600">
-                  {result.tr}
+                  {shown.tr}
                 </Text>
                 <Text color={t.sub} size={12}>
-                  {result.translit ? `· ${result.translit} ` : ""}·{" "}
-                  {result.langName}
+                  {shown.translit ? `· ${shown.translit} ` : ""}·{" "}
+                  {shown.langName}
                 </Text>
               </Box>
             ) : (
@@ -222,10 +252,19 @@ export function TranslateCard({
 
             <Box bg={t.line} height={1} marginBottom={14} />
 
-            <Bullet color={t.accent}>{result.s1}</Bullet>
-            <Bullet color={t.accentMid}>{result.s2}</Bullet>
+            {shown.s1 ? <Bullet color={t.accent}>{shown.s1}</Bullet> : null}
+            {shown.s2 ? <Bullet color={t.accentMid}>{shown.s2}</Bullet> : null}
 
-            {result.example ? (
+            {/* Placeholders for the lines still on the wire, so the card grows
+                into its final height instead of jumping as each one lands. */}
+            {streaming && !shown.s2 ? (
+              <Box gap={10} marginBottom={12}>
+                <Box bg={t.chip} height={12} rounded={4} />
+                <Box bg={t.chip} height={12} rounded={4} style={{ width: "80%" }} />
+              </Box>
+            ) : null}
+
+            {shown.example ? (
               <Box
                 bg={t.chip}
                 marginBottom={14}
@@ -242,36 +281,40 @@ export function TranslateCard({
                   EXAMPLE
                 </Text>
                 <Text color={t.sub} lh={19} serif size={13}>
-                  {result.example}
+                  {shown.example}
                 </Text>
               </Box>
             ) : null}
 
-            <Box direction="row" gap={8} wrap="wrap">
-              <Action label="Hear it" onPress={() => hearIt(result)} />
-              <Action
-                label="Save word"
-                onPress={() => {
-                  saveWord(result);
-                  onClose();
-                  showToast(`"${result.word}" saved to vocabulary`);
-                }}
-              />
-              <Action
-                accent
-                label="Highlight"
-                onPress={() => {
-                  saveWord(result);
-                  onHighlight?.(result);
-                  onClose();
-                  showToast("Highlighted + saved to vocabulary");
-                }}
-              />
-            </Box>
+            {/* The actions commit the card to vocabulary, so they wait for the
+                finished result rather than acting on a half-written one. */}
+            {result ? (
+              <Box direction="row" gap={8} wrap="wrap">
+                <Action label="Hear it" onPress={() => hearIt(result)} />
+                <Action
+                  label="Save word"
+                  onPress={() => {
+                    saveWord(result);
+                    onClose();
+                    showToast(`"${result.word}" saved to vocabulary`);
+                  }}
+                />
+                <Action
+                  accent
+                  label="Highlight"
+                  onPress={() => {
+                    saveWord(result);
+                    onHighlight?.(result);
+                    onClose();
+                    showToast("Highlighted + saved to vocabulary");
+                  }}
+                />
+              </Box>
+            ) : null}
 
-            {result.offline ? (
+            {result?.offline ? (
               <Text color={t.faint} size={11} style={{ marginTop: 12 }}>
-                Offline definition — Lexi wasn&apos;t reachable.
+                Offline definition — Liqrai wasn&apos;t reachable.
               </Text>
             ) : null}
           </>
@@ -287,7 +330,7 @@ export function TranslateCard({
             </Box>
             <Text color={t.sub} lh={19} size={13}>
               &ldquo;{target.text}&rdquo; isn&apos;t in the offline dictionary, and
-              Lexi couldn&apos;t be reached. Try again when you&apos;re online.
+              Liqrai couldn&apos;t be reached. Try again when you&apos;re online.
             </Text>
           </Box>
         ) : (

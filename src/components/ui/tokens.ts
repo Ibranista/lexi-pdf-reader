@@ -1,5 +1,5 @@
 /**
- * Non-color design tokens shared across the LexiPDF base components.
+ * Non-color design tokens shared across the Liqrai Reader base components.
  * Colors live in `@/constants/colors`; fonts in `@/theme/app-fonts`.
  */
 

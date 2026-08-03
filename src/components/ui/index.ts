@@ -1,4 +1,4 @@
-// LexiPDF base component kit — presentational primitives extracted from the design.
+// Liqrai Reader base component kit — presentational primitives extracted from the design.
 // Colors live in `@/constants/colors`; shared non-color tokens in `./tokens`.
 
 export { Badge } from './Badge';

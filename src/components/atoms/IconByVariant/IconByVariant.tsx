@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import * as z from "zod";
 
+import { palette } from "@/constants/colors";
 import { useTheme } from "@/theme";
 import getAssetsContext from "@/theme/assets/getAssetsContext";
 import type { AssetType } from "@/theme/assets/getAssetsContext";
@@ -278,7 +279,7 @@ function IconByVariant({
         ? svgProps.fill
         : typeof svgProps.color === "string"
           ? svgProps.color
-          : "#830AD1";
+          : palette.accent[500];
 
     const hasCustomPrimary =
       typeof svgProps.fill === "string" || typeof svgProps.color === "string";
