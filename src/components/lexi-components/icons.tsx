@@ -571,6 +571,35 @@ export function IconWave({
   );
 }
 
+export function IconSpeaker({
+  size,
+  color = "#000",
+  strokeWidth = 1.7,
+}: IconProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M4 8h2.5L10 5v10L6.5 12H4z"
+        stroke={color}
+        strokeLinejoin="round"
+        strokeWidth={strokeWidth}
+      />
+      <Path
+        d="M13 7.5a4 4 0 010 5"
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth={strokeWidth}
+      />
+      <Path
+        d="M15.5 5.5a7 7 0 010 9"
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth={strokeWidth}
+      />
+    </Frame>
+  );
+}
+
 export function IconSend({ size, color = "#000", strokeWidth = 2 }: IconProps) {
   return (
     <Frame size={size}>

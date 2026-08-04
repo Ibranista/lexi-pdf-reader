@@ -400,6 +400,15 @@ export async function fetchChatHistory(
   }
 }
 
+export async function clearChatHistory(sessionId: string): Promise<boolean> {
+  try {
+    await api.delete("/ai/chat/history", { params: { sessionId } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function speakText(text: string): Promise<string | undefined> {
   try {
     const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", { text });

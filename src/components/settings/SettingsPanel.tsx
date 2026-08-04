@@ -6,7 +6,6 @@ import { Box } from "@/components/atoms";
 import {
   Card,
   Divider,
-  IconChat,
   IconCheck,
   IconChevron,
   IconGlobe,
@@ -86,39 +85,6 @@ export const SettingsPanel = memo(function SettingsPanel({
               }}
               size={13}
               value={mode}
-            />
-          </Card>
-
-          <Card gap={4}>
-            <Box paddingBottom={8}>
-              <SectionLabel>Plan & preferences</SectionLabel>
-            </Box>
-            <SettingsLink
-              icon={<IconSpark color={t.accent} size={16} />}
-              iconBg={t.accentSoft}
-              onPress={() => goTo("/plan")}
-              sub={
-                pro
-                  ? "Liqrai Pro · trial active"
-                  : "Free — reading forever free"
-              }
-              title="Your plan"
-            />
-            <Divider />
-            <SettingsLink
-              icon={<IconType color={t.ink} size={16} />}
-              iconBg={t.chip}
-              onPress={() => goTo("/reading-comfort")}
-              sub="Type, spacing, width & light"
-              title="Reading comfort"
-            />
-            <Divider />
-            <SettingsLink
-              icon={<IconChat color={t.ink} size={16} />}
-              iconBg={t.chip}
-              onPress={() => goTo("/ai-focus")}
-              sub="Explanation style, reminders, sync"
-              title="AI, focus & review"
             />
           </Card>
 
@@ -376,7 +342,12 @@ function AccountCard() {
             {accountLabel(user)}
           </Text>
           {user.email ? (
-            <Text color={t.sub} numberOfLines={1} size={12} style={{ marginTop: 2 }}>
+            <Text
+              color={t.sub}
+              numberOfLines={1}
+              size={12}
+              style={{ marginTop: 2 }}
+            >
               {user.email}
             </Text>
           ) : null}
