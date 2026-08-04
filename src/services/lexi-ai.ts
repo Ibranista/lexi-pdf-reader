@@ -521,6 +521,20 @@ export async function fetchChatHistory(
   }
 }
 
+/**
+ * Forget a document's conversation, server-side. False when it didn't happen —
+ * the caller has to know, because a thread cleared only on the device comes
+ * straight back the next time the panel rehydrates its history.
+ */
+export async function clearChatHistory(sessionId: string): Promise<boolean> {
+  try {
+    await api.delete("/ai/chat/history", { params: { sessionId } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /* =========================
    Speech
 ========================= */

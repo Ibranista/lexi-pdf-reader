@@ -6,7 +6,6 @@ import { Box } from "@/components/atoms";
 import {
   Card,
   Divider,
-  IconChat,
   IconCheck,
   IconChevron,
   IconGlobe,
@@ -108,7 +107,7 @@ export const SettingsPanel = memo(function SettingsPanel({
           </Card>
 
           {/* Plan & preferences */}
-          <Card gap={4}>
+          {/* <Card gap={4}>
             <Box paddingBottom={8}>
               <SectionLabel>Plan & preferences</SectionLabel>
             </Box>
@@ -139,7 +138,7 @@ export const SettingsPanel = memo(function SettingsPanel({
               sub="Explanation style, reminders, sync"
               title="AI, focus & review"
             />
-          </Card>
+          </Card> */}
 
           {/* AI features */}
           <Card gap={4}>
@@ -407,7 +406,12 @@ function AccountCard() {
             {accountLabel(user)}
           </Text>
           {user.email ? (
-            <Text color={t.sub} numberOfLines={1} size={12} style={{ marginTop: 2 }}>
+            <Text
+              color={t.sub}
+              numberOfLines={1}
+              size={12}
+              style={{ marginTop: 2 }}
+            >
               {user.email}
             </Text>
           ) : null}

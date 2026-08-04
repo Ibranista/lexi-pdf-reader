@@ -10,12 +10,12 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import {
   sortByLibrarySort,
   type DeviceDoc,
   type DeviceLibrary,
 } from "@/hooks/use-device-library";
-import { anchorOf } from "@/components/library/AnchoredPopover";
 import { useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 

@@ -24,9 +24,9 @@ import { useProtoTheme } from "@/theme/proto";
 
 /** The tiny in-card language switch. Short labels so three fit on one row. */
 const LANGS: { key: Lang; label: string }[] = [
-  { key: "am", label: "አማ" },
-  { key: "ar", label: "ع" },
   { key: "en", label: "EN" },
+  { key: "ar", label: "ع" },
+  { key: "am", label: "አማ" },
 ];
 
 export interface TranslateTarget {
@@ -187,7 +187,11 @@ export function TranslateCard({
           </Text>
           <Box flex={1} />
           {LANGS.map((l) => (
-            <Tap key={l.key} onPress={() => setApp({ lang: l.key })} scale={0.9}>
+            <Tap
+              key={l.key}
+              onPress={() => setApp({ lang: l.key })}
+              scale={0.9}
+            >
               <Box
                 bg={lang === l.key ? t.accent : t.chip}
                 paddingX={11}
@@ -260,7 +264,12 @@ export function TranslateCard({
             {streaming && !shown.s2 ? (
               <Box gap={10} marginBottom={12}>
                 <Box bg={t.chip} height={12} rounded={4} />
-                <Box bg={t.chip} height={12} rounded={4} style={{ width: "80%" }} />
+                <Box
+                  bg={t.chip}
+                  height={12}
+                  rounded={4}
+                  style={{ width: "80%" }}
+                />
               </Box>
             ) : null}
 
@@ -329,8 +338,9 @@ export function TranslateCard({
               </Tap>
             </Box>
             <Text color={t.sub} lh={19} size={13}>
-              &ldquo;{target.text}&rdquo; isn&apos;t in the offline dictionary, and
-              Liqrai couldn&apos;t be reached. Try again when you&apos;re online.
+              &ldquo;{target.text}&rdquo; isn&apos;t in the offline dictionary,
+              and Liqrai couldn&apos;t be reached. Try again when you&apos;re
+              online.
             </Text>
           </Box>
         ) : (
