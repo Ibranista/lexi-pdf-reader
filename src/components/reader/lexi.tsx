@@ -9,12 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Animated,
-  Easing as RNEasing,
+  ActivityIndicator,
   Keyboard,
   Pressable,
   ScrollView,
   useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Reanimated, {
@@ -22,6 +23,9 @@ import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,28 +33,38 @@ import { WebView } from "react-native-webview";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
+  IconBack,
+  IconCheck,
   IconClose,
+  IconMic,
   IconSend,
   IconSpark,
   IconSpeaker,
   IconTrash,
+  LiveWave,
+  SpeakingWave,
   Tap,
   Text,
 } from "@/components/lexi-components";
 import { CenterModal } from "@/components/modals";
 import { palette } from "@/constants/colors";
 import { LEXI_SEED } from "@/constants/library";
+import { useVoiceInput } from "@/hooks/use-voice-input";
 import {
   AiQuotaError,
+  cachedChatHistory,
   clearChatHistory,
   fetchChatHistory,
   speakText,
   streamChat,
 } from "@/services/lexi-ai";
+import {
+  useAnnotationsStore,
+  type Annotation,
+} from "@/stores/annotations-store";
 import { useAppStore, useToastStore } from "@/stores/app-store";
-import { sansFamily } from "@/theme/app-fonts";
-import { type Annotation, useAnnotationsStore } from "@/stores/annotations-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { sansFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
 
 interface LexiMsg {
@@ -62,6 +76,7 @@ interface LexiMsg {
 
 const INPUT_MIN = 22;
 const INPUT_MAX = 112;
+const SCROLL_TO_TOP_REVEAL_DISTANCE = 120;
 
 const ZERO_SIZE = {
   position: "absolute",
@@ -131,6 +146,52 @@ function scriptedReply(
   };
 }
 
+function mmss(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+function TypingDot({ color, delay }: { color: string; delay: number }) {
+  const pulse = useSharedValue(0.3);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withDelay(delay, withTiming(1, { duration: 190 })),
+        withTiming(0.3, { duration: 190 }),
+        withDelay(540 - delay, withTiming(0.3, { duration: 1 })),
+      ),
+      -1,
+      false,
+    );
+  }, [delay, pulse]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: pulse.value,
+    transform: [{ translateY: (1 - pulse.value) * 3 }],
+  }));
+
+  return (
+    <Reanimated.View
+      style={[
+        { backgroundColor: color, borderRadius: 3, height: 6, width: 6 },
+        style,
+      ]}
+    />
+  );
+}
+
+function TypingDots({ color }: { color: string }) {
+  return (
+    <Box align="center" direction="row" gap={5} height={21} paddingX={2}>
+      <TypingDot color={color} delay={0} />
+      <TypingDot color={color} delay={180} />
+      <TypingDot color={color} delay={360} />
+    </Box>
+  );
+}
+
 function keyWords(text: string): string[] {
   return text
     .toLowerCase()
@@ -153,55 +214,6 @@ function citedHighlight(reply: string, highlights: Annotation[]) {
     }
   }
   return best ? { page: best.page, text: best.text } : undefined;
-}
-
-function SpeakingWave({ color }: { color: string }) {
-  const [bars] = useState(() => [
-    new Animated.Value(0.45),
-    new Animated.Value(1),
-    new Animated.Value(0.7),
-  ]);
-
-  useEffect(() => {
-    const loops = bars.map((bar, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 120),
-          Animated.timing(bar, {
-            toValue: 0.3,
-            duration: 300 + i * 40,
-            easing: RNEasing.inOut(RNEasing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(bar, {
-            toValue: 1,
-            duration: 300 + i * 40,
-            easing: RNEasing.inOut(RNEasing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-      ),
-    );
-    loops.forEach((loop) => loop.start());
-    return () => loops.forEach((loop) => loop.stop());
-  }, [bars]);
-
-  return (
-    <Box align="center" direction="row" gap={2.5} height={14}>
-      {bars.map((bar, i) => (
-        <Animated.View
-          key={i}
-          style={{
-            width: 2.5,
-            height: 14,
-            borderRadius: 1.5,
-            backgroundColor: color,
-            transform: [{ scaleY: bar }],
-          }}
-        />
-      ))}
-    </Box>
-  );
 }
 
 export function LexiBubble({ onPress }: { onPress: () => void }) {
@@ -275,6 +287,8 @@ export function LexiSheet({
   const scrollRef = useRef<ScrollView>(null);
   const panelWidth = Math.min(width * 0.9, 420);
 
+  const waveBars = Math.floor(width / 6);
+
   const anim = useSharedValue(0);
   const kb = useReanimatedKeyboardAnimation();
 
@@ -344,7 +358,19 @@ export function LexiSheet({
     [book],
   );
 
-  const [messages, setMessages] = useState<LexiMsg[]>(greeting);
+  const initialHistory = book ? cachedChatHistory(sessionId) : undefined;
+  const [messages, setMessages] = useState<LexiMsg[]>(
+    () =>
+      initialHistory?.map((m) => ({
+        role: m.role === "user" ? "user" : "lexi",
+        kind: m.kind,
+        text: m.content,
+      })) ?? greeting,
+  );
+  const [historyReady, setHistoryReady] = useState(
+    !book || initialHistory !== undefined,
+  );
+  const [historyVisible, setHistoryVisible] = useState(!book);
   const [input, setInput] = useState("");
   const [inputH, setInputH] = useState(INPUT_MIN);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -355,6 +381,10 @@ export function LexiSheet({
   const replyIdx = useRef(0);
   const lastQuestion = useRef("");
   const abortRef = useRef<(() => void) | null>(null);
+  const scrollFrame = useRef<number | null>(null);
+  const initiallyPositioned = useRef(false);
+  const staysAtBottom = useRef(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const accRef = useRef("");
   const notesRef = useRef(docNotes);
   useEffect(() => {
@@ -363,22 +393,35 @@ export function LexiSheet({
 
   useEffect(() => {
     if (!book || !sessionId) return;
+    if (cachedChatHistory(sessionId) !== undefined) return;
     let cancelled = false;
-    void fetchChatHistory(sessionId).then((history) => {
-      if (cancelled || !history.length) return;
-      setMessages(
-        history.map((m) => ({
-          role: m.role === "user" ? "user" : "lexi",
-          kind: m.kind,
-          text: m.content,
-        })),
-      );
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80);
-    });
+    initiallyPositioned.current = false;
+    staysAtBottom.current = true;
+    void Promise.resolve()
+      .then(() => {
+        if (cancelled) return null;
+        setShowScrollTop(false);
+        setHistoryReady(false);
+        return fetchChatHistory(sessionId);
+      })
+      .then((history) => {
+        if (cancelled || !history) return;
+        setMessages(
+          history.length
+            ? history.map((m) => ({
+                role: m.role === "user" ? "user" : "lexi",
+                kind: m.kind,
+                text: m.content,
+              }))
+            : greeting,
+        );
+        setHistoryVisible(false);
+        setHistoryReady(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [book, sessionId]);
+  }, [book, greeting, sessionId]);
 
   useEffect(() => () => abortRef.current?.(), []);
 
@@ -390,8 +433,40 @@ export function LexiSheet({
   }, []);
 
   const push = (msg: LexiMsg) => setMessages((prev) => [...prev, msg]);
-  const scrollToEnd = () =>
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+  const scrollToEnd = useCallback((animated = true, force = false) => {
+    if ((!force && !staysAtBottom.current) || scrollFrame.current !== null) {
+      return;
+    }
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      scrollRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+  const onMessagesScroll = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
+      const distanceFromBottom = Math.max(
+        0,
+        contentSize.height - (contentOffset.y + layoutMeasurement.height),
+      );
+      staysAtBottom.current = distanceFromBottom <= 24;
+      const awayFromLatest =
+        distanceFromBottom >= SCROLL_TO_TOP_REVEAL_DISTANCE;
+      setShowScrollTop((visible) =>
+        visible === awayFromLatest ? visible : awayFromLatest,
+      );
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      if (scrollFrame.current !== null) {
+        cancelAnimationFrame(scrollFrame.current);
+      }
+    },
+    [],
+  );
 
   const [voice, setVoice] = useState<{
     key: number;
@@ -438,7 +513,9 @@ export function LexiSheet({
       .slice(0, 10)
       .map(
         (a) =>
-          `- p.${a.page} "${a.text}"${a.note.trim() ? ` — their note: ${a.note.trim()}` : ""}`,
+          `- p.${a.page} "${a.text}"${
+            a.note.trim() ? ` — their note: ${a.note.trim()}` : ""
+          }`,
       );
     if (!lines.length) return book.excerpt;
     return [book.excerpt, `The reader's highlights:\n${lines.join("\n")}`]
@@ -558,18 +635,47 @@ export function LexiSheet({
     void runChat(lastQuestion.current);
   };
 
+  const mic = useVoiceInput(showToast);
+
+  const finishVoice = async () => {
+    try {
+      const text = await mic.stop();
+      if (!text) return;
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      if (error instanceof AiQuotaError) {
+        setQuota(error.quota);
+        if (error.requiresAuth) openWall("quota");
+        close();
+      }
+    }
+  };
+
+  const startVoice = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void mic.start();
+  };
+
   const renderMessage = (m: LexiMsg, i: number): ReactNode => {
     const user = m.role === "user";
     const special = m.kind === "drift" || m.kind === "recap";
     const isError = m.kind === "error";
     const armed = voice?.key === i;
     const playing = armed && Boolean(voice?.url);
+    const loading = armed && !playing;
     return (
       <Box key={i} paddingY={5}>
         <Box
-          bg={user ? t.pill : isError ? t.accentSoft : t.card}
+          bg={user ? t.onAccent : isError ? t.accentSoft : t.card}
           borderColor={
-            isError ? t.accentMid : special ? t.calmLine : user ? "transparent" : t.line
+            isError
+              ? t.accentMid
+              : special
+                ? t.accentMid
+                : user
+                  ? t.onAccent
+                  : t.line
           }
           borderWidth={1}
           gap={9}
@@ -590,11 +696,15 @@ export function LexiSheet({
                 }),
           }}
         >
-          <Text color={user ? t.pillText : t.ink} lh={21} size={13.5}>
+          <Text color={user ? t.pill : t.ink} lh={21} size={13.5}>
             {m.text}
           </Text>
           {isError ? (
-            <Tap onPress={retry} scale={0.95} style={{ alignSelf: "flex-start" }}>
+            <Tap
+              onPress={retry}
+              scale={0.95}
+              style={{ alignSelf: "flex-start" }}
+            >
               <Box bg={t.accentSoft} paddingX={12} paddingY={8} rounded={10}>
                 <Text color={t.accent} size={12} weight="600">
                   Try again
@@ -603,32 +713,27 @@ export function LexiSheet({
             </Tap>
           ) : null}
           {m.kind === "drift" ? (
-            <Tap onPress={close} scale={0.95} style={{ alignSelf: "flex-start" }}>
-              <Box bg={t.calmSoft} paddingX={12} paddingY={8} rounded={10}>
-                <Text color={t.calm} size={12} weight="600">
+            <Tap
+              onPress={close}
+              scale={0.95}
+              style={{ alignSelf: "flex-start" }}
+            >
+              <Box bg={t.accentSoft} paddingX={12} paddingY={8} rounded={10}>
+                <Text color={t.accent} size={12} weight="600">
                   Back to reading
                 </Text>
               </Box>
             </Tap>
           ) : null}
-          {m.kind === "recap" ? (
-            <Box
-              bg={t.calmSoft}
-              paddingX={9}
-              paddingY={4}
-              rounded={10}
-              style={{ alignSelf: "flex-start" }}
-            >
-              <Text color={t.calm} size={10.5} weight="600">
-                You’re on track ✓
-              </Text>
-            </Box>
-          ) : null}
           {!user && !isError ? (
             <Tap
               onPress={() => toggleVoice(i, m.text)}
               scale={0.88}
-              style={{ alignSelf: "flex-end", marginBottom: -5, marginRight: -5 }}
+              style={{
+                alignSelf: "flex-end",
+                marginBottom: -5,
+                marginRight: -5,
+              }}
             >
               <Box
                 align="center"
@@ -640,8 +745,10 @@ export function LexiSheet({
               >
                 {playing ? (
                   <SpeakingWave color={t.accent} />
+                ) : loading ? (
+                  <ActivityIndicator color={t.accent} size="small" />
                 ) : (
-                  <IconSpeaker color={armed ? t.accent : t.sub} size={16} />
+                  <IconSpeaker color={t.sub} size={16} />
                 )}
               </Box>
             </Tap>
@@ -735,7 +842,13 @@ export function LexiSheet({
         >
           {audioNode}
 
-          <Box align="center" direction="row" gap={11} paddingX={16} paddingY={14}>
+          <Box
+            align="center"
+            direction="row"
+            gap={11}
+            paddingX={16}
+            paddingY={14}
+          >
             <Image
               contentFit="cover"
               source={require("@/assets/images/icon.png")}
@@ -763,128 +876,297 @@ export function LexiSheet({
               </Tap>
             ) : null}
             <Tap onPress={close}>
-              <Box align="center" height={32} justify="center" rounded={10} width={32}>
+              <Box
+                align="center"
+                height={32}
+                justify="center"
+                rounded={10}
+                width={32}
+              >
                 <IconClose color={t.sub} size={15} />
               </Box>
             </Tap>
           </Box>
 
-          <ScrollView
-            contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 8 }}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() =>
-              scrollRef.current?.scrollToEnd({ animated: false })
-            }
-            ref={scrollRef}
-            style={{ flex: 1 }}
-          >
-            {messages.map(renderMessage)}
+          <Box flex={1} style={{ position: "relative" }}>
+            {historyReady ? (
+              <Box flex={1} style={{ opacity: historyVisible ? 1 : 0 }}>
+                <ScrollView
+                  contentContainerStyle={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                  }}
+                  keyboardDismissMode="on-drag"
+                  keyboardShouldPersistTaps="handled"
+                  onContentSizeChange={() => {
+                    if (!initiallyPositioned.current) {
+                      initiallyPositioned.current = true;
+                      scrollToEnd(false, true);
+                      requestAnimationFrame(() => {
+                        setHistoryVisible(true);
+                      });
+                    } else {
+                      scrollToEnd();
+                    }
+                  }}
+                  onScroll={onMessagesScroll}
+                  ref={scrollRef}
+                  scrollEventThrottle={16}
+                  style={{ flex: 1 }}
+                >
+                  {messages.map(renderMessage)}
 
-            {streaming !== null ? (
-              <Box paddingY={5}>
+                  {streaming !== null ? (
+                    <Box paddingY={5}>
+                      <Box
+                        bg={t.card}
+                        borderColor={t.line}
+                        borderWidth={1}
+                        paddingX={14}
+                        paddingY={11}
+                        rounded={16}
+                        style={{ alignSelf: "flex-start", maxWidth: "88%" }}
+                      >
+                        {streaming ? (
+                          <Text color={t.ink} lh={21} size={13.5}>
+                            {streaming}
+                          </Text>
+                        ) : (
+                          <TypingDots color={t.accent} />
+                        )}
+                      </Box>
+                    </Box>
+                  ) : null}
+                </ScrollView>
+              </Box>
+            ) : (
+              <Box align="center" flex={1} justify="center">
+                <ActivityIndicator color={t.accent} size="small" />
+              </Box>
+            )}
+
+            {historyReady && showScrollTop ? (
+              <Tap
+                onPress={() =>
+                  scrollRef.current?.scrollTo({ animated: true, y: 0 })
+                }
+                scale={0.9}
+                style={{ bottom: 14, position: "absolute", right: 16 }}
+              >
                 <Box
+                  align="center"
                   bg={t.card}
                   borderColor={t.line}
                   borderWidth={1}
-                  paddingX={14}
-                  paddingY={11}
-                  rounded={16}
-                  style={{ alignSelf: "flex-start", maxWidth: "88%" }}
-                >
-                  {streaming ? (
-                    <Text color={t.ink} lh={21} size={13.5}>
-                      {streaming}
-                    </Text>
-                  ) : (
-                    <Text color={t.sub} size={13.5}>
-                      Reading that back…
-                    </Text>
-                  )}
-                </Box>
-              </Box>
-            ) : null}
-          </ScrollView>
-
-          <Reanimated.View style={[composerStyle, { paddingTop: 6 }]}>
-            {!busy && !input.trim() ? (
-              <Box direction="row" gap={7} paddingBottom={9} paddingX={14} wrap="wrap">
-                {STARTERS.map((s) => (
-                  <Tap key={s} onPress={() => setInput(s)} scale={0.96}>
-                    <Box
-                      bg={t.chip}
-                      borderColor={t.line}
-                      borderWidth={1}
-                      paddingX={14}
-                      paddingY={9}
-                      rounded={20}
-                    >
-                      <Text color={t.ink} size={12.5} weight="500">
-                        {s}
-                      </Text>
-                    </Box>
-                  </Tap>
-                ))}
-              </Box>
-            ) : null}
-
-            <Box align="end" direction="row" gap={8} paddingX={12}>
-              <Box
-                align="end"
-                bg={t.chip}
-                borderColor={t.line}
-                borderWidth={1}
-                direction="row"
-                flex={1}
-                paddingLeft={16}
-                paddingRight={6}
-                paddingY={7}
-                rounded={22}
-              >
-                <TextInput
-                  backgroundColor="transparent"
-                  borderColor="transparent"
-                  borderWidth={0}
-                  multiline
-                  onChangeText={setInput}
-                  onContentSizeChange={(e) =>
-                    setInputH(e.nativeEvent.contentSize.height)
-                  }
-                  placeholder="Ask about this page…"
-                  placeholderTextColor={t.faint}
-                  pl={0}
-                  px={0}
-                  py={0}
-                  rounded={0}
-                  scrollEnabled={inputH >= INPUT_MAX}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    height: Math.min(Math.max(inputH, INPUT_MIN), INPUT_MAX),
-                    paddingTop: 0,
-                    paddingBottom: 0,
-                    fontFamily: sansFamily["400"],
-                    fontSize: 15,
-                    lineHeight: 21,
-                    color: t.ink,
-                    textAlignVertical: "top",
-                  }}
-                  value={input}
-                />
-              </Box>
-              <Tap disabled={!canSend} onPress={() => submit(input)} scale={0.92}>
-                <Box
-                  align="center"
-                  bg={canSend ? t.accent : t.line}
                   height={38}
                   justify="center"
                   rounded={19}
+                  style={{
+                    elevation: 3,
+                    shadowColor: "#14100C",
+                    shadowOpacity: 0.14,
+                    shadowRadius: 6,
+                  }}
                   width={38}
                 >
-                  <IconSend color={canSend ? t.onAccent : t.sub} size={16} />
+                  <Box style={{ transform: [{ rotate: "90deg" }] }}>
+                    <IconBack color={t.ink} size={17} />
+                  </Box>
                 </Box>
               </Tap>
-            </Box>
+            ) : null}
+          </Box>
+
+          <Reanimated.View style={[composerStyle, { paddingTop: 6 }]}>
+            {!busy && !input.trim() && mic.phase === "idle" ? (
+              <Box
+                direction="row"
+                gap={7}
+                paddingBottom={9}
+                paddingX={14}
+                wrap="wrap"
+              >
+                {!messages?.length &&
+                  STARTERS.map((s) => (
+                    <Tap key={s} onPress={() => setInput(s)} scale={0.96}>
+                      <Box
+                        bg={t.chip}
+                        borderColor={t.line}
+                        borderWidth={1}
+                        paddingX={14}
+                        paddingY={9}
+                        rounded={20}
+                      >
+                        <Text color={t.ink} size={12.5} weight="500">
+                          {s}
+                        </Text>
+                      </Box>
+                    </Tap>
+                  ))}
+              </Box>
+            ) : null}
+
+            {mic.phase !== "idle" ? (
+              <Box align="center" direction="row" gap={10} paddingX={12}>
+                <Tap
+                  disabled={mic.phase !== "recording"}
+                  onPress={() => void mic.cancel()}
+                  scale={0.9}
+                >
+                  <Box
+                    align="center"
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconClose color={t.sub} size={16} />
+                  </Box>
+                </Tap>
+
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  borderColor={t.line}
+                  borderWidth={1}
+                  direction="row"
+                  flex={1}
+                  gap={10}
+                  paddingX={14}
+                  paddingY={9}
+                  rounded={22}
+                >
+                  {mic.phase === "recording" ? (
+                    <>
+                      <Box flex={1}>
+                        <LiveWave
+                          color={t.accent}
+                          level={mic.level}
+                          style={{
+                            width: "100%",
+                          }}
+                          waveStyle={{ flex: 1 }}
+                        />
+                      </Box>
+                      <Text
+                        color={t.sub}
+                        size={12}
+                        style={{ minWidth: 38, textAlign: "right" }}
+                        weight="600"
+                      >
+                        {mmss(mic.seconds)}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <ActivityIndicator color={t.accent} size="small" />
+                    </>
+                  )}
+                </Box>
+
+                <Tap
+                  disabled={mic.phase !== "recording"}
+                  onPress={() => void finishVoice()}
+                  scale={0.92}
+                >
+                  <Box
+                    align="center"
+                    bg={mic.phase === "recording" ? t.accent : t.line}
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconCheck
+                      color={mic.phase === "recording" ? t.onAccent : t.sub}
+                      size={16}
+                    />
+                  </Box>
+                </Tap>
+              </Box>
+            ) : (
+              <Box align="end" direction="row" gap={8} paddingX={12}>
+                <Box
+                  align="end"
+                  bg={t.chip}
+                  borderColor={t.line}
+                  borderWidth={1}
+                  direction="row"
+                  flex={1}
+                  paddingLeft={16}
+                  paddingRight={6}
+                  paddingY={7}
+                  rounded={22}
+                >
+                  <TextInput
+                    backgroundColor="transparent"
+                    borderColor="transparent"
+                    borderWidth={0}
+                    multiline
+                    onChangeText={setInput}
+                    onContentSizeChange={(e) =>
+                      setInputH(e.nativeEvent.contentSize.height)
+                    }
+                    placeholder="Ask about this page…"
+                    placeholderTextColor={t.faint}
+                    pl={0}
+                    px={0}
+                    py={0}
+                    rounded={0}
+                    scrollEnabled={inputH >= INPUT_MAX}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: Math.min(Math.max(inputH, INPUT_MIN), INPUT_MAX),
+                      paddingTop: 0,
+                      paddingBottom: 0,
+                      fontFamily: sansFamily["400"],
+                      fontSize: 15,
+                      lineHeight: 21,
+                      color: t.ink,
+                      textAlignVertical: "top",
+                    }}
+                    value={input}
+                  />
+                </Box>
+                {input.trim() || busy ? (
+                  <Tap
+                    disabled={!canSend}
+                    onPress={() => submit(input)}
+                    scale={0.92}
+                  >
+                    <Box
+                      align="center"
+                      bg={canSend ? t.accent : t.line}
+                      height={38}
+                      justify="center"
+                      rounded={19}
+                      width={38}
+                    >
+                      <IconSend
+                        color={canSend ? t.onAccent : t.sub}
+                        size={16}
+                      />
+                    </Box>
+                  </Tap>
+                ) : (
+                  <Tap onPress={startVoice} scale={0.92}>
+                    <Box
+                      align="center"
+                      bg={t.chip}
+                      borderColor={t.line}
+                      borderWidth={1}
+                      height={38}
+                      justify="center"
+                      rounded={19}
+                      width={38}
+                    >
+                      <IconMic color={t.sub} size={17} />
+                    </Box>
+                  </Tap>
+                )}
+              </Box>
+            )}
           </Reanimated.View>
         </Reanimated.View>
       </Reanimated.View>

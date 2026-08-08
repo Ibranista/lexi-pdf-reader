@@ -46,7 +46,7 @@ import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import type { TranslateTarget } from "@/components/reader/TranslateCard";
 import { TranslateCard } from "@/components/reader/TranslateCard";
-import { uploadContext } from "@/services/lexi-ai";
+import { preloadChatHistory, uploadContext } from "@/services/lexi-ai";
 import { useAnnotationsStore } from "@/stores/annotations-store";
 import {
   useAppStore,
@@ -97,6 +97,10 @@ export default function PdfViewerScreen() {
   const toggleBookmark = (target: number) =>
     useRecentsStore.getState().toggleBookmark(uri, target);
   const showToast = useToastStore((s) => s.showToast);
+
+  useEffect(() => {
+    if (docKey) preloadChatHistory(docKey);
+  }, [docKey]);
 
   const [titleOpen, setTitleOpen] = useState(false);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(

@@ -469,6 +469,7 @@ POST /ai/translate
   "langName": "Amharic",
   "s1": "It means night no longer forced people to stop — staying active became a choice.",
   "s2": "The phrase marks the book's turning point: light gave people control over their time.",
+  "example": "ከምሽቱ ስድስት ሰዓት በኋላ መውጣት ዛሬ አማራጭ ነው፣ ግዴታ አይደለም።",
   "audioUrl": "https://cdn.example.com/tts/am/8f2c.mp3",
   "quota": { … }
 }
@@ -485,12 +486,40 @@ Field-by-field against the card:
 | `lang` / `langName` | — / the same subtitle | `lang` must be one of `am`, `ar`, `en`. |
 | `s1` | First ✦ bullet | **What it means in this passage** — not a dictionary gloss. Roughly 12–24 words; the card wraps to 2–3 lines and does not scroll. |
 | `s2` | Second ✦ bullet | **Why it matters here** — the sentence's point, or the contrast it sets up. Same length budget. |
-| `audioUrl` | "Hear it" button | Optional. Direct HTTPS MP3/M4A of `tr` spoken in `lang`. Omit and the client hides the button. |
+| `example` | "EXAMPLE" box | **A new sentence, invented (not quoted from the book), using the word.** Optional — omit the key rather than sending an empty string. |
+| `audioUrl` | "Hear it" button | Optional. Direct HTTPS MP3/M4A of the full card (word, translation, both bullets, and the example) spoken in `lang` — not just `tr`. Omit and the client hides the button. |
+
+**`pos`, `s1`, `s2` and `example` are all written in `targetLang`** — the
+language the reader asked to be explained *in* — regardless of what language
+the document or the selection is in. Only `word` (echoed back as selected) and
+`tr`/`translit` are about the source. A card whose target is `ar` and whose
+example sentence is English is a bug, and it is the easy one to ship: the model
+will happily follow the passage's language unless every place that describes
+these fields says otherwise. If the implementation uses structured output, the
+**JSON-schema field descriptions must say it too** — they outweigh the system
+prompt, so a schema that says "in its own language" wins and the card comes
+back mixed.
+
+This extends to anything spoken or labelled: `audioUrl` narration must not
+splice English connectives ("In Arabic:", "For example:") into an Arabic or
+Amharic reading — they are voiced in the target language or left out.
 
 `s1`/`s2` are the whole value of this feature — two sentences that only make
 sense *given this book*. Generic dictionary output is a regression from what the
 prototype fakes today. Keep them under 140 characters each; longer text pushes
 the action row off the card.
+
+`example` is a common miss: it's easy to generate it in whatever language the
+source passage is in and forget that this card's whole point is the target
+language. Translate or (re)write it in `targetLang` like every other visible
+field.
+
+The streamed variant (`/ai/translate/stream`, used by the live card) writes
+these same fields, one at a time, in this order: `word`, `pos`, `tr`,
+`translit`, `s1`, `s2`, `example` — each as `data: { "f": "<field>", "t":
+"<value so far>" }\n\n`, then a final `data: { "done": true, ...<the full
+object above> }\n\n`. A field the model is skipping (e.g. `translit` for a
+Latin target) is simply never sent, not sent empty.
 
 Save word / Highlight write a `VocabEntry` (§2.2) built entirely from this
 response, so anything missing here is missing from the user's vocabulary list
@@ -561,6 +590,46 @@ media URL, cacheable for at least 24h. Only needed if `audioUrl` is not already
 inlined in the translate response. `am` (Amharic) may have no voice available —
 return **200** with `audioUrl` omitted rather than an error, and the client hides
 "Hear it".
+
+### 5.5 Speech to text
+
+Backs the mic button in the chat composer — the reader speaks a question
+instead of typing it.
+
+```http
+POST /ai/transcribe
+{
+  "audio": "AAAAHGZ0eXBNNEEg…",   // base64, `data:` prefix optional
+  "mimeType": "audio/m4a",
+  "lang": "en"                     // hint only; am | ar | en
+}
+```
+
+**200** `{ "text": "Why does he keep coming back to Sherman?", "quota": { … } }`
+
+| Field | Rules |
+| --- | --- |
+| `audio` | Base64 in the JSON body, not multipart — every other endpoint here is JSON and the body cap is already 6mb, which a few seconds of 64kbps speech fits inside comfortably. Cap the *decoded* length and say so in the message; a bare 413 gives the reader nothing to act on. |
+| `mimeType` | The recorder's container. Default to `audio/m4a` when absent. |
+| `lang` | A hint, and only a hint. It markedly improves accuracy on short clips, but a reader whose explanation language is Amharic may still ask in English — never force the output language. |
+| `text` | The transcript. **Empty string when nothing was said** — see below. |
+
+Two rules that matter more than they look:
+
+- **Silence is a 200 with `text: ""`, and it refunds its credit.** Holding a
+  microphone and saying nothing is a normal thing to do, not an error. Whisper
+  in particular does *not* return an empty string for a silent clip — it emits
+  a stock phrase from its training data ("Thank you.", "Thanks for watching!"),
+  so the server has to recognise those and blank them. Handing one back would
+  put words in the reader's mouth.
+- **Nothing is stored.** A synthesized clip is cached and served as a URL
+  because it is derived from the document; a recording of someone's voice is
+  not, and has no reason to outlive the request that transcribed it.
+
+The transcript lands in the composer as an **editable draft** and is never sent
+on the reader's behalf — the same rule the opener chips follow. A transcript is
+a guess at what someone said, so it has to be reviewable before it reaches the
+model.
 
 ---
 

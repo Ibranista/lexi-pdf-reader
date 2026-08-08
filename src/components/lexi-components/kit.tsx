@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { GestureResponderEvent, StyleProp, ViewStyle } from "react-native";
 
 import { Image } from "expo-image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Pressable, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
@@ -629,6 +629,111 @@ export function Toast() {
           {toast}
         </Text>
       </Box>
+    </Box>
+  );
+}
+
+export function SpeakingWave({ color }: { color: string }) {
+  const [bars] = useState(() => [
+    new Animated.Value(0.45),
+    new Animated.Value(1),
+    new Animated.Value(0.7),
+  ]);
+
+  useEffect(() => {
+    const loops = bars.map((bar, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 120),
+          Animated.timing(bar, {
+            toValue: 0.3,
+            duration: 300 + i * 40,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(bar, {
+            toValue: 1,
+            duration: 300 + i * 40,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
+    loops.forEach((loop) => loop.start());
+    return () => loops.forEach((loop) => loop.stop());
+  }, [bars]);
+
+  return (
+    <Box align="center" direction="row" gap={2.5} height={14}>
+      {bars.map((bar, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 2.5,
+            height: 14,
+            borderRadius: 1.5,
+            backgroundColor: color,
+            transform: [{ scaleY: bar }],
+          }}
+        />
+      ))}
+    </Box>
+  );
+}
+
+const LIVE_WAVE_BARS = 13;
+
+export function LiveWave({
+  color,
+  level,
+  waveWidth,
+  waveStyle,
+  style,
+}: {
+  color: string;
+  level: number;
+  waveWidth?: number;
+  waveStyle?: StyleProp<ViewStyle>;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const [bars] = useState(() =>
+    Array.from({ length: LIVE_WAVE_BARS }, () => new Animated.Value(0.12)),
+  );
+  const history = useRef<number[]>(Array(LIVE_WAVE_BARS).fill(0));
+
+  useEffect(() => {
+    history.current = [level, ...history.current.slice(0, LIVE_WAVE_BARS - 1)];
+    const mid = (LIVE_WAVE_BARS - 1) / 2;
+
+    bars.forEach((bar, i) => {
+      const age = Math.abs(i - mid);
+      const sample = history.current[Math.round(age)] ?? 0;
+      const taper = 1 - (age / mid) * 0.55;
+      Animated.timing(bar, {
+        toValue: Math.max(0.12, Math.min(1, sample * taper)),
+        duration: 110,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [bars, level]);
+
+  return (
+    <Box align="center" direction="row" gap={3} height={20} style={style}>
+      {bars.map((bar, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: waveWidth ?? 3,
+            height: 20,
+            borderRadius: 1.5,
+            backgroundColor: color,
+            transform: [{ scaleY: bar }],
+            ...(waveStyle as object),
+          }}
+        />
+      ))}
     </Box>
   );
 }

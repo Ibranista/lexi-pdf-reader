@@ -60,7 +60,7 @@ export function asQuotaError(error: unknown): AiQuotaError | null {
   return new AiQuotaError(
     body?.message ?? "You've used your free AI credits.",
     body?.quota ?? null,
-    body?.requiresAuth ?? true,
+    body?.requiresAuth ?? true
   );
 }
 
@@ -104,7 +104,9 @@ export interface TranslateInput {
   style?: ExplainStyle;
 }
 
-export async function translate(input: TranslateInput): Promise<TranslateResult> {
+export async function translate(
+  input: TranslateInput
+): Promise<TranslateResult> {
   try {
     const { data } = await api.post<TranslateResult>("/ai/translate", {
       context: input.context,
@@ -145,7 +147,7 @@ export interface TranslateStreamHandlers {
 
 export async function streamTranslate(
   input: TranslateInput,
-  handlers: TranslateStreamHandlers,
+  handlers: TranslateStreamHandlers
 ): Promise<() => void> {
   try {
     if (!tokenStorage.getAccessToken()) await ensureSession();
@@ -196,7 +198,9 @@ export async function streamTranslate(
       handlers.onDone(card as TranslateResult);
       finish();
     } else if (obj.error) {
-      handlers.onError(new Error(obj.message ?? "Liqrai couldn't finish that."));
+      handlers.onError(
+        new Error(obj.message ?? "Liqrai couldn't finish that.")
+      );
       finish();
     } else if (obj.f) {
       handlers.onField(obj.f, obj.t ?? "");
@@ -208,7 +212,7 @@ export async function streamTranslate(
     const status = "xhrStatus" in event ? event.xhrStatus : 0;
     if (status === 402) {
       handlers.onError(
-        new AiQuotaError("You've used your free AI credits.", null, true),
+        new AiQuotaError("You've used your free AI credits.", null, true)
       );
     } else {
       const local = localTranslate(input);
@@ -225,7 +229,10 @@ export async function streamTranslate(
 }
 
 function localTranslate(input: TranslateInput): TranslateResult | undefined {
-  const key = input.text.trim().toLowerCase().replace(/[^a-z'-]/g, "");
+  const key = input.text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z'-]/g, "");
   const entry = DICT[key];
   if (!entry) return undefined;
   const [tr, translit] = entry[input.targetLang];
@@ -275,11 +282,16 @@ export async function chat(input: ChatInput): Promise<ChatReply> {
 }
 
 function localChat(input: ChatInput): ChatReply {
-  const words = input.title.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const words = input.title
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
   const asked = input.message.toLowerCase();
   const aboutBook =
     words.some((w) => asked.includes(w)) ||
-    /\b(this|book|chapter|page|author|passage|here|mean|why|summar)/.test(asked);
+    /\b(this|book|chapter|page|author|passage|here|mean|why|summar)/.test(
+      asked
+    );
 
   return {
     kind: aboutBook ? "normal" : "drift",
@@ -297,15 +309,22 @@ export interface ChatHistoryMessage {
   content: string;
 }
 
+const chatHistoryCache = new Map<string, ChatHistoryMessage[]>();
+const chatHistoryRequests = new Map<string, Promise<ChatHistoryMessage[]>>();
+
 export interface ChatStreamHandlers {
   onToken: (token: string) => void;
-  onDone: (final: { kind: ChatKind; sessionId: string; quota?: AiQuota }) => void;
+  onDone: (final: {
+    kind: ChatKind;
+    sessionId: string;
+    quota?: AiQuota;
+  }) => void;
   onError: (error: unknown) => void;
 }
 
 export async function streamChat(
   input: ChatInput,
-  handlers: ChatStreamHandlers,
+  handlers: ChatStreamHandlers
 ): Promise<() => void> {
   try {
     if (!tokenStorage.getAccessToken()) await ensureSession();
@@ -365,7 +384,9 @@ export async function streamChat(
       });
       finish();
     } else if (obj.error) {
-      handlers.onError(new Error(obj.message ?? "Liqrai couldn't finish that."));
+      handlers.onError(
+        new Error(obj.message ?? "Liqrai couldn't finish that.")
+      );
       finish();
     }
   });
@@ -375,7 +396,7 @@ export async function streamChat(
     const status = "xhrStatus" in event ? event.xhrStatus : 0;
     if (status === 402) {
       handlers.onError(
-        new AiQuotaError("You've used your free AI credits.", null, true),
+        new AiQuotaError("You've used your free AI credits.", null, true)
       );
     } else {
       handlers.onError(new Error("Couldn't reach Liqrai."));
@@ -386,23 +407,44 @@ export async function streamChat(
   return () => finish();
 }
 
-export async function fetchChatHistory(
+export function cachedChatHistory(
   sessionId: string,
-): Promise<ChatHistoryMessage[]> {
-  try {
-    const { data } = await api.get<{ messages: ChatHistoryMessage[] }>(
-      "/ai/chat/history",
-      { params: { sessionId } },
-    );
-    return data.messages ?? [];
-  } catch {
-    return [];
-  }
+): ChatHistoryMessage[] | undefined {
+  return chatHistoryCache.get(sessionId);
+}
+
+export function fetchChatHistory(sessionId: string): Promise<ChatHistoryMessage[]> {
+  const cached = chatHistoryCache.get(sessionId);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = chatHistoryRequests.get(sessionId);
+  if (pending) return pending;
+
+  const request = api
+    .get<{ messages: ChatHistoryMessage[] }>("/ai/chat/history", {
+      params: { sessionId },
+    })
+    .then(({ data }) => {
+      const history = data.messages ?? [];
+      chatHistoryCache.set(sessionId, history);
+      return history;
+    })
+    .catch(() => [])
+    .finally(() => {
+      chatHistoryRequests.delete(sessionId);
+    });
+  chatHistoryRequests.set(sessionId, request);
+  return request;
+}
+
+export function preloadChatHistory(sessionId: string): void {
+  if (sessionId) void fetchChatHistory(sessionId);
 }
 
 export async function clearChatHistory(sessionId: string): Promise<boolean> {
   try {
     await api.delete("/ai/chat/history", { params: { sessionId } });
+    chatHistoryCache.delete(sessionId);
     return true;
   } catch {
     return false;
@@ -411,22 +453,40 @@ export async function clearChatHistory(sessionId: string): Promise<boolean> {
 
 export async function speakText(text: string): Promise<string | undefined> {
   try {
-    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", { text });
+    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", {
+      text,
+    });
     return data.audioUrl;
   } catch {
     return undefined;
   }
 }
 
-export async function speak(text: string, lang: Lang): Promise<string | undefined> {
+export async function transcribe(input: {
+  audio: string;
+  mimeType?: string;
+}): Promise<string> {
+  try {
+    const { data } = await api.post<{ text?: string }>("/ai/transcribe", {
+      audio: input.audio,
+      ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+    });
+    return data.text ?? "";
+  } catch (error) {
+    throw asQuotaError(error) ?? error;
+  }
+}
+
+export async function speak(
+  text: string,
+  lang: Lang
+): Promise<string | undefined> {
   try {
     const { data } = await api.get<{ audioUrl?: string }>("/ai/tts", {
       params: { lang, text },
     });
     return data.audioUrl;
   } catch (error) {
-    const quota = asQuotaError(error);
-    if (quota) throw quota;
-    return undefined;
+    throw asQuotaError(error) ?? error;
   }
 }

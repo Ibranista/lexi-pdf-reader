@@ -50,7 +50,14 @@
       "expo-secure-store",
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Liqrai uses the microphone only while you hold the mic button, to turn what you say into a question about the document you're reading.",
+          "enableBackgroundRecording": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
