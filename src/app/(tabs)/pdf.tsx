@@ -46,7 +46,7 @@ import { PdfReflowView } from "@/components/reader/PdfReflowView";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import type { TranslateTarget } from "@/components/reader/TranslateCard";
 import { TranslateCard } from "@/components/reader/TranslateCard";
-import { uploadContext } from "@/services/lexi-ai";
+import { preloadChatHistory, uploadContext } from "@/services/lexi-ai";
 import { useAnnotationsStore } from "@/stores/annotations-store";
 import {
   useAppStore,
@@ -115,6 +115,12 @@ export default function PdfViewerScreen() {
   const toggleBookmark = (target: number) =>
     useRecentsStore.getState().toggleBookmark(uri, target);
   const showToast = useToastStore((s) => s.showToast);
+
+  // The chat drawer is opened on demand, so load its tiny history while this
+  // document is opening. That leaves the drawer ready to render in one pass.
+  useEffect(() => {
+    if (docKey) preloadChatHistory(docKey);
+  }, [docKey]);
 
   // Tapping the title opens it out to its full length; the controls shrink
   // to make room, then everything settles back on its own.

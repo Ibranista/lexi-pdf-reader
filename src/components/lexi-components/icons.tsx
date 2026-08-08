@@ -579,6 +579,39 @@ export function IconWave({
 }
 
 /** Speaker with a sound arc — "read this aloud". */
+/** Microphone — voice input in the chat composer. */
+export function IconMic({
+  size,
+  color = "#000",
+  strokeWidth = 1.7,
+}: IconProps) {
+  return (
+    <Frame size={size}>
+      <Rect
+        height={10}
+        rx={2.5}
+        stroke={color}
+        strokeWidth={strokeWidth}
+        width={5}
+        x={7.5}
+        y={2.5}
+      />
+      <Path
+        d="M4.5 9.5a5.5 5.5 0 0011 0"
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth={strokeWidth}
+      />
+      <Path
+        d="M10 15v2.5"
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth={strokeWidth}
+      />
+    </Frame>
+  );
+}
+
 export function IconSpeaker({
   size,
   color = "#000",
