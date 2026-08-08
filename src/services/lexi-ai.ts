@@ -96,7 +96,7 @@ export function asQuotaError(error: unknown): AiQuotaError | null {
   return new AiQuotaError(
     body?.message ?? "You've used your free AI credits.",
     body?.quota ?? null,
-    body?.requiresAuth ?? true,
+    body?.requiresAuth ?? true
   );
 }
 
@@ -131,7 +131,7 @@ export interface ContextInput {
 export const CONTEXT_CHUNK_PAGES = 20;
 
 /**
- * Hands the document's text to the server so Lexi can answer from the book
+ * Hands the document's text to the server so Liqrai can answer from the book
  * rather than from the page in view. Uploaded in chunks, in order, because a
  * long book exceeds both the payload cap and any sensible request timeout.
  *
@@ -172,7 +172,9 @@ export interface TranslateInput {
   style?: ExplainStyle;
 }
 
-export async function translate(input: TranslateInput): Promise<TranslateResult> {
+export async function translate(
+  input: TranslateInput
+): Promise<TranslateResult> {
   try {
     const { data } = await api.post<TranslateResult>("/ai/translate", {
       context: input.context,
@@ -194,9 +196,131 @@ export async function translate(input: TranslateInput): Promise<TranslateResult>
   }
 }
 
+/** The card fields the stream fills in, in the order the server writes them. */
+export type TranslateField =
+  | "word"
+  | "pos"
+  | "tr"
+  | "translit"
+  | "s1"
+  | "s2"
+  | "example";
+
+/** What the card knows mid-stream: whichever fields have arrived so far. */
+export type PartialCard = Partial<Record<TranslateField, string>>;
+
+export interface TranslateStreamHandlers {
+  /** A field grew. `value` is everything written for it so far, not a delta. */
+  onField: (field: TranslateField, value: string) => void;
+  /** The card finished — the same shape `translate` resolves to. */
+  onDone: (result: TranslateResult) => void;
+  /** Network/server failure, or an AiQuotaError when the wall should rise. */
+  onError: (error: unknown) => void;
+}
+
+/**
+ * The word card, streamed. The server writes one field per line and sends a
+ * `data: { f, t }` per update — `f` the field name, `t` its value so far — then
+ * a final `data: { done, ...card }` with the finished, clamped result. The card
+ * fills in as it's written instead of waiting on the whole lookup.
+ *
+ * Returns an abort function so a closing card can cancel an in-flight lookup.
+ */
+export async function streamTranslate(
+  input: TranslateInput,
+  handlers: TranslateStreamHandlers
+): Promise<() => void> {
+  // The EventSource bypasses the axios interceptors, so guarantee a session.
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {
+    // offline on first launch — the connection below fails and onError fires
+  }
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/translate/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      context: input.context,
+      docKey: input.docKey,
+      page: input.page,
+      style: input.style ?? "balanced",
+      targetLang: input.targetLang,
+      text: input.text,
+    }),
+    // One-shot: never auto-reconnect after the card ends or fails.
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      f?: TranslateField;
+      t?: string;
+      done?: boolean;
+      error?: boolean;
+      message?: string;
+    } & Partial<TranslateResult>;
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.done) {
+      const { done, f, t, error, message, ...card } = obj;
+      handlers.onDone(card as TranslateResult);
+      finish();
+    } else if (obj.error) {
+      handlers.onError(
+        new Error(obj.message ?? "Liqrai couldn't finish that.")
+      );
+      finish();
+    } else if (obj.f) {
+      handlers.onField(obj.f, obj.t ?? "");
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true)
+      );
+    } else {
+      // Unreachable and the word is in the bundled dictionary: answer from it
+      // rather than showing a failure, same as the non-streaming path.
+      const local = localTranslate(input);
+      if (local) {
+        handlers.onDone(local);
+      } else {
+        handlers.onError(new Error("Couldn't reach Liqrai."));
+      }
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
 /** The bundled dictionary, shaped like a response. Undefined for unknown words. */
 function localTranslate(input: TranslateInput): TranslateResult | undefined {
-  const key = input.text.trim().toLowerCase().replace(/[^a-z'-]/g, "");
+  const key = input.text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z'-]/g, "");
   const entry = DICT[key];
   if (!entry) return undefined;
   const [tr, translit] = entry[input.targetLang];
@@ -219,7 +343,7 @@ function localTranslate(input: TranslateInput): TranslateResult | undefined {
 
 export interface ChatInput {
   sessionId: string;
-  /** What Lexi is allowed to talk about. */
+  /** What Liqrai is allowed to talk about. */
   title: string;
   author?: string;
   /** 64-hex document key from `docKeyFor`; the endpoint 400s without it. */
@@ -258,11 +382,16 @@ export async function chat(input: ChatInput): Promise<ChatReply> {
  * this book gets redirected rather than answered.
  */
 function localChat(input: ChatInput): ChatReply {
-  const words = input.title.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const words = input.title
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
   const asked = input.message.toLowerCase();
   const aboutBook =
     words.some((w) => asked.includes(w)) ||
-    /\b(this|book|chapter|page|author|passage|here|mean|why|summar)/.test(asked);
+    /\b(this|book|chapter|page|author|passage|here|mean|why|summar)/.test(
+      asked
+    );
 
   return {
     kind: aboutBook ? "normal" : "drift",
@@ -284,11 +413,21 @@ export interface ChatHistoryMessage {
   content: string;
 }
 
+// A document is normally opened before its Lexi panel. Keeping its small chat
+// history in memory lets the panel mount with the full thread already present,
+// instead of rendering a placeholder and replacing it after an HTTP round trip.
+const chatHistoryCache = new Map<string, ChatHistoryMessage[]>();
+const chatHistoryRequests = new Map<string, Promise<ChatHistoryMessage[]>>();
+
 export interface ChatStreamHandlers {
   /** A piece of the reply, as it's generated. */
   onToken: (token: string) => void;
   /** The reply finished — carries the final kind and refreshed quota. */
-  onDone: (final: { kind: ChatKind; sessionId: string; quota?: AiQuota }) => void;
+  onDone: (final: {
+    kind: ChatKind;
+    sessionId: string;
+    quota?: AiQuota;
+  }) => void;
   /** Network/server failure, or an AiQuotaError when the wall should rise. */
   onError: (error: unknown) => void;
 }
@@ -302,7 +441,7 @@ export interface ChatStreamHandlers {
  */
 export async function streamChat(
   input: ChatInput,
-  handlers: ChatStreamHandlers,
+  handlers: ChatStreamHandlers
 ): Promise<() => void> {
   // The EventSource bypasses the axios interceptors, so guarantee a session.
   try {
@@ -366,7 +505,9 @@ export async function streamChat(
       });
       finish();
     } else if (obj.error) {
-      handlers.onError(new Error(obj.message ?? "Lexi couldn't finish that."));
+      handlers.onError(
+        new Error(obj.message ?? "Liqrai couldn't finish that.")
+      );
       finish();
     }
   });
@@ -378,10 +519,10 @@ export async function streamChat(
     const status = "xhrStatus" in event ? event.xhrStatus : 0;
     if (status === 402) {
       handlers.onError(
-        new AiQuotaError("You've used your free AI credits.", null, true),
+        new AiQuotaError("You've used your free AI credits.", null, true)
       );
     } else {
-      handlers.onError(new Error("Couldn't reach Lexi."));
+      handlers.onError(new Error("Couldn't reach Liqrai."));
     }
     finish();
   });
@@ -390,17 +531,53 @@ export async function streamChat(
 }
 
 /** Prior turns for a book's conversation, oldest first — to rehydrate the sheet. */
-export async function fetchChatHistory(
+export function cachedChatHistory(
   sessionId: string,
-): Promise<ChatHistoryMessage[]> {
+): ChatHistoryMessage[] | undefined {
+  return chatHistoryCache.get(sessionId);
+}
+
+export function fetchChatHistory(sessionId: string): Promise<ChatHistoryMessage[]> {
+  const cached = chatHistoryCache.get(sessionId);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = chatHistoryRequests.get(sessionId);
+  if (pending) return pending;
+
+  const request = api
+    .get<{ messages: ChatHistoryMessage[] }>("/ai/chat/history", {
+      params: { sessionId },
+    })
+    .then(({ data }) => {
+      const history = data.messages ?? [];
+      chatHistoryCache.set(sessionId, history);
+      return history;
+    })
+    .catch(() => [])
+    .finally(() => {
+      chatHistoryRequests.delete(sessionId);
+    });
+  chatHistoryRequests.set(sessionId, request);
+  return request;
+}
+
+/** Start loading a document's thread before the reader opens its Lexi panel. */
+export function preloadChatHistory(sessionId: string): void {
+  if (sessionId) void fetchChatHistory(sessionId);
+}
+
+/**
+ * Forget a document's conversation, server-side. False when it didn't happen —
+ * the caller has to know, because a thread cleared only on the device comes
+ * straight back the next time the panel rehydrates its history.
+ */
+export async function clearChatHistory(sessionId: string): Promise<boolean> {
   try {
-    const { data } = await api.get<{ messages: ChatHistoryMessage[] }>(
-      "/ai/chat/history",
-      { params: { sessionId } },
-    );
-    return data.messages ?? [];
+    await api.delete("/ai/chat/history", { params: { sessionId } });
+    chatHistoryCache.delete(sessionId);
+    return true;
   } catch {
-    return [];
+    return false;
   }
 }
 
@@ -411,23 +588,63 @@ export async function fetchChatHistory(
 /** Voice arbitrary text (a chat reply's speaker button). Undefined on failure. */
 export async function speakText(text: string): Promise<string | undefined> {
   try {
-    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", { text });
+    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", {
+      text,
+    });
     return data.audioUrl;
   } catch {
     return undefined;
   }
 }
 
-/** Spoken audio for a translation. Returns undefined when there's no voice. */
-export async function speak(text: string, lang: Lang): Promise<string | undefined> {
+/* =========================
+   Speech to text
+========================= */
+
+/**
+ * Turn a recorded question into text for the chat composer.
+ *
+ * An empty `text` is a real, successful answer — the reader held the mic and
+ * said nothing, which costs no credit and is not an error. Anything that
+ * actually went wrong throws, so the composer can tell the two apart instead
+ * of silently doing nothing on a recording that failed to reach the server.
+ */
+export async function transcribe(input: {
+  /** base64 audio, no `data:` prefix needed. */
+  audio: string;
+  /** The recorder's container, e.g. `audio/m4a`. */
+  mimeType?: string;
+}): Promise<string> {
+  try {
+    const { data } = await api.post<{ text?: string }>("/ai/transcribe", {
+      audio: input.audio,
+      ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+    });
+    return data.text ?? "";
+  } catch (error) {
+    throw asQuotaError(error) ?? error;
+  }
+}
+
+/**
+ * Spoken audio for a translation.
+ *
+ * `undefined` means one thing only: the server answered and has no voice for
+ * this language. A request that *failed* throws instead — collapsing the two
+ * into `undefined` made every network blip and 500 read on screen as "no
+ * audio for this language yet", which is a different (and permanent-sounding)
+ * problem from the one that actually happened.
+ */
+export async function speak(
+  text: string,
+  lang: Lang
+): Promise<string | undefined> {
   try {
     const { data } = await api.get<{ audioUrl?: string }>("/ai/tts", {
       params: { lang, text },
     });
     return data.audioUrl;
   } catch (error) {
-    const quota = asQuotaError(error);
-    if (quota) throw quota;
-    return undefined;
+    throw asQuotaError(error) ?? error;
   }
 }

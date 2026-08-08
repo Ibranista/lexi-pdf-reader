@@ -1,4 +1,13 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 
 import { Box } from "@/components/atoms";
 import {
@@ -7,20 +16,26 @@ import {
   Cover,
   IconBack,
   IconSpark,
+  IconSync,
   SectionLabel,
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import {
   COLLECTION_META,
   type CollectionId,
   resolveCollectionColor,
 } from "@/constants/collections";
-import { COLLECTIONS } from "@/constants/library";
-import { SUGGESTION_COUNT, useBookSuggestions } from "@/hooks/use-book-suggestions";
+import { COLLECTIONS, SPIN_MS } from "@/constants/library";
+import {
+  SUGGESTION_COUNT,
+  useBookSuggestions,
+} from "@/hooks/use-book-suggestions";
 import { useCollectionsStore } from "@/stores/collections-store";
 import { useReaderType } from "@/stores/onboarding-store";
 import { useProtoTheme } from "@/theme/proto";
+import { isOnline } from "@/utils/connectivity";
 
 import { DocRow, type OpenCollections } from "./shared";
 
@@ -44,7 +59,14 @@ export function CollectionsTab({
   const readerType = useReaderType();
   const items = useCollectionsStore((s) => s.items);
   const cd = COLLECTIONS[readerType] ?? COLLECTIONS.student;
-  const { suggestions, loading } = useBookSuggestions();
+  const { failed, loading, refresh, refreshing, suggestions } =
+    useBookSuggestions();
+  // Any fetch — first load or a manual refresh — puts skeletons on the shelf, so
+  // a tap on the refresh icon visibly does something before the network answers.
+  const busy = loading || refreshing;
+  // The notice only stands in for picks we don't have. A refresh that fails over
+  // an existing shelf leaves that shelf alone rather than wiping it for an error.
+  const showNotice = failed && suggestions.length === 0;
 
   if (shelf) {
     const docs = items[shelf] ?? [];
@@ -107,7 +129,7 @@ export function CollectionsTab({
                   day: "numeric",
                 }),
               })}
-              onLongPress={() => openCollections(doc)}
+              onLongPress={(e) => openCollections(doc, anchorOf(e))}
               onPress={() => openDoc(doc)}
             />
           ))
@@ -165,74 +187,186 @@ export function CollectionsTab({
       >
         <IconSpark color={t.accent} size={13} />
         <SectionLabel>{tr("library.collections.autoFilled")}</SectionLabel>
+        <Box flex={1} />
+        {/* Negative margins keep the 16px icon on the heading's baseline while
+            the padding still gives it a thumb-sized tap target. */}
+        <Tap
+          disabled={busy}
+          onPress={refresh}
+          scale={0.88}
+          style={{ margin: -8, padding: 8 }}
+        >
+          <SpinningSync color={busy ? t.accent : t.sub} spinning={busy} />
+        </Tap>
       </Box>
       <Text color={t.faint} size={12} style={{ paddingBottom: 4 }}>
         {tr("library.collections.basedOn", { label: cd.label })}
       </Text>
 
-      {loading
-        ? Array.from({ length: SUGGESTION_COUNT }, (_, i) => (
+      {busy ? (
+        Array.from({ length: SUGGESTION_COUNT }, (_, i) => (
+          <Box
+            align="center"
+            direction="row"
+            gap={14}
+            key={i}
+            paddingY={12}
+            style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+          >
+            <Cover height={58} width={44} />
+            <Box flex={1} gap={6}>
+              <Box
+                bg={t.line}
+                height={12}
+                rounded={4}
+                style={{ width: "70%" }}
+              />
+              <Box
+                bg={t.line}
+                height={10}
+                rounded={4}
+                style={{ width: "45%" }}
+              />
+            </Box>
+          </Box>
+        ))
+      ) : showNotice ? (
+        <Card gap={12} padding={14} rounded={14} style={{ marginTop: 8 }}>
+          <Text color={t.sub} lh={19} size={13}>
+            {tr(
+              isOnline()
+                ? "library.collections.suggestFailed"
+                : "library.collections.suggestOffline",
+            )}
+          </Text>
+          <Tap
+            onPress={refresh}
+            scale={0.97}
+            style={{ alignSelf: "flex-start" }}
+          >
+            <Box
+              align="center"
+              bg={t.accentSoft}
+              direction="row"
+              gap={7}
+              paddingX={14}
+              paddingY={9}
+              rounded={20}
+            >
+              <IconSpark color={t.accentText} size={13} />
+              <Text color={t.accentText} size={13} weight="600">
+                {tr(
+                  isOnline()
+                    ? "library.collections.suggestRetry"
+                    : "library.collections.suggestNow",
+                )}
+              </Text>
+            </Box>
+          </Tap>
+        </Card>
+      ) : (
+        suggestions.map((book) => (
+          <Tap
+            key={book.id}
+            onPress={() =>
+              openBook({
+                cover: book.coverUrl,
+                title: book.title,
+                url: book.readUrl,
+              })
+            }
+          >
             <Box
               align="center"
               direction="row"
               gap={14}
-              key={i}
               paddingY={12}
               style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
             >
-              <Cover height={58} width={44} />
-              <Box flex={1} gap={6}>
-                <Box bg={t.line} height={12} rounded={4} style={{ width: "70%" }} />
-                <Box bg={t.line} height={10} rounded={4} style={{ width: "45%" }} />
-              </Box>
-            </Box>
-          ))
-        : suggestions.map((book) => (
-            <Tap
-              key={book.id}
-              onPress={() =>
-                openBook({
-                  cover: book.coverUrl,
-                  title: book.title,
-                  url: book.readUrl,
-                })
-              }
-            >
-              <Box
-                align="center"
-                direction="row"
-                gap={14}
-                paddingY={12}
-                style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
-              >
-                <Cover height={58} uri={book.coverUrl} width={44} />
-                <Box flex={1}>
-                  <Text numberOfLines={1} size={14} weight="600">
-                    {book.title}
-                  </Text>
-                  <Text color={t.sub} numberOfLines={1} size={12} style={{ marginTop: 3 }}>
-                    {book.author
-                      ? tr("library.collections.filedInBy", {
-                          author: book.author,
-                          collection: book.collection,
-                        })
-                      : tr("library.collections.filedIn", {
-                          collection: book.collection,
-                        })}
-                  </Text>
-                </Box>
-                <Box bg={t.accentSoft} paddingX={10} paddingY={4} rounded={20}>
+              <Cover height={58} uri={book.coverUrl} width={44} />
+              <Box flex={1}>
+                <Text numberOfLines={1} size={14} weight="600">
+                  {book.title}
+                </Text>
+                {/* <Text
+                  color={t.sub}
+                  numberOfLines={1}
+                  size={12}
+                  style={{ marginTop: 3 }}
+                >
+                  {book.author
+                    ? tr("library.collections.filedInBy", {
+                        author: book.author,
+                        collection: book.collection,
+                      })
+                    : tr("library.collections.filedIn", {
+                        collection: book.collection,
+                      })}
+                      </Text> */}
+                <Box
+                  bg={t.accentSoft}
+                  paddingX={10}
+                  paddingY={4}
+                  rounded={20}
+                  style={{ alignSelf: 'flex-start' }}
+                >
                   <Text color={t.accentText} size={11} weight="500">
                     {book.kind}
                   </Text>
                 </Box>
               </Box>
-            </Tap>
-          ))}
+            </Box>
+          </Tap>
+        ))
+      )}
 
-      <Text color={t.faint} size={12} style={{ paddingTop: 10 }}>
-        {tr("library.collections.tapSuggestion")}
-      </Text>
+      {/* {showNotice ? null : (
+        <Text color={t.faint} size={12} style={{ paddingTop: 10 }}>
+          {tr("library.collections.tapSuggestion")}
+        </Text>
+      )} */}
     </>
+  );
+}
+
+/**
+ * The refresh control: the sync glyph, turning while a fetch is in flight.
+ * Spinning the glyph itself rather than swapping in an ActivityIndicator keeps
+ * the control the same shape and size throughout, so the tap target never
+ * shifts under the thumb mid-refresh.
+ */
+function SpinningSync({
+  color,
+  spinning,
+}: {
+  color: string;
+  spinning: boolean;
+}) {
+  const angle = useSharedValue(0);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${angle.value}deg` }],
+  }));
+
+  useEffect(() => {
+    if (!spinning) {
+      // Unwind to upright instead of freezing mid-turn, which reads as a stall.
+      cancelAnimation(angle);
+      angle.set(withTiming(0, { duration: 150 }));
+      return;
+    }
+    angle.set(0);
+    angle.set(
+      withRepeat(
+        withTiming(360, { duration: SPIN_MS, easing: Easing.linear }),
+        -1,
+      ),
+    );
+  }, [angle, spinning]);
+
+  return (
+    <Animated.View style={[style, { height: 16, width: 16 }]}>
+      <IconSync color={color} size={16} />
+    </Animated.View>
   );
 }

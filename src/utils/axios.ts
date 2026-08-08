@@ -185,6 +185,20 @@ export const getApiErrorMessage = (error: unknown): string => {
 // ---------------------------------------------------------------------------
 export const authApi = {
   /**
+   * The caller's own user, anonymous or not. How a launch that already had a
+   * token learns `hasCompletedOnboarding` — `/auth/device` only answers on the
+   * launch that mints the session.
+   */
+  me: () => api.get<{ user: User }>('/auth/me').then((r) => r.data.user),
+
+  /**
+   * Record the onboarding answer against whichever row this session belongs to.
+   * Anonymous is the normal case: readers onboard before they have an account.
+   */
+  setOnboarding: (body: { hasCompletedOnboarding?: boolean; interests?: string[] }) =>
+    api.patch<{ user: User }>('/auth/onboarding', body).then((r) => r.data.user),
+
+  /**
    * Turns the anonymous row into an email account, in place (spec §1.2) —
    * `/auth/register` would create a *second* user and leave everything already
    * read, highlighted and saved behind on the first one.

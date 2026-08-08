@@ -33,7 +33,7 @@ export default function PlanScreen() {
           <Box align="center" direction="row" gap={14}>
             <Box flex={1}>
               <Text size={15} weight="600">
-                {pro ? "LexiPDF Pro (trial)" : "LexiPDF Free"}
+                {pro ? "Liqrai Pro (trial)" : "Liqrai Free"}
               </Text>
               <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
                 {pro

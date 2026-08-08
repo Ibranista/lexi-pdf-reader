@@ -141,7 +141,7 @@ export default function LoginScreen() {
           </Text>
           <Text color={t.sub} lh={20} size={13.5}>
             Your highlights, notes and words are saved on this device already.
-            Signing in keeps them across devices and unlocks Lexi.
+            Signing in keeps them across devices and unlocks Liqrai.
           </Text>
         </Box>
 

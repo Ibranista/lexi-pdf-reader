@@ -40,6 +40,8 @@ interface CollectionsState {
   remove: (id: CollectionId, uri: string) => void;
   /** Drops a document from every shelf — used when a file is gone for good. */
   forget: (uri: string) => void;
+  /** Re-points every shelf entry at a file's new uri and name after a rename. */
+  rename: (uri: string, next: { uri: string; name: string }) => void;
 }
 
 export const useCollectionsStore = create<CollectionsState>()(
@@ -81,6 +83,18 @@ export const useCollectionsStore = create<CollectionsState>()(
             Object.entries(s.items).map(([id, shelf]) => [
               id,
               shelf.filter((d) => d.uri !== uri),
+            ]),
+          ) as Shelves,
+        })),
+
+      rename: (uri, next) =>
+        set((s) => ({
+          items: Object.fromEntries(
+            Object.entries(s.items).map(([id, shelf]) => [
+              id,
+              shelf.map((d) =>
+                d.uri === uri ? { ...d, uri: next.uri, name: next.name } : d,
+              ),
             ]),
           ) as Shelves,
         })),

@@ -11,33 +11,34 @@
  * there means "has an account", which is what raises the sign-in wall. An
  * anonymous row is an identity, not an account.
  */
-import axios from 'axios';
-import Constants from 'expo-constants';
-import * as Crypto from 'expo-crypto';
-import * as Device from 'expo-device';
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import axios from "axios";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
+import { Platform } from "react-native";
+import DeviceInfo from "react-native-device-info";
 
-import { API_BASE_URL, tokenStorage, type AuthResponse } from '@/utils/api-config';
-
-const DEVICE_ID_KEY = 'deviceId';
+import {
+  API_BASE_URL,
+  tokenStorage,
+  type AuthResponse,
+} from "@/utils/api-config";
 
 /**
- * The id this install is known by. A client-generated uuid v4 kept in
- * expo-secure-store — not an OS identifier, and not security-bearing: it names
- * the device, it doesn't authenticate it.
+ * The id this install is known by — not security-bearing: it names the
+ * device, it doesn't authenticate it. Backed by react-native-device-info's
+ * getUniqueId(), which on Android is ANDROID_ID-based and on iOS is
+ * identifierForVendor (Keychain-backed fallback), rather than a value we mint
+ * ourselves — so it survives reinstalls instead of resetting on every one.
  */
-export function deviceId(): string {
-  const existing = SecureStore.getItem(DEVICE_ID_KEY);
-  if (existing) return existing;
-  const minted = Crypto.randomUUID();
-  SecureStore.setItem(DEVICE_ID_KEY, minted);
-  return minted;
+export function deviceId(): Promise<string> {
+  return DeviceInfo.getUniqueId();
 }
 
 /** The backend accepts these three; anything else (macos, windows) reads as web. */
-function platform(): 'ios' | 'android' | 'web' {
-  return Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : 'web';
+function platform(): "ios" | "android" | "web" {
+  return Platform.OS === "ios" || Platform.OS === "android"
+    ? Platform.OS
+    : "web";
 }
 
 function locale(): string | undefined {
@@ -52,14 +53,17 @@ function locale(): string | undefined {
 
 /** Bare axios: this call is what the interceptors are waiting on. */
 async function register(): Promise<void> {
-  const { data } = await axios.post<AuthResponse>(`${API_BASE_URL}/auth/device`, {
-    appVersion: Constants.expoConfig?.version,
-    deviceId: deviceId(),
-    locale: locale(),
-    model: Device.modelName ?? undefined,
-    osVersion: Device.osVersion ?? undefined,
-    platform: platform(),
-  });
+  const { data } = await axios.post<AuthResponse>(
+    `${API_BASE_URL}/auth/device`,
+    {
+      appVersion: Constants.expoConfig?.version,
+      deviceId: await deviceId(),
+      locale: locale(),
+      model: Device.modelName ?? undefined,
+      osVersion: Device.osVersion ?? undefined,
+      platform: platform(),
+    },
+  );
   tokenStorage.setTokens(data.tokens);
 }
 

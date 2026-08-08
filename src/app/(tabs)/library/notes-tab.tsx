@@ -6,9 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Box } from "@/components/atoms";
 import {
   Card,
-  IconHighlighter,
-  IconNoteDoc,
-  IconSpark,
+  NotFound,
   Segmented,
   Tap,
   Text,
@@ -57,6 +55,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
   const setPage = useAppStore((s) => s.setPage);
   const showToast = useToastStore((s) => s.showToast);
   const annotations = useAnnotationsStore((s) => s.items);
+  const removeAnnotation = useAnnotationsStore((s) => s.remove);
   const recents = useRecentsStore((s) => s.recents);
 
   /** Document behind each annotation, for its name and how to reopen it. */
@@ -193,7 +192,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                           lang: LANG_NAMES[v.lang] ?? v.lang,
                           translit: v.translit,
                         })
-                      : LANG_NAMES[v.lang] ?? v.lang}
+                      : (LANG_NAMES[v.lang] ?? v.lang)}
                   </Text>
                 </Box>
                 <Box direction="row" gap={9}>
@@ -225,7 +224,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
 
           {vocab.length === 0 ? (
             <Empty
-              icon={<IconSpark color={t.faint} size={26} />}
+              icon={<NotFound color={t.faint} size={150} />}
               text={tr("library.vocab.emptyState")}
             />
           ) : null}
@@ -252,7 +251,9 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                       size={11.5}
                       weight={doc ? "600" : "400"}
                     >
-                      {doc?.name ?? a.source ?? tr("library.notes.fromDocument")}
+                      {doc?.name ??
+                        a.source ??
+                        tr("library.notes.fromDocument")}
                     </Text>
                   </Box>
                   {doc ? (
@@ -263,6 +264,25 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
                   <Text color={t.faint} size={11}>
                     {whenLabel(a.createdAt)}
                   </Text>
+                  {/* Sits inside the card's own Tap: the inner pressable takes
+                      the touch, so deleting never also reopens the document. */}
+                  <Tap
+                    onPress={() => {
+                      removeAnnotation(a.id);
+                      showToast(
+                        section === "highlights"
+                          ? tr("library.notes.highlightRemoved")
+                          : tr("library.notes.noteRemoved"),
+                      );
+                    }}
+                    scale={0.86}
+                  >
+                    <Box paddingLeft={6} paddingY={2}>
+                      <Text color={t.faint} size={14}>
+                        ✕
+                      </Text>
+                    </Box>
+                  </Tap>
                 </Box>
 
                 <Box direction="row" gap={9}>
@@ -308,13 +328,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
 
           {(section === "highlights" ? highlights : notes).length === 0 ? (
             <Empty
-              icon={
-                section === "highlights" ? (
-                  <IconHighlighter color={t.faint} size={24} />
-                ) : (
-                  <IconNoteDoc color={t.faint} size={24} />
-                )
-              }
+              icon={<NotFound color={t.faint} size={150} />}
               text={
                 section === "highlights"
                   ? tr("library.notes.emptyHighlights")
@@ -331,7 +345,7 @@ export function NotesTab({ openReader }: { openReader: () => void }) {
 function Empty({ icon, text }: { icon: ReactNode; text: string }) {
   const t = useProtoTheme();
   return (
-    <Box align="center" gap={10} paddingX={24} paddingY={48}>
+    <Box align="center" gap={10} paddingX={12} paddingY={48}>
       {icon}
       <Text align="center" color={t.sub} lh={21} size={13}>
         {text}

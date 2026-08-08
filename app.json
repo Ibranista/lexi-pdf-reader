@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "lexipdf-reader",
+    "name": "Liqrai Reader",
     "slug": "lexipdf-reader",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -49,7 +49,15 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "expo-web-browser",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-sharing",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Liqrai uses the microphone only while you hold the mic button, to turn what you say into a question about the document you're reading.",
+          "enableBackgroundRecording": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

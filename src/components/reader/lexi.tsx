@@ -1,57 +1,117 @@
 /**
- * "Hey Lexi" — the reading companion bubble and chat sheet, with the
- * prototype's drift / rabbit-hole redirection behavior.
+ * "Hey Liqrai" — the reading companion bubble and its chat panel.
  *
- * The sheet is a @gorhom/bottom-sheet modal so it inherits real keyboard
- * avoidance: `keyboardBehavior="interactive"` lifts the whole sheet with the
- * keyboard, keeping the composer and the latest replies visible. On Android's
- * edge-to-edge window the OS no longer resizes anything, so this is the only
- * thing that keeps the input off the keyboard.
+ * The panel slides in from the right edge, the same side-drawer shape as
+ * `PdfOutlineDrawer` / `PdfSearchPanel`, rather than the bottom sheet it used
+ * to be: over a page of text a right-hand panel keeps the passage you're asking
+ * about visible on the left instead of burying it under a sheet.
+ *
+ * Keyboard: there is no sheet doing the avoidance any more, so the panel does
+ * it itself off `useReanimatedKeyboardAnimation` — its content area is padded
+ * by the live keyboard height, which pushes the composer up and shrinks the
+ * message list. That hook flips the activity to `adjustResize` while the panel
+ * is mounted and restores the app's `adjustPan` on unmount, so the gorhom
+ * sheets elsewhere keep the input mode they were written against. Under
+ * edge-to-edge neither mode moves the window on its own, so the padding below
+ * is the only compensation applied — nothing double-counts.
  */
-import {
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-  BottomSheetView,
-  BottomSheetModal as GorhomBottomSheetModal,
-  type BottomSheetScrollViewMethods,
-} from "@gorhom/bottom-sheet";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ComponentProps,
+  type ReactNode,
 } from "react";
+import {
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
+import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import Reanimated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
-import { Box } from "@/components/atoms";
+import { Box, TextInput } from "@/components/atoms";
 import {
+  IconBack,
+  IconCheck,
   IconClose,
+  IconMic,
   IconSend,
   IconSpark,
-  IconWave,
-  Text,
+  IconSpeaker,
+  IconTrash,
+  LiveWave,
+  SpeakingWave,
   Tap,
+  Text,
 } from "@/components/lexi-components";
+import { CenterModal } from "@/components/modals";
+import { palette } from "@/constants/colors";
 import { LEXI_SEED } from "@/constants/library";
+import { useVoiceInput } from "@/hooks/use-voice-input";
 import {
   AiQuotaError,
+  cachedChatHistory,
+  clearChatHistory,
   fetchChatHistory,
   speakText,
   streamChat,
 } from "@/services/lexi-ai";
-import { useAppStore } from "@/stores/app-store";
+import {
+  useAnnotationsStore,
+  type Annotation,
+} from "@/stores/annotations-store";
+import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { sansFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
 
 interface LexiMsg {
   role: "lexi" | "user";
   kind: "drift" | "normal" | "recap" | "error";
   text: string;
+  /** A highlight of yours the reply leaned on, shown as a quoted source card. */
+  cite?: { page: number; text: string };
 }
+
+/** Composer growth bounds — one line, then up to ~5 before the draft scrolls. */
+const INPUT_MIN = 22;
+const INPUT_MAX = 112;
+/** Don't show the jump-to-start affordance until the reader has browsed back. */
+const SCROLL_TO_TOP_REVEAL_DISTANCE = 120;
+
+/** Keeps the off-screen audio WebView out of the layout entirely. */
+const ZERO_SIZE = {
+  position: "absolute",
+  width: 0,
+  height: 0,
+  opacity: 0,
+} as const;
+
+/**
+ * Openers offered while the composer is empty and nothing is streaming. Phrased
+ * to fit whatever is open — "what is the author saying" is a fine question of a
+ * book and a strange one of a CV or an invoice.
+ */
+const STARTERS = ["What's the key point here?", "Explain this concept"];
 
 const DOC_WORDS = [
   "edison",
@@ -118,6 +178,88 @@ function scriptedReply(
   };
 }
 
+/** Elapsed recording time, as a clock rather than a bare second count. */
+function mmss(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+/** A quiet three-dot pulse while Liqrai is forming the next reply. */
+function TypingDot({ color, delay }: { color: string; delay: number }) {
+  const pulse = useSharedValue(0.3);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withDelay(delay, withTiming(1, { duration: 190 })),
+        withTiming(0.3, { duration: 190 }),
+        withDelay(540 - delay, withTiming(0.3, { duration: 1 })),
+      ),
+      -1,
+      false,
+    );
+  }, [delay, pulse]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: pulse.value,
+    transform: [{ translateY: (1 - pulse.value) * 3 }],
+  }));
+
+  return (
+    <Reanimated.View
+      style={[
+        { backgroundColor: color, borderRadius: 3, height: 6, width: 6 },
+        style,
+      ]}
+    />
+  );
+}
+
+function TypingDots({ color }: { color: string }) {
+  return (
+    <Box align="center" direction="row" gap={5} height={21} paddingX={2}>
+      <TypingDot color={color} delay={0} />
+      <TypingDot color={color} delay={180} />
+      <TypingDot color={color} delay={360} />
+    </Box>
+  );
+}
+
+/** Content words only — "the", "and" and friends match every reply going. */
+function keyWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+}
+
+/**
+ * The highlight a reply actually leaned on, or nothing.
+ *
+ * The model isn't asked to cite, so this reads the finished reply back against
+ * the reader's own highlights and only claims a source when most of a
+ * highlight's content words turn up in the answer. A miss shows no card, which
+ * is the point — a card that appears when the reply didn't use the highlight
+ * would be worse than no card at all.
+ */
+function citedHighlight(reply: string, highlights: Annotation[]) {
+  const hay = reply.toLowerCase();
+  let best: Annotation | undefined;
+  let bestScore = 0.6;
+  for (const h of highlights) {
+    const words = keyWords(h.text);
+    if (words.length < 3) continue;
+    const score = words.filter((w) => hay.includes(w)).length / words.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = h;
+    }
+  }
+  return best ? { page: best.page, text: best.text } : undefined;
+}
+
 export function LexiBubble({ onPress }: { onPress: () => void }) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
@@ -153,27 +295,35 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
       >
         <IconSpark color={t.accent} size={16} />
         <Text size={13} weight="600">
-          Hey Lexi
+          Hey Liqrai
         </Text>
       </Box>
     </Tap>
   );
 }
 
-/** The document Lexi is allowed to talk about. */
+/** The document Liqrai is allowed to talk about. */
 export interface LexiBook {
   title: string;
   author?: string;
   /**
    * Sync key of the document (64 hex, from `docKeyFor`), so the model can reach
    * its indexed text. Required — `/ai/chat` rejects a turn without one, so a
-   * screen that hasn't derived it yet should hold the sheet closed rather than
-   * open it on a document Lexi can't look up.
+   * screen that hasn't derived it yet should hold the panel closed rather than
+   * open it on a document Liqrai can't look up.
    */
   docKey: string;
   page: number;
+  /** Title of the section the page falls in, when the document names one. */
+  chapter?: string;
   /** Text of the page in view, so answers can quote what's on screen. */
   excerpt?: string;
+  /**
+   * This device's pointer to the document. Only used to find its annotations:
+   * a highlight made offline has no `docKey` yet, so matching on that alone
+   * would silently drop the newest ones.
+   */
+  uri?: string;
 }
 
 export function LexiSheet({
@@ -189,21 +339,96 @@ export function LexiSheet({
 }) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const explStyle = useAppStore((s) => s.explStyle);
+  const showToast = useToastStore((s) => s.showToast);
   const setQuota = useAuthStore((s) => s.setQuota);
   const openWall = useAuthStore((s) => s.openWall);
+  const annotations = useAnnotationsStore((s) => s.items);
 
-  const sheetRef = useRef<GorhomBottomSheetModal>(null);
-  const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
-  // A fixed height (not dynamic sizing) so the messages list can flex and the
-  // composer sits at the bottom, where `keyboardBehavior` can lift it.
-  const snapPoints = useMemo(() => ["86%"], []);
+  const scrollRef = useRef<ScrollView>(null);
+  const panelWidth = Math.min(width * 0.9, 420);
+
+  const waveBars = Math.floor(width / 6);
+
+  // ── enter / exit ───────────────────────────────────────────────
+  // `anim` drives both the slide and the backdrop fade; the exit runs to
+  // completion before `onClose` unmounts us, so the panel is never yanked.
+  const anim = useSharedValue(0);
+  const kb = useReanimatedKeyboardAnimation();
+
+  // The entrance runs off first layout rather than an effect: the panel starts
+  // parked off the right edge, so it can only slide in once it has been laid
+  // out there. (It also has to be written before any hook closes over `anim` —
+  // the compiler rules forbid mutating a value a hook already captured.)
+  const entered = useRef(false);
+  const onPanelLayout = () => {
+    if (entered.current) return;
+    entered.current = true;
+    anim.value = withTiming(1, {
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+    });
+  };
+
+  const close = useCallback(() => {
+    Keyboard.dismiss();
+    anim.value = withTiming(
+      0,
+      { duration: 200, easing: Easing.in(Easing.cubic) },
+      (finished) => {
+        if (finished) runOnJS(onClose)();
+      },
+    );
+    // `anim` is a shared value — stable across renders, so it stays out of deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose]);
+
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: (1 - anim.value) * panelWidth }],
+  }));
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: anim.value }));
+  // `kb.height` is negative as the keyboard rises; padding the content area by
+  // it lifts the composer and shortens the message list by the same amount.
+  const contentStyle = useAnimatedStyle(() => ({
+    paddingBottom: -kb.height.value,
+  }));
+  // The home-indicator inset is only worth reserving while the keyboard is
+  // down — with it up, the gesture bar is behind the keyboard.
+  const composerStyle = useAnimatedStyle(() => ({
+    paddingBottom: 10 + insets.bottom * (1 - kb.progress.value),
+  }));
 
   // The conversation is keyed to the book itself (its docKey), so reopening the
-  // sheet on the same document continues the same thread rather than starting a
+  // panel on the same document continues the same thread rather than starting a
   // fresh one — which is what lets prior turns be loaded back below.
   const sessionId = book?.docKey ?? "";
 
+  // Everything this reader has marked up in this document, newest first.
+  const docNotes = useMemo(() => {
+    if (!book) return [];
+    return annotations
+      .filter(
+        (a) =>
+          (book.uri && a.uri === book.uri) ||
+          (a.docKey && a.docKey === book.docKey),
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [annotations, book]);
+
+  // Where the reader is, and nothing else — the chapter is dropped rather than
+  // padded out when the document has no outline to name one.
+  const subtitle = book
+    ? [`Page ${book.page}`, book.chapter?.trim() || null]
+        .filter(Boolean)
+        .join(" · ")
+    : "Chapter 3";
+
+  // Deliberately says nothing about what kind of document this is. The opener
+  // is written before anything has been asked, and the only thing on hand to
+  // guess from is a filename — which is as likely to be a scanner's serial as
+  // it is a title. Offering a book's "where the argument is going" over
+  // someone's CV reads worse than staying plain.
   const greeting = useMemo<LexiMsg[]>(
     () =>
       book
@@ -211,15 +436,34 @@ export function LexiSheet({
             {
               role: "lexi",
               kind: "normal",
-              text: `I've got ${book.title} open in front of me. Ask me anything about it — what a passage means, why it matters, where an argument is going.`,
+              text: `I've got ${book.title} open in front of me. Ask about anything in it — a line you're stuck on, something that needs unpacking, or what a page adds up to.`,
             },
           ]
         : LEXI_SEED,
     [book],
   );
 
-  const [messages, setMessages] = useState<LexiMsg[]>(greeting);
+  const initialHistory = book ? cachedChatHistory(sessionId) : undefined;
+  const [messages, setMessages] = useState<LexiMsg[]>(
+    () =>
+      initialHistory?.map((m) => ({
+        role: m.role === "user" ? "user" : "lexi",
+        kind: m.kind,
+        text: m.content,
+      })) ?? greeting,
+  );
+  // Wait for the persisted thread before mounting the list. Rendering the
+  // greeting first and replacing it with history made the panel visibly jump
+  // from the top of the conversation to the bottom on open.
+  const [historyReady, setHistoryReady] = useState(
+    !book || initialHistory !== undefined,
+  );
+  const [historyVisible, setHistoryVisible] = useState(!book);
   const [input, setInput] = useState("");
+  const [inputH, setInputH] = useState(INPUT_MIN);
+  // Confirmation for wiping the thread, and the wipe itself once confirmed.
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   // The reply currently streaming in, shown as a live bubble; null when idle.
   const [streaming, setStreaming] = useState<string | null>(null);
   const busy = streaming !== null;
@@ -227,68 +471,172 @@ export function LexiSheet({
   const replyIdx = useRef(0);
   const lastQuestion = useRef("");
   const abortRef = useRef<(() => void) | null>(null);
+  const scrollFrame = useRef<number | null>(null);
+  const initiallyPositioned = useRef(false);
+  const staysAtBottom = useRef(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   // Text accumulated for the in-flight reply — read on completion, off-render.
   const accRef = useRef("");
-
-  // Present on mount; `onClose` runs from onDismiss so the pan-down gesture,
-  // the backdrop tap and the ✕ all funnel through the same teardown.
+  // Read inside the stream callbacks, which close over the turn they started on.
+  const notesRef = useRef(docNotes);
   useEffect(() => {
-    sheetRef.current?.present();
-  }, []);
+    notesRef.current = docNotes;
+  }, [docNotes]);
 
   // Rehydrate the book's earlier conversation, so the reader picks up where
-  // they left off instead of a blank slate every time the sheet opens.
+  // they left off instead of a blank slate every time the panel opens.
   useEffect(() => {
     if (!book || !sessionId) return;
+    // The document screen normally preloads this before the drawer mounts.
+    // In that case the state above already contains the complete thread.
+    if (cachedChatHistory(sessionId) !== undefined) return;
     let cancelled = false;
-    void fetchChatHistory(sessionId).then((history) => {
-      if (cancelled || !history.length) return;
-      setMessages(
-        history.map((m) => ({
-          role: m.role === "user" ? "user" : "lexi",
-          kind: m.kind,
-          text: m.content,
-        })),
-      );
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80);
-    });
+    initiallyPositioned.current = false;
+    staysAtBottom.current = true;
+    void Promise.resolve()
+      .then(() => {
+        if (cancelled) return null;
+        setShowScrollTop(false);
+        setHistoryReady(false);
+        return fetchChatHistory(sessionId);
+      })
+      .then((history) => {
+        if (cancelled || !history) return;
+        setMessages(
+          history.length
+            ? history.map((m) => ({
+                role: m.role === "user" ? "user" : "lexi",
+                kind: m.kind,
+                text: m.content,
+              }))
+            : greeting,
+        );
+        setHistoryVisible(false);
+        setHistoryReady(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [book, sessionId]);
+  }, [book, greeting, sessionId]);
 
-  // Abort any in-flight stream if the sheet unmounts mid-reply.
+  // Abort any in-flight stream if the panel unmounts mid-reply.
   useEffect(() => () => abortRef.current?.(), []);
 
-  const close = useCallback(() => sheetRef.current?.dismiss(), []);
+  // The list shrinks when the keyboard opens; keep the newest replies in view.
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      scrollRef.current?.scrollToEnd({ animated: true }),
+    );
+    return () => show.remove();
+  }, []);
 
   const push = (msg: LexiMsg) => setMessages((prev) => [...prev, msg]);
-  const scrollToEnd = () =>
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+  const scrollToEnd = useCallback((animated = true, force = false) => {
+    if ((!force && !staysAtBottom.current) || scrollFrame.current !== null) {
+      return;
+    }
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      scrollRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+  const onMessagesScroll = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
+      const distanceFromBottom = Math.max(
+        0,
+        contentSize.height - (contentOffset.y + layoutMeasurement.height),
+      );
+      staysAtBottom.current = distanceFromBottom <= 24;
+      // The list opens at the latest message. The control belongs to the
+      // backwards journey through history, not to that initial position.
+      const awayFromLatest =
+        distanceFromBottom >= SCROLL_TO_TOP_REVEAL_DISTANCE;
+      setShowScrollTop((visible) =>
+        visible === awayFromLatest ? visible : awayFromLatest,
+      );
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      if (scrollFrame.current !== null) {
+        cancelAnimationFrame(scrollFrame.current);
+      }
+    },
+    [],
+  );
 
   // ── read a reply aloud ─────────────────────────────────────────
   // Same off-screen WebView trick as the word card: no native audio module, so
-  // it works without a rebuild. `seq` replays the same bubble on a re-tap.
-  const [heard, setHeard] = useState<{ url: string; seq: number } | null>(null);
+  // it works without a rebuild. `key` is the bubble being read (so only that
+  // one shows a stop button) and `seq` replays the same bubble on a re-tap.
+  const [voice, setVoice] = useState<{
+    key: number;
+    seq: number;
+    url?: string;
+  } | null>(null);
+
   const audioNode = useMemo(() => {
-    if (!heard) return null;
-    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio autoplay playsinline src="${heard.url}"></audio></body></html>`;
+    if (!voice?.url) return null;
+    // The clip reports back when it runs out, which is what flips the bubble's
+    // stop button back to a speaker without the reader having to touch it.
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>var a=document.getElementById('a');var done=function(){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage('ended')};a.addEventListener('ended',done);a.addEventListener('error',done);</script></body></html>`;
     return (
       <WebView
         allowsInlineMediaPlayback
-        key={heard.seq}
+        // Both styles matter: the container defaults to `flex: 1`, which would
+        // otherwise eat half the panel's column height.
+        containerStyle={ZERO_SIZE}
+        key={voice.seq}
         mediaPlaybackRequiresUserAction={false}
         mixedContentMode="always"
+        onMessage={() => setVoice(null)}
         pointerEvents="none"
         source={{ html }}
-        style={{ position: "absolute", width: 0, height: 0, opacity: 0 }}
+        style={ZERO_SIZE}
       />
     );
-  }, [heard]);
+  }, [voice]);
 
-  const hearReply = async (text: string) => {
+  /** Speak this bubble, or stop it if it is the one already speaking. */
+  const toggleVoice = async (key: number, text: string) => {
+    if (voice?.key === key) {
+      setVoice(null);
+      return;
+    }
+    const seq = (voice?.seq ?? 0) + 1;
+    setVoice({ key, seq });
     const url = await speakText(text);
-    if (url) setHeard((prev) => ({ url, seq: (prev?.seq ?? 0) + 1 }));
+    // A stop, or a tap on another bubble, happened while the clip was being
+    // fetched — that newer intent wins.
+    setVoice((cur) =>
+      cur && cur.seq === seq ? (url ? { ...cur, url } : null) : cur,
+    );
+  };
+
+  /**
+   * What Liqrai can see beyond the page text: the passages this reader marked
+   * up, so an answer can build on what they already thought was worth keeping —
+   * and so the source card below has something real to quote back.
+   */
+  const readerContext = () => {
+    if (!book) return undefined;
+    const onPage = docNotes.filter((a) => a.page === book.page);
+    const others = docNotes.filter((a) => a.page !== book.page).slice(0, 6);
+    const lines = [...onPage, ...others]
+      .slice(0, 10)
+      .map(
+        (a) =>
+          `- p.${a.page} "${a.text}"${
+            a.note.trim() ? ` — their note: ${a.note.trim()}` : ""
+          }`,
+      );
+    if (!lines.length) return book.excerpt;
+    return [book.excerpt, `The reader's highlights:\n${lines.join("\n")}`]
+      .filter(Boolean)
+      .join("\n\n");
   };
 
   const runChat = async (q: string) => {
@@ -298,7 +646,7 @@ export function LexiSheet({
       {
         author: book!.author,
         docKey: book!.docKey,
-        excerpt: book!.excerpt,
+        excerpt: readerContext(),
         message: q,
         page: book!.page,
         sessionId,
@@ -316,7 +664,17 @@ export function LexiSheet({
           setStreaming(null);
           if (quota) setQuota(quota);
           const text = accRef.current.trim();
-          if (text) push({ role: "lexi", kind, text });
+          if (text) {
+            push({
+              role: "lexi",
+              kind,
+              text,
+              cite: citedHighlight(text, notesRef.current),
+            });
+            // The answer landed — a soft tap says so without stealing the eyes
+            // back from the page you were reading.
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
           scrollToEnd();
         },
         onError: (error) => {
@@ -335,24 +693,58 @@ export function LexiSheet({
             text:
               error instanceof Error
                 ? error.message
-                : "Lexi couldn't answer just then.",
+                : "Liqrai couldn't answer just then.",
           });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           scrollToEnd();
         },
       },
     );
   };
 
-  const send = () => {
-    const q = input.trim();
+  const canSend = input.trim().length > 0 && !busy;
+  // Nothing but the opener means there is nothing to clear.
+  const canClear = messages.length > 1 && !busy;
+
+  /**
+   * Wipe the thread — on the server first. Clearing only the device would look
+   * like it worked right up until the panel reopened and refetched the history,
+   * so a failed delete leaves the conversation where it is and says so.
+   */
+  const clearThread = async () => {
+    if (clearing) return;
+    setClearing(true);
+    const gone = book ? await clearChatHistory(sessionId) : true;
+    setClearing(false);
+    setConfirmClear(false);
+
+    if (!gone) {
+      showToast("Couldn't clear that conversation — try again");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    // The prototype's seeded demo would be odd to "restore" after a wipe, so
+    // only a real document gets its opener back.
+    setMessages(book ? greeting : []);
+    setVoice(null);
+    lastQuestion.current = "";
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    showToast("Conversation cleared");
+  };
+
+  const submit = (raw: string) => {
+    const q = raw.trim();
     if (!q || busy) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     push({ role: "user", kind: "normal", text: q });
     setInput("");
+    setInputH(INPUT_MIN);
     scrollToEnd();
 
-    // No document behind the sheet — the prototype reader's scripted path.
+    // No document behind the panel — the prototype reader's scripted path.
     if (!book) {
       push(scriptedReply(q, rabbitCount, replyIdx));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       scrollToEnd();
       return;
     }
@@ -372,268 +764,656 @@ export function LexiSheet({
     void runChat(lastQuestion.current);
   };
 
-  const renderBackdrop = useCallback(
-    (props: ComponentProps<typeof BottomSheetBackdrop>) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
+  // ── voice input ────────────────────────────────────────────────
+  // Named `mic` because `voice` above is the other direction: reading a reply
+  // aloud. This one is the reader talking to Liqrai.
+  const mic = useVoiceInput(showToast);
 
-  return (
-    <GorhomBottomSheetModal
-      android_keyboardInputMode="adjustResize"
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: t.card }}
-      enableDynamicSizing={false}
-      handleIndicatorStyle={{ backgroundColor: t.line }}
-      index={0}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      onDismiss={onClose}
-      ref={sheetRef}
-      snapPoints={snapPoints}
-    >
-      <BottomSheetView style={{ flex: 1 }}>
-        {audioNode}
+  /**
+   * End the recording and drop what was said into the composer.
+   *
+   * A transcript is a guess at speech, so it lands as an editable draft rather
+   * than being sent — the same rule the opener chips follow. Appending instead
+   * of replacing means dictating twice, or dictating onto something already
+   * typed, adds to the question rather than eating it.
+   */
+  const finishVoice = async () => {
+    try {
+      const text = await mic.stop();
+      if (!text) return;
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      // Out of credits — the hook leaves the wall to us, since it is this
+      // panel that has to get out of the way behind it.
+      if (error instanceof AiQuotaError) {
+        setQuota(error.quota);
+        if (error.requiresAuth) openWall("quota");
+        close();
+      }
+    }
+  };
+
+  const startVoice = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void mic.start();
+  };
+
+  // ── a message ──────────────────────────────────────────────────
+  const renderMessage = (m: LexiMsg, i: number): ReactNode => {
+    const user = m.role === "user";
+    const special = m.kind === "drift" || m.kind === "recap";
+    const isError = m.kind === "error";
+    // `armed` covers the wait for the clip too, so the button reacts to the tap
+    // instead of sitting dead until the voice comes back off the network.
+    const armed = voice?.key === i;
+    const playing = armed && Boolean(voice?.url);
+    const loading = armed && !playing;
+    return (
+      <Box key={i} paddingY={5}>
         <Box
-          align="center"
-          direction="row"
-          gap={10}
-          paddingX={18}
-          paddingY={12}
-          style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
-        >
-          <Box
-            align="center"
-            bg={t.accentSoft}
-            height={36}
-            justify="center"
-            rounded={12}
-            width={36}
-          >
-            <IconSpark color={t.accent} size={18} />
-          </Box>
-          <Box flex={1}>
-            <Text size={15} weight="600">
-              Lexi
-            </Text>
-            <Text color={t.sub} numberOfLines={1} size={11}>
-              {book
-                ? `${book.title} · p. ${book.page}`
-                : "Your reading companion · Ch. 3"}
-            </Text>
-          </Box>
-          <Box bg={t.calmSoft} paddingX={10} paddingY={4} rounded={12}>
-            <Text color={t.calm} size={11} weight="600">
-              You’re on track ✓
-            </Text>
-          </Box>
-          <Tap onPress={close}>
-            <Box
-              align="center"
-              height={32}
-              justify="center"
-              rounded={10}
-              width={32}
-            >
-              <IconClose color={t.sub} size={15} />
-            </Box>
-          </Tap>
-        </Box>
-
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
-          keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() =>
-            scrollRef.current?.scrollToEnd({ animated: false })
+          bg={user ? t.onAccent : isError ? t.accentSoft : t.card}
+          borderColor={
+            isError
+              ? t.accentMid
+              : special
+                ? t.accentMid
+                : user
+                  ? t.onAccent
+                  : t.line
           }
-          ref={scrollRef}
-          style={{ flex: 1 }}
-        >
-          {messages.map((m, i) => {
-            const user = m.role === "user";
-            const special = m.kind === "drift" || m.kind === "recap";
-            const isError = m.kind === "error";
-            return (
-              <Box
-                direction="row"
-                justify={user ? "end" : "start"}
-                key={i}
-                paddingY={5}
-              >
-                <Box
-                  bg={user ? t.pill : isError ? t.accentSoft : t.chip}
-                  borderColor={
-                    isError
-                      ? t.accentMid
-                      : special
-                        ? t.calmLine
-                        : "transparent"
-                  }
-                  borderWidth={1}
-                  gap={8}
-                  maxWidth={300}
-                  paddingX={14}
-                  paddingY={10}
-                  rounded={16}
-                  style={{ maxWidth: "80%" }}
-                >
-                  <Text color={user ? t.pillText : t.ink} lh={20} size={13.5}>
-                    {m.text}
-                  </Text>
-                  {isError ? (
-                    <Tap
-                      onPress={retry}
-                      scale={0.95}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      <Box
-                        bg={t.accentSoft}
-                        paddingX={12}
-                        paddingY={8}
-                        rounded={10}
-                      >
-                        <Text color={t.accent} size={12} weight="600">
-                          Try again
-                        </Text>
-                      </Box>
-                    </Tap>
-                  ) : null}
-                  {m.kind === "drift" ? (
-                    <Tap
-                      onPress={close}
-                      scale={0.95}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      <Box
-                        bg={t.calmSoft}
-                        paddingX={12}
-                        paddingY={8}
-                        rounded={10}
-                      >
-                        <Text color={t.calm} size={12} weight="600">
-                          Back to reading
-                        </Text>
-                      </Box>
-                    </Tap>
-                  ) : null}
-                  {m.kind === "recap" ? (
-                    <Box
-                      bg={t.calmSoft}
-                      paddingX={9}
-                      paddingY={4}
-                      rounded={10}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      <Text color={t.calm} size={10.5} weight="600">
-                        You’re on track ✓
-                      </Text>
-                    </Box>
-                  ) : null}
-                  {/* Hear the reply read aloud in Lexi's voice. */}
-                  {!user && !isError ? (
-                    <Tap
-                      onPress={() => hearReply(m.text)}
-                      scale={0.9}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      <Box
-                        align="center"
-                        direction="row"
-                        gap={5}
-                        paddingY={2}
-                      >
-                        <IconWave color={t.sub} size={13} />
-                        <Text color={t.sub} size={11} weight="600">
-                          Hear it
-                        </Text>
-                      </Box>
-                    </Tap>
-                  ) : null}
-                </Box>
-              </Box>
-            );
-          })}
-
-          {/* The reply as it streams in — a placeholder until the first token. */}
-          {streaming !== null ? (
-            <Box direction="row" justify="start" paddingY={5}>
-              <Box
-                bg={t.chip}
-                paddingX={14}
-                paddingY={10}
-                rounded={16}
-                style={{ maxWidth: "80%" }}
-              >
-                {streaming ? (
-                  <Text color={t.ink} lh={20} size={13.5}>
-                    {streaming}
-                  </Text>
-                ) : (
-                  <Text color={t.sub} size={13.5}>
-                    Reading that back…
-                  </Text>
-                )}
-              </Box>
-            </Box>
-          ) : null}
-        </BottomSheetScrollView>
-
-        <Box
-          paddingTop={12}
-          paddingX={16}
+          borderWidth={1}
+          gap={9}
+          paddingX={14}
+          paddingY={11}
+          rounded={16}
           style={{
-            paddingBottom: 14 + insets.bottom,
-            borderTopWidth: 1,
-            borderTopColor: t.line,
+            alignSelf: user ? "flex-end" : "flex-start",
+            maxWidth: "88%",
+            ...(user
+              ? null
+              : {
+                  shadowColor: "#14100C",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: t.dark ? 0 : 0.05,
+                  shadowRadius: 8,
+                  elevation: 1,
+                }),
           }}
         >
-          <Box
-            align="center"
-            bg={t.chip}
-            direction="row"
-            gap={9}
-            paddingLeft={16}
-            paddingRight={5}
-            paddingY={5}
-            rounded={24}
-          >
-            <BottomSheetTextInput
-              onChangeText={setInput}
-              onSubmitEditing={send}
-              placeholder="Hey Lexi… ask about this document"
-              placeholderTextColor={t.faint}
-              returnKeyType="send"
+          <Text color={user ? t.pill : t.ink} lh={21} size={13.5}>
+            {m.text}
+          </Text>
+          {isError ? (
+            <Tap
+              onPress={retry}
+              scale={0.95}
+              style={{ alignSelf: "flex-start" }}
+            >
+              <Box bg={t.accentSoft} paddingX={12} paddingY={8} rounded={10}>
+                <Text color={t.accent} size={12} weight="600">
+                  Try again
+                </Text>
+              </Box>
+            </Tap>
+          ) : null}
+          {m.kind === "drift" ? (
+            <Tap
+              onPress={close}
+              scale={0.95}
+              style={{ alignSelf: "flex-start" }}
+            >
+              <Box bg={t.accentSoft} paddingX={12} paddingY={8} rounded={10}>
+                <Text color={t.accent} size={12} weight="600">
+                  Back to reading
+                </Text>
+              </Box>
+            </Tap>
+          ) : null}
+          {/* {m.kind === "recap" ? (
+            <Box
+              bg={t.calmSoft}
+              paddingX={9}
+              paddingY={4}
+              rounded={10}
+              style={{ alignSelf: "flex-start" }}
+            >
+              <Text color={t.calm} size={10.5} weight="600">
+                You’re on track ✓
+              </Text>
+            </Box>
+          ) : null} */}
+          {/* Read aloud in Liqrai's voice — bottom right of the bubble. While
+              this is the reply speaking it waves; tapping it stops. */}
+          {!user && !isError ? (
+            <Tap
+              onPress={() => toggleVoice(i, m.text)}
+              scale={0.88}
+              // Tucked into the bubble's own padding: a full 32pt tap target
+              // that doesn't make every reply that much taller.
               style={{
-                flex: 1,
-                minWidth: 0,
-                paddingVertical: 10,
-                fontSize: 14,
-                color: t.ink,
+                alignSelf: "flex-end",
+                marginBottom: -5,
+                marginRight: -5,
               }}
-              value={input}
-            />
-            <Tap onPress={send} scale={0.92}>
+            >
               <Box
                 align="center"
-                bg={t.accent}
-                height={36}
+                bg={armed ? t.accentSoft : "transparent"}
+                height={32}
                 justify="center"
-                rounded={18}
-                width={36}
+                rounded={16}
+                width={32}
               >
-                <IconSend color={t.onAccent} size={15} />
+                {playing ? (
+                  <SpeakingWave color={t.accent} />
+                ) : loading ? (
+                  <ActivityIndicator color={t.accent} size="small" />
+                ) : (
+                  <IconSpeaker color={t.sub} size={16} />
+                )}
+              </Box>
+            </Tap>
+          ) : null}
+        </Box>
+
+        {/* The highlight the answer drew on, quoted back under it. */}
+        {m.cite ? (
+          <Box
+            bg={t.accentSoft}
+            marginTop={7}
+            paddingLeft={13}
+            paddingRight={14}
+            paddingY={11}
+            rounded={12}
+            style={{
+              alignSelf: "flex-start",
+              maxWidth: "88%",
+              borderLeftWidth: 3,
+              borderLeftColor: t.accent,
+            }}
+          >
+            <Text color={t.accentText} ls={0.7} size={9.5} upper weight="700">
+              {`From your highlight · p. ${m.cite.page}`}
+            </Text>
+            <Text
+              color={t.readerInk}
+              italic
+              lh={20}
+              serif
+              size={13}
+              style={{ marginTop: 6 }}
+            >
+              {`“${m.cite.text}”`}
+            </Text>
+          </Box>
+        ) : null}
+      </Box>
+    );
+  };
+
+  return (
+    <>
+      <Reanimated.View
+        style={[
+          backdropStyle,
+          {
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: "rgba(20,16,12,.38)",
+            zIndex: 38,
+          },
+        ]}
+      >
+        <Pressable onPress={close} style={{ flex: 1 }} />
+      </Reanimated.View>
+
+      <Reanimated.View
+        onLayout={onPanelLayout}
+        style={[
+          panelStyle,
+          {
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            right: 0,
+            width: panelWidth,
+            zIndex: 39,
+            shadowColor: "#14100C",
+            shadowOffset: { width: -12, height: 0 },
+            shadowOpacity: 0.3,
+            shadowRadius: 40,
+            elevation: 24,
+          },
+        ]}
+      >
+        {/* Radius + clipping live here so the outer view keeps its shadow. */}
+        <Reanimated.View
+          style={[
+            contentStyle,
+            {
+              flex: 1,
+              backgroundColor: t.bg,
+              borderTopLeftRadius: 22,
+              borderBottomLeftRadius: 22,
+              overflow: "hidden",
+              paddingTop: insets.top,
+            },
+          ]}
+        >
+          {audioNode}
+
+          <Box
+            align="center"
+            direction="row"
+            gap={11}
+            paddingX={16}
+            paddingY={14}
+          >
+            <Image
+              // The app icon carries its own dark ground, so it needs no plate
+              // behind it — just the same rounding as the badge it replaced.
+              contentFit="cover"
+              source={require("@/assets/images/icon.png")}
+              style={{ width: 34, height: 34, borderRadius: 11 }}
+            />
+            <Box flex={1} gap={2}>
+              <Text size={14.5} weight="700">
+                Reading companion
+              </Text>
+              <Text color={t.sub} numberOfLines={1} size={11}>
+                {subtitle}
+              </Text>
+            </Box>
+            {/* Only offered once there is a thread to lose. */}
+            {canClear ? (
+              <Tap onPress={() => setConfirmClear(true)} scale={0.9}>
+                <Box
+                  align="center"
+                  height={32}
+                  justify="center"
+                  rounded={16}
+                  width={32}
+                >
+                  <IconTrash color={t.sub} size={16} />
+                </Box>
+              </Tap>
+            ) : null}
+            <Tap onPress={close}>
+              <Box
+                align="center"
+                height={32}
+                justify="center"
+                rounded={10}
+                width={32}
+              >
+                <IconClose color={t.sub} size={15} />
               </Box>
             </Tap>
           </Box>
+
+          <Box flex={1} style={{ position: "relative" }}>
+            {historyReady ? (
+              <Box flex={1} style={{ opacity: historyVisible ? 1 : 0 }}>
+                <ScrollView
+                  contentContainerStyle={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                  }}
+                  keyboardDismissMode="on-drag"
+                  keyboardShouldPersistTaps="handled"
+                  onContentSizeChange={() => {
+                    if (!initiallyPositioned.current) {
+                      initiallyPositioned.current = true;
+                      scrollToEnd(false, true);
+                      // Queue behind `scrollToEnd`'s frame so the reader sees
+                      // the list only after it is already at the latest turn.
+                      requestAnimationFrame(() => {
+                        setHistoryVisible(true);
+                      });
+                    } else {
+                      scrollToEnd();
+                    }
+                  }}
+                  onScroll={onMessagesScroll}
+                  ref={scrollRef}
+                  scrollEventThrottle={16}
+                  style={{ flex: 1 }}
+                >
+                  {messages.map(renderMessage)}
+
+                  {/* The reply as it streams in — a placeholder until the first token. */}
+                  {streaming !== null ? (
+                    <Box paddingY={5}>
+                      <Box
+                        bg={t.card}
+                        borderColor={t.line}
+                        borderWidth={1}
+                        paddingX={14}
+                        paddingY={11}
+                        rounded={16}
+                        style={{ alignSelf: "flex-start", maxWidth: "88%" }}
+                      >
+                        {streaming ? (
+                          <Text color={t.ink} lh={21} size={13.5}>
+                            {streaming}
+                          </Text>
+                        ) : (
+                          <TypingDots color={t.accent} />
+                        )}
+                      </Box>
+                    </Box>
+                  ) : null}
+                </ScrollView>
+              </Box>
+            ) : (
+              <Box align="center" flex={1} justify="center">
+                <ActivityIndicator color={t.accent} size="small" />
+              </Box>
+            )}
+
+            {historyReady && showScrollTop ? (
+              <Tap
+                onPress={() =>
+                  scrollRef.current?.scrollTo({ animated: true, y: 0 })
+                }
+                scale={0.9}
+                style={{ bottom: 14, position: "absolute", right: 16 }}
+              >
+                <Box
+                  align="center"
+                  bg={t.card}
+                  borderColor={t.line}
+                  borderWidth={1}
+                  height={38}
+                  justify="center"
+                  rounded={19}
+                  style={{
+                    elevation: 3,
+                    shadowColor: "#14100C",
+                    shadowOpacity: 0.14,
+                    shadowRadius: 6,
+                  }}
+                  width={38}
+                >
+                  <Box style={{ transform: [{ rotate: "90deg" }] }}>
+                    <IconBack color={t.ink} size={17} />
+                  </Box>
+                </Box>
+              </Tap>
+            ) : null}
+          </Box>
+
+          {/* Sticky footer: openers while idle, then the composer. */}
+          <Reanimated.View style={[composerStyle, { paddingTop: 6 }]}>
+            {!busy && !input.trim() && mic.phase === "idle" ? (
+              <Box
+                direction="row"
+                gap={7}
+                paddingBottom={9}
+                paddingX={14}
+                wrap="wrap"
+              >
+                {/* An opener is a draft, not a send — it lands in the composer
+                    so it can be edited before it goes anywhere. */}
+                {!messages?.length &&
+                  STARTERS.map((s) => (
+                    <Tap key={s} onPress={() => setInput(s)} scale={0.96}>
+                      <Box
+                        bg={t.chip}
+                        borderColor={t.line}
+                        borderWidth={1}
+                        paddingX={14}
+                        paddingY={9}
+                        rounded={20}
+                      >
+                        <Text color={t.ink} size={12.5} weight="500">
+                          {s}
+                        </Text>
+                      </Box>
+                    </Tap>
+                  ))}
+              </Box>
+            ) : null}
+
+            {mic.phase !== "idle" ? (
+              /* Recording takes the composer's place rather than sitting
+                 beside it: while the mic is open there is nothing else to do
+                 down here, and the three targets — discard, level, keep —
+                 want the whole width. */
+              <Box align="center" direction="row" gap={10} paddingX={12}>
+                <Tap
+                  disabled={mic.phase !== "recording"}
+                  onPress={() => void mic.cancel()}
+                  scale={0.9}
+                >
+                  <Box
+                    align="center"
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconClose color={t.sub} size={16} />
+                  </Box>
+                </Tap>
+
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  borderColor={t.line}
+                  borderWidth={1}
+                  direction="row"
+                  flex={1}
+                  gap={10}
+                  paddingX={14}
+                  paddingY={9}
+                  rounded={22}
+                >
+                  {mic.phase === "recording" ? (
+                    <>
+                      {/* Fed the microphone's real level, so silence reads as
+                          silence — the reader can see they're being heard. */}
+                      <Box flex={1}>
+                        <LiveWave
+                          color={t.accent}
+                          level={mic.level}
+                          style={{
+                            width: "100%",
+                          }}
+                          waveStyle={{ flex: 1 }}
+                        />
+                      </Box>
+                      <Text
+                        color={t.sub}
+                        size={12}
+                        style={{ minWidth: 38, textAlign: "right" }}
+                        weight="600"
+                      >
+                        {mmss(mic.seconds)}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <ActivityIndicator color={t.accent} size="small" />
+                      {/* <Text color={t.sub} size={13}>
+                        Turning that into words…
+                      </Text> */}
+                    </>
+                  )}
+                </Box>
+
+                <Tap
+                  disabled={mic.phase !== "recording"}
+                  onPress={() => void finishVoice()}
+                  scale={0.92}
+                >
+                  <Box
+                    align="center"
+                    bg={mic.phase === "recording" ? t.accent : t.line}
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconCheck
+                      color={mic.phase === "recording" ? t.onAccent : t.sub}
+                      size={16}
+                    />
+                  </Box>
+                </Tap>
+              </Box>
+            ) : (
+              <Box align="end" direction="row" gap={8} paddingX={12}>
+                <Box
+                  align="end"
+                  bg={t.chip}
+                  borderColor={t.line}
+                  borderWidth={1}
+                  direction="row"
+                  flex={1}
+                  paddingLeft={16}
+                  paddingRight={6}
+                  paddingY={7}
+                  rounded={22}
+                >
+                  <TextInput
+                    backgroundColor="transparent"
+                    borderColor="transparent"
+                    borderWidth={0}
+                    multiline
+                    onChangeText={setInput}
+                    // Grows with the draft, then scrolls once it hits the cap.
+                    onContentSizeChange={(e) =>
+                      setInputH(e.nativeEvent.contentSize.height)
+                    }
+                    placeholder="Ask about this page…"
+                    placeholderTextColor={t.faint}
+                    pl={0}
+                    px={0}
+                    py={0}
+                    rounded={0}
+                    scrollEnabled={inputH >= INPUT_MAX}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: Math.min(Math.max(inputH, INPUT_MIN), INPUT_MAX),
+                      paddingTop: 0,
+                      paddingBottom: 0,
+                      fontFamily: sansFamily["400"],
+                      fontSize: 15,
+                      lineHeight: 21,
+                      color: t.ink,
+                      textAlignVertical: "top",
+                    }}
+                    value={input}
+                  />
+                </Box>
+                {/* One button, two jobs: with a draft to send it sends, and
+                  with an empty composer it offers the mic instead. Nothing is
+                  typed, so nothing is lost by giving the slot away. */}
+                {input.trim() || busy ? (
+                  <Tap
+                    disabled={!canSend}
+                    onPress={() => submit(input)}
+                    scale={0.92}
+                  >
+                    <Box
+                      align="center"
+                      bg={canSend ? t.accent : t.line}
+                      height={38}
+                      justify="center"
+                      rounded={19}
+                      width={38}
+                    >
+                      <IconSend
+                        color={canSend ? t.onAccent : t.sub}
+                        size={16}
+                      />
+                    </Box>
+                  </Tap>
+                ) : (
+                  <Tap onPress={startVoice} scale={0.92}>
+                    <Box
+                      align="center"
+                      bg={t.chip}
+                      borderColor={t.line}
+                      borderWidth={1}
+                      height={38}
+                      justify="center"
+                      rounded={19}
+                      width={38}
+                    >
+                      <IconMic color={t.sub} size={17} />
+                    </Box>
+                  </Tap>
+                )}
+              </Box>
+            )}
+          </Reanimated.View>
+        </Reanimated.View>
+      </Reanimated.View>
+
+      {/* CenterModal paints its own white card, so the surface is restyled to
+          the reader's theme rather than left light in dark mode. */}
+      <CenterModal
+        containerStyle={{
+          backgroundColor: t.card,
+          borderColor: t.line,
+          borderWidth: 1,
+          padding: 0,
+        }}
+        marginHorizontal={24}
+        onClose={() => (clearing ? undefined : setConfirmClear(false))}
+        visible={confirmClear}
+      >
+        <Box gap={8} paddingTop={22} paddingX={22}>
+          <Text size={16} weight="700">
+            Clear this conversation?
+          </Text>
+          <Text color={t.sub} lh={20} size={13}>
+            {book
+              ? "Everything you and Liqrai have said about this document goes, on this device and on your other ones. What Liqrai has learned about how you like to be explained things stays."
+              : "This sample conversation will be cleared."}
+          </Text>
         </Box>
-      </BottomSheetView>
-    </GorhomBottomSheetModal>
+        <Box
+          direction="row"
+          gap={10}
+          justify="end"
+          paddingBottom={18}
+          paddingTop={20}
+          paddingX={18}
+        >
+          <Tap
+            disabled={clearing}
+            onPress={() => setConfirmClear(false)}
+            scale={0.96}
+          >
+            <Box bg={t.chip} paddingX={16} paddingY={11} rounded={12}>
+              <Text size={13.5} weight="600">
+                Keep it
+              </Text>
+            </Box>
+          </Tap>
+          <Tap disabled={clearing} onPress={clearThread} scale={0.96}>
+            <Box
+              bg={palette.danger}
+              paddingX={16}
+              paddingY={11}
+              rounded={12}
+              style={{ opacity: clearing ? 0.6 : 1 }}
+            >
+              <Text color="#FFFFFF" size={13.5} weight="600">
+                {clearing ? "Clearing…" : "Clear"}
+              </Text>
+            </Box>
+          </Tap>
+        </Box>
+      </CenterModal>
+    </>
   );
 }

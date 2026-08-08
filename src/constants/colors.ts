@@ -1,9 +1,9 @@
 /**
- * LexiPDF color tokens — extracted from the product design.
+ * Liqrai Reader color tokens — extracted from the product design.
  *
  * The design is a warm "paper & ink" theme: off-white paper backgrounds, a warm
- * near-black ink for text, and a terracotta accent that marks anything AI / Pro.
- * Reading highlights come in amber (key idea) and green (vocabulary).
+ * near-black ink for text, and a fresh sage-green accent that marks anything
+ * AI / Pro. Reading highlights come in amber (key idea) and green (vocabulary).
  *
  * These are framework-agnostic plain values — consume them directly in a
  * StyleSheet today, or feed them into a Tailwind / NativeWind config later.
@@ -39,23 +39,39 @@ export const palette = {
     100: '#C9BFB1',
   },
 
-  /** Terracotta accent — AI features, Pro, selected state. */
+  /** Sage-green accent — AI features, Pro, selected state. */
   accent: {
-    900: '#7A3410',
-    800: '#8E3813',
-    700: '#A54117', // accent text on paper
-    500: '#B84B21', // primary accent
-    400: '#CD632D', // amber-orange (logo dot, warm accents)
-    100: '#FBE2D9', // light accent surface
-    50: '#FCF3F0', // subtle accent row tint
+    900: '#1F4A2B',
+    800: '#2A5F37',
+    700: '#3C7546', // accent text on paper
+    500: '#4A8F58', // primary accent
+    400: '#5FA96D', // light green (logo dot, fresh accents)
+    100: '#DCEEE0', // light accent surface
+    50: '#F1F8F2', // subtle accent row tint
   },
 
-  /** Reading highlight colors. */
+  /**
+   * Reading highlight colors — the four pens a reader can mark with. These are
+   * deliberately independent of the accent: they are content, not chrome.
+   */
   highlight: {
     amber: '#F6E0BE',
     amberStrong: '#F2CE93',
     green: '#8FD9BE',
     greenStrong: '#9BDCC0',
+  },
+
+  /**
+   * Highlighter pen swatches, keyed the way annotations store them. `*Ink` is
+   * the saturated version used to tint an icon or a quote's edge, where the
+   * pale fill would disappear.
+   */
+  pen: {
+    amber: '#EFC57E',
+    amberInk: '#E8B778',
+    sage: '#B4D4B4',
+    sky: '#AECBE8',
+    rose: '#E8B8B4',
   },
 
   /** Dark surfaces — dark mode & focus mode. */
@@ -75,6 +91,9 @@ export const palette = {
     blue: '#8DB4E2',
     purple: '#B79AD6',
   },
+
+  /** Destructive actions. Warm red, so it reads as danger next to the green accent. */
+  danger: '#C0554A',
 
   white: '#FFFFFF',
   black: '#000000',

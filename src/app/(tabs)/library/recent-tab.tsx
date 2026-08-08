@@ -11,6 +11,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import { formatWhen } from "@/hooks/use-device-library";
 import {
   progressPct,
@@ -73,7 +74,7 @@ export function RecentTab({
     return (
       <SwipeToFavorite doc={doc} key={doc.uri}>
         <Tap
-          onLongPress={() => openCollections(doc)}
+          onLongPress={(e) => openCollections(doc, anchorOf(e))}
           onPress={() => openDoc(doc)}
         >
           <Box
@@ -120,7 +121,7 @@ export function RecentTab({
   return (
     <>
       <Tap
-        onLongPress={() => openCollections(current)}
+        onLongPress={(e) => openCollections(current, anchorOf(e))}
         onPress={() => openDoc(current)}
         scale={0.985}
       >

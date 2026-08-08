@@ -36,6 +36,20 @@
         "docViewer": {
             "pdfOnly": "{{ext}} reading isn't supported yet"
         },
+        "docMenu": {
+            "label": "DOCUMENT",
+            "rename": "Rename",
+            "share": "Share",
+            "delete": "Delete",
+            "deleteConfirm": "Tap again to delete",
+            "renamePlaceholder": "Give it a new name",
+            "save": "Save",
+            "renamedToast": "Renamed to “{{name}}”",
+            "deletedToast": "Deleted “{{name}}”",
+            "renameFailed": "That name didn't stick — try another",
+            "deleteFailed": "Couldn't delete this file",
+            "shareFailed": "Sharing isn't available for this file"
+        },
         "sort": {
             "label": "Sort by",
             "date": "Date",
@@ -76,6 +90,10 @@
             "filedIn": "Filed in {{collection}}",
             "filedInBy": "{{author}} · Filed in {{collection}}",
             "tapSuggestion": "Tap a suggestion to move it — nothing files without you seeing it.",
+            "suggestOffline": "We couldn't bring in any picks — there's no connection right now. Get back online and we'll find books that fit what you read.",
+            "suggestFailed": "We couldn't reach our picks just now. Give it another try in a moment.",
+            "suggestNow": "Suggest books for me",
+            "suggestRetry": "Try again",
             "names": {
                 "studying": "Studying",
                 "later": "Reading Later",
@@ -132,7 +150,9 @@
             "emptyHighlights": "No highlights yet.\nSelect a passage while reading, then pick a colour.",
             "emptyNotes": "No notes yet.\nSelect a passage while reading, then “Note”.",
             "jumpedToast": "Jumped to page {{page}}",
-            "reopenUnavailable": "That document isn’t open anymore — reopen it from your library first."
+            "reopenUnavailable": "That document isn’t open anymore — reopen it from your library first.",
+            "noteRemoved": "Note deleted",
+            "highlightRemoved": "Highlight deleted"
         }
     },
     "hero": {

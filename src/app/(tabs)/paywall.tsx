@@ -237,7 +237,7 @@ export default function PaywallScreen() {
         </Text>
         <Text
           color={t.sub}
-          onPress={() => showToast("lexipdf.app/terms")}
+          onPress={() => showToast("liqrai.app/terms")}
           size={11.5}
         >
           Terms

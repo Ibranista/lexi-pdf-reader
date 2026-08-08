@@ -361,7 +361,7 @@ export const PW_FEATURES = [
     sub: "See how your highlights connect across books",
   },
   {
-    name: "Hey Lexi voice companion",
+    name: "Hey Liqrai voice companion",
     sub: "Ask questions without leaving the page",
   },
 ];
@@ -383,7 +383,7 @@ export const LEXI_SEED = [
   {
     role: "user" as const,
     kind: "normal" as const,
-    text: 'Hey Lexi, what does the author mean by "night had become optional"?',
+    text: 'Hey Liqrai, what does the author mean by "night had become optional"?',
   },
   {
     role: "lexi" as const,
@@ -417,3 +417,6 @@ export const SUMMARY_POINTS = [
   "Cheap light reshaped daily life — factory shifts, evening papers, and household reading all expanded quickly.",
   "The shift destroyed the gas industry and its workers; the author argues Edison ultimately sold reclaimed time, not light.",
 ];
+
+/** One full turn of the refresh glyph, in ms. [for the collection refreshing] */
+export const SPIN_MS = 900;

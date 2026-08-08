@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Box } from "@/components/atoms";
 import { IconSearch, SectionLabel, Text } from "@/components/lexi-components";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import { COLLECTION_META } from "@/constants/collections";
 import type { DeviceLibrary } from "@/hooks/use-device-library";
 import { useCollectionsStore } from "@/stores/collections-store";
@@ -15,6 +16,7 @@ import {
   DocRow,
   SwipeToFavorite,
   type OpenCollections,
+  type OpenDocMenu,
   type ScrollerProps,
 } from "./shared";
 
@@ -57,12 +59,14 @@ export function SearchResults({
   lib,
   openCollections,
   openDoc,
+  openDocMenu,
   query,
   refreshControl,
 }: ScrollerProps & {
   lib: DeviceLibrary;
   openCollections: OpenCollections;
   openDoc: (doc: { uri: string; name: string; ext: string }) => void;
+  openDocMenu: OpenDocMenu;
   query: string;
 }) {
   const t = useProtoTheme();
@@ -181,7 +185,14 @@ export function SearchResults({
           <DocRow
             doc={item}
             meta={docMeta(item.size, item.modifiedAt)}
-            onLongPress={() => openCollections(item)}
+            onLongPress={(e) => openCollections(item, anchorOf(e))}
+            // only file-backed results can be renamed, shared or deleted —
+            // filed books from the suggestions shelf carry a web uri
+            onMore={
+              item.uri.startsWith("file://")
+                ? (anchor) => openDocMenu(item, anchor)
+                : undefined
+            }
             onPress={() => openDoc(item)}
             trailing={
               <Box bg={t.chip} paddingX={10} paddingY={4} rounded={20}>

@@ -15,7 +15,7 @@
  * The PDF bytes stay on the device; only pdf.js and the reader font are
  * fetched from a CDN.
  */
-import { File } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -94,7 +94,7 @@ function isDark(color: string): boolean {
   return 0.299 * r + 0.587 * g + 0.114 * b < 128;
 }
 
-function buildHtml(
+export function buildHtml(
   b64: string,
   s: Settings,
   initialPage: number,
@@ -158,6 +158,25 @@ function buildHtml(
     scroll-margin-top: 12px;
     content-visibility: auto;
     contain-intrinsic-size: auto 1200px;
+  }
+  /* One page flows straight into the next, which reads as a single endless
+     page — mark the seam so the reader can feel the page turn. Pure CSS on
+     the data-page attribute every section already carries, so it costs no
+     markup, and a glance at the last label also shows exactly how far
+     extraction reached. Styled off the theme variables, so it follows font
+     and dark/light changes live like everything else. */
+  #content section + section::before {
+    content: 'Page ' attr(data-page);
+    display: block;
+    text-align: center;
+    font-family: var(--ff);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--fg);
+    opacity: 0.35;
+    border-top: 1px solid var(--faint);
+    padding-top: 1.1em;
+    margin: 1.8em 0 1.6em;
   }
   #content p {
     font-size: var(--fs);
@@ -456,7 +475,7 @@ function buildHtml(
   window.clearHighlight = function(){ cancelHitTimers(); clearMarks(); };
 
   /* ---- extracted text, out to the reader ----
-     Lexi answers from the whole document, so the server needs its text
+     Liqrai answers from the whole document, so the server needs its text
      (POST /ai/context). Extraction already happened to build this DOM, so
      this walks what is here rather than parsing the PDF a second time.
 
@@ -1106,17 +1125,54 @@ function buildHtml(
       var y = it.transform ? it.transform[5] : 0;
       var x = it.transform ? it.transform[4] : 0;
       var w = it.width || 0;
-      if (cur && Math.abs(y - cur.y) < 3) {
-        cur.text += str;
+      var h = it.height || 0;
+      // Baseline tolerance scales with the type size. A flat 3 units split
+      // superscripts, footnote markers and inline font changes off the line
+      // they visually belong to, and each orphan then became its own
+      // paragraph — the "one word on a line of its own" symptom.
+      var tol = cur ? Math.max(3, Math.min(cur.h, h || cur.h) * 0.55) : 3;
+      /* Sharing a baseline is not enough to share a line:
+
+         - A drop cap is set to sit on the baseline of the last line it spans,
+           so it lands mid-stream on an ordinary line's baseline. Merged, it
+           turned "…in a decade as" into "…in a decade asT" and the cap could
+           never be recognised or moved to the front of its paragraph.
+         - A fragment lying entirely left of where this line starts belongs to
+           another column or block. Rows of a two-column page share baselines,
+           and merging them interleaves the two columns' text. */
+      var ratio = cur && h && cur.h ? Math.max(cur.h, h) / Math.min(cur.h, h) : 1;
+      var joins = cur &&
+        Math.abs(y - cur.y) <= tol &&
+        ratio < 1.8 &&
+        x + w > cur.x0 + 1;
+      if (joins) {
+        // pdf.js only emits a space character when the font actually draws
+        // one; a wide x-jump is a word boundary the stream left implicit.
+        var needSpace = str && cur.text &&
+          !/\\s$/.test(cur.text) && !/^\\s/.test(str) &&
+          x - cur.x1 > Math.max(1, cur.h * 0.2);
+        cur.text += (needSpace ? ' ' : '') + str;
         cur.x0 = Math.min(cur.x0, x);
         cur.x1 = Math.max(cur.x1, x + w);
-        cur.h = Math.max(cur.h, it.height || 0);
+        cur.h = Math.max(cur.h, h);
       }
       else {
         if (cur) lines.push(cur);
-        cur = { y: y, text: str, item: it, x0: x, x1: x + w, h: it.height || 10 };
+        // para is the enclosing structure element in a tagged PDF, taken
+        // from the line's first fragment; null when the file isn't tagged.
+        cur = {
+          y: y, text: str, item: it, x0: x, x1: x + w, h: h || 10,
+          para: it._para || null
+        };
       }
-      if (it.hasEOL && cur) { lines.push(cur); cur = null; }
+      // hasEOL ends a line in the content stream, which is not always the
+      // end of a visual line — a wrapped run can be chopped mid-line. Trust
+      // it only when the next fragment really does sit on another baseline.
+      if (it.hasEOL && cur) {
+        var nxt = items[i + 1];
+        var ny = nxt && nxt.transform ? nxt.transform[5] : null;
+        if (ny === null || Math.abs(ny - cur.y) > tol) { lines.push(cur); cur = null; }
+      }
     }
     if (cur) lines.push(cur);
     return lines;
@@ -1309,37 +1365,239 @@ function buildHtml(
     return { rows: best.rows, header: best.header, tableItems: best.tableItems };
   }
 
-  /* Merge lines into paragraphs, carrying color. */
-  function toParagraphs(lines){
+  /* Structure roles that stand for a paragraph of their own in a tagged PDF. */
+  var PARA_TAGS = {
+    P: 1, H: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1,
+    LI: 1, LBody: 1, Title: 1, Caption: 1, Blockquote: 1
+  };
+
+  /* A drop cap is one or two outsized characters opening a paragraph, with the
+     next few lines set beside it rather than under it. Left alone it wrecks the
+     opening of every chapter twice over: the letter becomes a paragraph of its
+     own, and each line tucked beside it starts well right of the margin, so it
+     reads as an indent and gets split off too.
+
+     So find the cap, put it back at the head of the paragraph it opens, and
+     flag the lines beside it as the cap's own — they are exempt from the indent
+     rule, and the run after the cap joins with no space, which is what turns
+     "T" + "he lamps" back into "The lamps". */
+  function markDropCaps(lines, bodyH){
+    if (!bodyH) return lines;
+
+    var caps = [];
+    for (var i = 0; i < lines.length; i++){
+      var cap = lines[i];
+      var txt = (cap.text || '').trim();
+      if (!txt || txt.length > 2) continue;
+      if (cap.h < bodyH * 1.8) continue;      // a big word, not an initial
+      // The cap's baseline sits at the bottom of the lines it spans, so its
+      // block runs from its own baseline up by its height.
+      var top = cap.y + cap.h;
+      var bottom = cap.y - bodyH * 0.25;
+      var beside = [];
+      for (var j = 0; j < lines.length; j++){
+        if (j === i) continue;
+        var l = lines[j];
+        if (!(l.text || '').trim()) continue;
+        if (l.y <= top && l.y >= bottom && l.x0 >= cap.x1 - bodyH * 0.5) {
+          beside.push(l);
+        }
+      }
+      if (!beside.length) continue;           // an initial with nothing beside it
+      caps.push({ cap: cap, first: beside[0] });
+      cap.isCap = true;
+      for (var b = 0; b < beside.length; b++) beside[b].besideCap = true;
+    }
+    if (!caps.length) return lines;
+
+    // Rebuild in reading order: each cap moves from wherever its baseline put
+    // it in the stream to immediately before the first line set beside it.
+    var out = [];
+    for (var n = 0; n < lines.length; n++){
+      var ln = lines[n];
+      if (ln.isCap) continue;                 // re-inserted below, with its text
+      for (var c = 0; c < caps.length; c++){
+        if (caps[c].first === ln) out.push(caps[c].cap);
+      }
+      out.push(ln);
+    }
+    return out;
+  }
+
+  /* Merge lines into the paragraphs the printed page shows, carrying color.
+
+     A vertical gap alone is a weak signal: it fires on every heading and
+     figure, and misses the flush paragraph breaks that carry no extra
+     leading. So we measure the block first — its body leading and its left
+     and right margins — and then read the same cues a person does: a line
+     that stops short of the right margin ended its paragraph, and a line
+     that starts in from the left margin began one. */
+  function toParagraphs(inputLines){
+    // Body type size, as the median line height — the yardstick both the drop
+    // cap test and the leading fallback are measured against.
+    var heights = [];
+    for (var hi = 0; hi < inputLines.length; hi++){
+      if ((inputLines[hi].text || '').trim()) heights.push(inputLines[hi].h || 10);
+    }
+    heights.sort(function(a,b){ return a-b; });
+    var bodyH = heights.length ? heights[Math.floor(heights.length / 2)] : 0;
+
+    var lines = markDropCaps(inputLines, bodyH);
+
+    // Body leading, as the median of the *tight* gaps. Taking the median of
+    // every gap let one heading or figure gap drag the estimate up until real
+    // paragraph breaks stopped clearing the threshold.
     var gaps = [];
     for (var j = 1; j < lines.length; j++){
       var g = lines[j-1].y - lines[j].y;
-      if (g > 0) gaps.push(g);
+      if (g > 1) gaps.push(g);
     }
     gaps.sort(function(a,b){ return a-b; });
     var median = gaps.length ? gaps[Math.floor(gaps.length/2)] : 0;
+    if (gaps.length > 4 && median > 0) {
+      var tight = [];
+      for (var tg = 0; tg < gaps.length; tg++){
+        if (gaps[tg] <= median * 1.25) tight.push(gaps[tg]);
+      }
+      if (tight.length) median = tight[Math.floor(tight.length/2)];
+    }
+
+    // Margins of the *dominant* text block, found by bucketing left edges and
+    // taking the most popular one. Page-wide margins are meaningless as soon
+    // as a page carries a sidebar, a figure or two columns: the leftmost
+    // element sets the left margin and the widest sets the right, and then
+    // every line of a narrow column reads as indented and gets split off.
+    var real = [];
+    for (var m = 0; m < lines.length; m++){
+      if ((lines[m].text || '').trim()) real.push(lines[m]);
+    }
+    var span = 0;
+    for (var s1 = 0; s1 < real.length; s1++){
+      if (real[s1].x1 > span) span = real[s1].x1;
+    }
+    var eps = Math.max(6, span * 0.012);
+
+    var block = null;
+    for (var a = 0; a < real.length; a++){
+      var n = 0, lo = real[a].x0, hi = -Infinity;
+      for (var b = 0; b < real.length; b++){
+        if (Math.abs(real[b].x0 - real[a].x0) <= eps) {
+          n++;
+          if (real[b].x0 < lo) lo = real[b].x0;
+          if (real[b].x1 > hi) hi = real[b].x1;
+        }
+      }
+      if (!block || n > block.n) block = { n: n, left: lo, right: hi };
+    }
+    var left = block ? block.left : 0;
+    var right = block ? block.right : 0;
+    var width = right - left;
+    if (!(width > 0)) width = 0;
+
+    // The short-line rule only means something in justified text, where
+    // nearly every line reaches the right margin. In ragged-right text line
+    // ends vary by design, and trusting them would cut every single line into
+    // its own paragraph — the worst version of this bug.
+    var flush = 0, counted = 0;
+    for (var f = 0; f < real.length; f++){
+      if (Math.abs(real[f].x0 - left) > eps) continue;   // block lines only
+      counted++;
+      if (real[f].x1 >= right - Math.max(6, width * 0.02)) flush++;
+    }
+    var justified = counted >= 4 && width > 0 && flush / counted >= 0.6;
+
+    var shortBy = Math.max(12, width * 0.12);   // stops short of the margin
+    var indentBy = Math.max(6, width * 0.03);   // starts in from the margin
+
+    // Only lines sitting inside the dominant block's horizontal span get the
+    // margin cues; anything else (other column, caption, diagram label) falls
+    // back to vertical spacing alone.
+    function inBlock(l){
+      return width > 0 && l.x0 >= left - eps && l.x1 <= right + eps;
+    }
+
+    /* When the document tags its own paragraphs, that IS the page flow, and no
+       amount of geometry beats reading it straight off the file. Only trusted
+       when nearly every line carries a tag, so a half-tagged page doesn't end
+       up grouped by two schemes at once. */
+    var tagged = 0;
+    for (var tt = 0; tt < real.length; tt++){
+      if (real[tt].para) tagged++;
+    }
+    var useTags = real.length >= 3 && tagged / real.length >= 0.9;
 
     var paras = [];
     var buf = null;
-    var prevY = null;
+    var prev = null;
     for (var k = 0; k < lines.length; k++){
       var text = (lines[k].text || '').replace(/\\s+/g, ' ').trim();
-      if (!text) { if (buf) { paras.push(buf); buf = null; } prevY = null; continue; }
+      if (!text) { if (buf) { paras.push(buf); buf = null; } prev = null; continue; }
       var brk = false;
-      if (prevY !== null) {
-        var gap = prevY - lines[k].y;
-        if (gap < 0 || (median > 0 && gap > median * 1.5)) brk = true;
+      if (prev) {
+        if (useTags) {
+          brk = lines[k].para !== prev.para;
+        } else {
+          var gap = prev.y - lines[k].y;
+          var lead = median > 0 ? median : Math.max(prev.h, lines[k].h, 8) * 1.2;
+          if (gap < -lead * 0.35) {
+            brk = true;             // jumped back up the page: new column/block
+          } else if (gap > lead * 1.55) {
+            brk = true;             // blank space opened up between the lines
+          } else if (gap > lead * 0.5) {
+            /* A genuine next line — only now do the margin cues apply. Without
+               that guard, leftover same-baseline fragments (whose x1 is of
+               course short) broke paragraphs mid-sentence.
+
+               The indent test is against the previous line rather than the
+               page's left margin, which is what makes it survive columns: a
+               narrow block sitting to the right of the body still has every
+               line at the same x0, so nothing reads as indented. Measured off
+               the page margin instead, every line of a sidebar looked like a
+               fresh paragraph. */
+            if (justified && inBlock(prev) && inBlock(lines[k]) &&
+                prev.x1 < right - shortBy) {
+              brk = true;
+            } else if (!lines[k].besideCap && lines[k].x0 > prev.x0 + indentBy) {
+              brk = true;
+            }
+          }
+        }
+        // A cap and the lines set beside it are one paragraph by construction:
+        // their geometry says otherwise (the cap's baseline is lines below the
+        // text it opens), so it must not get a vote here.
+        if (prev.isCap) brk = false;
       }
+      // The cap itself always opens a paragraph.
+      if (lines[k].isCap) brk = true;
+
       if (brk && buf) { paras.push(buf); buf = null; }
       if (!buf) buf = { y: lines[k].y, y2: lines[k].y, runs: [], geo: [] };
-      buf.runs.push({ text: text, color: lines[k].color || null });
+      buf.runs.push({
+        text: text,
+        color: lines[k].color || null,
+        // No space after a drop cap — its letter opens the following word.
+        sep: prev && prev.isCap && buf.runs.length ? '' : ' '
+      });
       // one geometry record per run: the source line's box in page space
       buf.geo.push({ x0: lines[k].x0, x1: lines[k].x1, y: lines[k].y, h: lines[k].h || 10 });
       buf.y2 = lines[k].y;   // last line — bottom of the paragraph
-      prevY = lines[k].y;
+      prev = lines[k];
     }
     if (buf) paras.push(buf);
     return paras;
+  }
+
+  /* Each run carries the separator that goes in front of it — a single space
+     between ordinary lines, but empty after a drop cap, whose letter is the
+     first character of the word it opens rather than a word of its own. The
+     data-geom offsets in processPage are walked the same way, so a search hit
+     or a highlight still maps back to the line it came from. */
+  function runsText(runs){
+    var out = '';
+    for (var i = 0; i < runs.length; i++){
+      out += (i ? runs[i].sep : '') + runs[i].text;
+    }
+    return out;
   }
 
   function paragraphEl(para){
@@ -1350,12 +1608,12 @@ function buildHtml(
     }
     if (uniform) {
       if (para.runs[0].color) p.style.color = para.runs[0].color;
-      p.textContent = para.runs.map(function(r){ return r.text; }).join(' ');
+      p.textContent = runsText(para.runs);
     } else {
       for (var j = 0; j < para.runs.length; j++){
         var span = document.createElement('span');
         if (para.runs[j].color) span.style.color = para.runs[j].color;
-        span.textContent = (j ? ' ' : '') + para.runs[j].text;
+        span.textContent = (j ? para.runs[j].sep : '') + para.runs[j].text;
         p.appendChild(span);
       }
     }
@@ -1382,11 +1640,33 @@ function buildHtml(
       await page.render({ canvasContext: ctx, viewport: rv }).promise;
     }
 
-    var tc = await page.getTextContent();
+    /* Marked content is asked for so a tagged PDF can be grouped by its own
+       structure rather than by geometry. It interleaves begin/end markers with
+       the text items, so they are unwound here and every text item comes out
+       carrying the paragraph element it belongs to; everything downstream sees
+       the same plain item list it always did. */
+    var tc = await page.getTextContent({ includeMarkedContent: true });
+    var items = [];
+    var markStack = [], paraSeq = 0, curPara = 0;
+    for (var mi = 0; mi < tc.items.length; mi++){
+      var raw = tc.items[mi];
+      var ty = raw.type;
+      if (ty === 'beginMarkedContent' || ty === 'beginMarkedContentProps') {
+        markStack.push(curPara);
+        if (PARA_TAGS[raw.tag]) { paraSeq++; curPara = paraSeq; }
+        continue;
+      }
+      if (ty === 'endMarkedContent') {
+        curPara = markStack.length ? markStack.pop() : 0;
+        continue;
+      }
+      raw._para = curPara || null;
+      items.push(raw);
+    }
 
     // ── try tables first ──────────────────────────────────────────
     // Pass the operator list so we can detect ruling lines
-    var tableInfo = detectTable(tc.items, ops, viewport);
+    var tableInfo = detectTable(items, ops, viewport);
     var tableEl = null;
     var tableItemIds = new Set(); // Use a set for O(1) lookup
 
@@ -1422,7 +1702,7 @@ function buildHtml(
     // Filter: exclude items that are in the table set
     // We use a simple approach: check if item's y matches a table row
     // AND x matches a table column
-    var nonTableItems = tc.items;
+    var nonTableItems = items;
     if (tableInfo && tableInfo.tableItems.length > 0) {
       var tableYs = [];
       var tableXs = [];
@@ -1450,7 +1730,7 @@ function buildHtml(
         if (!hasX) tableXs.push(tx);
       }
 
-      nonTableItems = tc.items.filter(function(it) {
+      nonTableItems = items.filter(function(it) {
         if (!it.transform) return true;
         if (tableItemIds.has(it)) return false;
         var iy = it.transform[5];
@@ -1578,6 +1858,7 @@ function buildHtml(
         var d2 = blocks[q].data;
         var off = 0, geo = [];
         for (var g = 0; g < d2.runs.length; g++){
+          if (g) off += d2.runs[g].sep.length;   // matches runsText exactly
           var len = d2.runs[g].text.length;
           var gl = d2.geo && d2.geo[g];
           if (gl && len) {
@@ -1592,7 +1873,7 @@ function buildHtml(
               y1: +((g0[1] + gh * 0.28) / viewport.height).toFixed(4)
             });
           }
-          off += len + 1;
+          off += len;
         }
         pEl.setAttribute('data-geom', JSON.stringify(geo));
         section.appendChild(pEl);
@@ -1610,7 +1891,7 @@ function buildHtml(
     }
     content.appendChild(section);
     page.cleanup();
-    return (tc.items || []).map(function(item){ return item.str || ''; }).join(' ').trim().split(/\s+/).filter(Boolean).length;
+    return items.map(function(item){ return item.str || ''; }).join(' ').trim().split(/\s+/).filter(Boolean).length;
   }
 
   /* ---- outline ----
@@ -1712,6 +1993,7 @@ function buildHtml(
       entries = clean;
     }
     if (entries.length) post({ type: 'outline', entries: entries, source: source });
+    return entries;   // also baked into the cache, so a cached open has it too
   }
 
   function run(){
@@ -1902,12 +2184,68 @@ interface Props {
   onWordCounts?: (counts: number[]) => void;
   /**
    * The document's text, batched, once extraction has finished — for
-   * `POST /ai/context`, so Lexi can answer from the book and not just the page
+   * `POST /ai/context`, so Liqrai can answer from the book and not just the page
    * in view. `done` marks the final batch. Omit the prop and nothing is walked.
    */
   onContext?: (pages: { page: number; text: string }[], done: boolean) => void;
   /** Lets the reader drop to Page view from the reflow error screen. */
   onSwitchToPage?: () => void;
+}
+
+/**
+ * The reader's typography and theme, in the shape the page wants them. Shared
+ * with the background preloader so a warmed document is extracted under exactly
+ * the settings the reader would have used itself.
+ */
+export function useReflowSettings(): Settings {
+  const t = useProtoTheme();
+  const textSize = useAppStore((s) => s.textSize);
+  const zoom = useAppStore((s) => s.zoom);
+  const lineSp = useAppStore((s) => s.lineSp);
+  const fontFam = useAppStore((s) => s.fontFam);
+  const readWidth = useAppStore((s) => s.readWidth);
+  const contrast = useAppStore((s) => s.contrast);
+
+  return useMemo(
+    () => ({
+      baseFs: textSize,
+      zoomedFs: Math.round((textSize * zoom) / 100),
+      lh: LINE_SPACING[lineSp] ?? 1.75,
+      fontFamily: fontStack(fontFam),
+      fg: contrast === "soft" ? softInk(t.readerInk, t.page, 0.16) : t.readerInk,
+      bg: t.page,
+      faint: t.faint,
+      hl: t.hl,
+      px: READ_WIDTH_PX[readWidth] ?? READ_WIDTH_PX.comfort,
+    }),
+    [
+      textSize,
+      zoom,
+      lineSp,
+      fontFam,
+      readWidth,
+      contrast,
+      t.readerInk,
+      t.page,
+      t.faint,
+      t.hl,
+    ],
+  );
+}
+
+// The removed reflow cache (2026-07) left its entries under Paths.cache/reflow
+// — up to ~96MB of dead files nothing reads anymore. Swept once per app run,
+// from here because this is the only module that knew the directory existed.
+let sweptDeadCacheDir = false;
+function sweepDeadCacheDir() {
+  if (sweptDeadCacheDir) return;
+  sweptDeadCacheDir = true;
+  try {
+    const dir = new Directory(Paths.cache, "reflow");
+    if (dir.exists) dir.delete();
+  } catch {
+    // best effort — the OS reclaims cache storage eventually anyway
+  }
 }
 
 export function PdfReflowView({
@@ -1933,13 +2271,6 @@ export function PdfReflowView({
   onSwitchToPage,
 }: Props) {
   const t = useProtoTheme();
-  const textSize = useAppStore((s) => s.textSize);
-  const zoom = useAppStore((s) => s.zoom);
-  const lineSp = useAppStore((s) => s.lineSp);
-  const fontFam = useAppStore((s) => s.fontFam);
-  const readWidth = useAppStore((s) => s.readWidth);
-  const contrast = useAppStore((s) => s.contrast);
-
   const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -1961,31 +2292,7 @@ export function PdfReflowView({
   // every page is in the DOM.
   const [extractedSeq, setExtractedSeq] = useState(0);
 
-  const settings: Settings = useMemo(
-    () => ({
-      baseFs: textSize,
-      zoomedFs: Math.round((textSize * zoom) / 100),
-      lh: LINE_SPACING[lineSp] ?? 1.75,
-      fontFamily: fontStack(fontFam),
-      fg: contrast === "soft" ? softInk(t.readerInk, t.page, 0.16) : t.readerInk,
-      bg: t.page,
-      faint: t.faint,
-      hl: t.hl,
-      px: READ_WIDTH_PX[readWidth] ?? READ_WIDTH_PX.comfort,
-    }),
-    [
-      textSize,
-      zoom,
-      lineSp,
-      fontFam,
-      readWidth,
-      contrast,
-      t.readerInk,
-      t.page,
-      t.faint,
-      t.hl,
-    ],
-  );
+  const settings = useReflowSettings();
 
   // Latest values, read only inside effects — so building the page once
   // doesn't re-run when a setting changes (those are pushed live instead).
@@ -1998,10 +2305,14 @@ export function PdfReflowView({
     topInsetRef.current = topInset;
   }, [settings, initialPage, topInset]);
 
-  // Read the file and build the page once per document.
+  // Read the file and build the page once per document. The reflow cache that
+  // used to sit in front of this was removed: it truncated books on Android's
+  // bridge and then served blank pages from disk — extraction is the slow but
+  // correct path, every open.
   useEffect(() => {
     let cancelled = false;
     gotFirstMessage.current = false;
+    sweepDeadCacheDir();
     (async () => {
       try {
         const data = await new File(uri).base64();

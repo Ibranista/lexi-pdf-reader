@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackHandler, RefreshControl, ScrollView } from "react-native";
 import { Drawer } from "react-native-drawer-layout";
@@ -8,10 +8,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
+  DRAWER_EDGE,
   HeaderButton,
   IconSearch,
   IconSliders,
-  IconSun,
   ProtoScreen,
   SwipeTabsBar,
   SwipeTabsPager,
@@ -20,24 +20,31 @@ import {
   useSwipeTabs,
   type SwipeTabItem,
 } from "@/components/lexi-components";
+import type { Anchor } from "@/components/library/AnchoredPopover";
 import { CollectionPicker } from "@/components/library/CollectionPicker";
+import { DocMenu } from "@/components/library/DocMenu";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { CollectionId } from "@/constants/collections";
-import {
-  bookCoverFromUri,
-  bookReadUrl,
-} from "@/hooks/use-book-suggestions";
+import { bookCoverFromUri, bookReadUrl } from "@/hooks/use-book-suggestions";
 import { useDeviceLibrary } from "@/hooks/use-device-library";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import type { FilableDoc } from "@/stores/collections-store";
 import { useProtoTheme } from "@/theme/proto";
 
-import { AllTab as AllLibraryTab } from "./library/all-tab";
-import { CollectionsTab } from "./library/collections-tab";
-import { FilesTab as FilesLibraryTab } from "./library/files-tab";
-import { RecentTab as RecentLibraryTab } from "./library/recent-tab";
+import { AllTab as AllTabBase } from "./library/all-tab";
+import { CollectionsTab as CollectionsTabBase } from "./library/collections-tab";
+import { FilesTab as FilesTabBase } from "./library/files-tab";
+import { NotesTab as NotesTabBase } from "./library/notes-tab";
+import { RecentTab as RecentTabBase } from "./library/recent-tab";
 import { SearchResults as SearchLibraryResults } from "./library/search-results";
-import { NotesTab as NotesLibraryTab } from "./library/notes-tab";
+
+// Memoised so a LibraryScreen re-render — tab commit, drawer toggle, scan
+// tick — skips every mounted page whose props haven't changed.
+const AllLibraryTab = memo(AllTabBase);
+const CollectionsTab = memo(CollectionsTabBase);
+const FilesLibraryTab = memo(FilesTabBase);
+const NotesLibraryTab = memo(NotesTabBase);
+const RecentLibraryTab = memo(RecentTabBase);
 
 type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
 
@@ -61,6 +68,11 @@ export default function LibraryScreen() {
   const [openShelf, setOpenShelf] = useState<CollectionId | null>(null);
   // the document whose "add to collection" sheet is open, if any
   const [filing, setFiling] = useState<FilableDoc | null>(null);
+  // the document whose ⋮ actions menu (rename / share / delete) is open
+  const [menuDoc, setMenuDoc] = useState<FilableDoc | null>(null);
+  // Touch points the two popovers open around; undefined falls back to centred.
+  const [menuAnchor, setMenuAnchor] = useState<Anchor | undefined>(undefined);
+  const [filingAnchor, setFilingAnchor] = useState<Anchor | undefined>(undefined);
   // whether the Settings drawer is showing
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -87,6 +99,10 @@ export default function LibraryScreen() {
       const onBack = () => {
         if (settingsOpen) {
           setSettingsOpen(false);
+          return true;
+        }
+        if (menuDoc) {
+          setMenuDoc(null);
           return true;
         }
         if (filing) {
@@ -123,6 +139,7 @@ export default function LibraryScreen() {
       };
     }, [
       settingsOpen,
+      menuDoc,
       filing,
       searching,
       tab,
@@ -130,7 +147,7 @@ export default function LibraryScreen() {
       openShelf,
       showToast,
       tr,
-    ])
+    ]),
   );
 
   // ask for device-wide storage access once, on first open of the library
@@ -141,13 +158,16 @@ export default function LibraryScreen() {
     }
   }, [storageAsked, access, ensureAccess]);
 
-  const TAB_ITEMS: SwipeTabItem<LibTab>[] = [
-    { key: "recent", label: tr("tabItems.recent") },
-    { key: "all", label: tr("tabItems.all") },
-    { key: "coll", label: tr("tabItems.collections"), flex: 1.4 },
-    { key: "files", label: tr("tabItems.files") },
-    { key: "vocab", label: tr("tabItems.vocab") },
-  ];
+  const TAB_ITEMS = useMemo<SwipeTabItem<LibTab>[]>(
+    () => [
+      { key: "recent", label: tr("tabItems.recent") },
+      { key: "all", label: tr("tabItems.all") },
+      { key: "coll", label: tr("tabItems.collections"), flex: 1.4 },
+      { key: "files", label: tr("tabItems.files") },
+      { key: "vocab", label: tr("tabItems.vocab") },
+    ],
+    [tr],
+  );
 
   // Drives both the bar and the pages below it, so the pill and the content
   // move together under the finger.
@@ -165,72 +185,154 @@ export default function LibraryScreen() {
   // screen re-renders mid-drag rather than being rebuilt each time
   const renderSettings = useCallback(
     () => <SettingsPanel onClose={closeSettings} />,
-    [closeSettings]
+    [closeSettings],
   );
 
-  const openReader = () => router.push("/reader");
+  const openReader = useCallback(() => router.push("/reader"), []);
   // Opens a suggested book's full text in the in-app web reader. The cover
   // rides along so the book can be filed on the Recent shelf with its art.
-  const openBook = (book: { cover?: string; url: string; title: string }) =>
-    router.push({
-      pathname: "/book",
-      params: { cover: book.cover, url: book.url, title: book.title },
-    });
-  // Open formats that have a native reader. Other indexed formats remain
-  // visible in the library until their readers are added.
-  const openDoc = (doc: { uri: string; name: string; ext: string }) => {
-    // A book filed from the suggestions shelf — its uri is the readable page
-    // with the cover packed on, so strip that back off before loading it.
-    if (doc.ext === "BOOK") {
+  const openBook = useCallback(
+    (book: { cover?: string; url: string; title: string }) =>
       router.push({
         pathname: "/book",
-        params: {
-          cover: bookCoverFromUri(doc.uri),
-          title: doc.name,
-          url: bookReadUrl(doc.uri),
-        },
-      });
-      return;
-    }
-    if (doc.ext === "PDF") {
-      // the reader records the open itself, so every entry point counts
-      router.push({
-        pathname: "/pdf",
-        params: { uri: doc.uri, name: doc.name },
-      });
-      return;
-    }
-    if (doc.ext === "TXT" || doc.ext === "MD" || doc.ext === "DOCX") {
-      router.push({
-        pathname: "/text",
-        params: { uri: doc.uri, name: doc.name, ext: doc.ext },
-      });
-      return;
-    }
-    showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
-  };
-  // long-press anywhere a document is listed: file it into a collection
-  const openCollections = (doc: FilableDoc) => {
+        params: { cover: book.cover, url: book.url, title: book.title },
+      }),
+    [],
+  );
+  // Open formats that have a native reader. Other indexed formats remain
+  // visible in the library until their readers are added.
+  const openDoc = useCallback(
+    (doc: { uri: string; name: string; ext: string }) => {
+      // A book filed from the suggestions shelf — its uri is the readable page
+      // with the cover packed on, so strip that back off before loading it.
+      if (doc.ext === "BOOK") {
+        router.push({
+          pathname: "/book",
+          params: {
+            cover: bookCoverFromUri(doc.uri),
+            title: doc.name,
+            url: bookReadUrl(doc.uri),
+          },
+        });
+        return;
+      }
+      if (doc.ext === "PDF") {
+        // the reader records the open itself, so every entry point counts
+        router.push({
+          pathname: "/pdf",
+          params: { uri: doc.uri, name: doc.name },
+        });
+        return;
+      }
+      if (doc.ext === "TXT" || doc.ext === "MD" || doc.ext === "DOCX") {
+        router.push({
+          pathname: "/text",
+          params: { uri: doc.uri, name: doc.name, ext: doc.ext },
+        });
+        return;
+      }
+      showToast(tr("library.docViewer.pdfOnly", { ext: doc.ext }));
+    },
+    [showToast, tr],
+  );
+  // long-press anywhere a document is listed: file it into a collection.
+  // The anchor is where the finger landed, so the picker opens beside the
+  // document instead of in the corner of the screen.
+  const openCollections = useCallback((doc: FilableDoc, anchor?: Anchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setFilingAnchor(anchor);
     setFiling(doc);
-  };
+  }, []);
+  // ⋮ anywhere a document is listed: rename, share or delete it
+  const openDocMenu = useCallback((doc: FilableDoc, anchor?: Anchor) => {
+    setMenuAnchor(anchor);
+    setMenuDoc(doc);
+  }, []);
 
-  // Shared by every tab's scroller, whichever component owns it. The refresh
-  // control is built per render rather than held in a variable — only one
-  // branch mounts at a time, but each needs its own element.
-  const contentPad = {
-    padding: 20,
-    paddingTop: searching ? 16 : 18,
-    paddingBottom: 90 + insets.bottom,
-  };
-  const renderRefresh = () => (
-    <RefreshControl
-      colors={[t.accent]}
-      onRefresh={onRefresh}
-      progressBackgroundColor={t.card}
-      refreshing={refreshing}
-      tintColor={t.sub}
-    />
+  // Shared by every tab's scroller. One memoised refresh element serves them
+  // all — a React element is just a description, so the same one can sit in
+  // several scrollers at once; each mounts its own native control.
+  const contentPad = useMemo(
+    () => ({
+      padding: 20,
+      paddingTop: searching ? 16 : 18,
+      paddingBottom: 90 + insets.bottom,
+    }),
+    [insets.bottom, searching],
+  );
+  const refreshControl = useMemo(
+    () => (
+      <RefreshControl
+        colors={[t.accent]}
+        onRefresh={onRefresh}
+        progressBackgroundColor={t.card}
+        refreshing={refreshing}
+        tintColor={t.sub}
+      />
+    ),
+    [onRefresh, refreshing, t],
+  );
+
+  // Stable so mid-drag re-renders hand the pager the same function, and the
+  // memoised pages inside actually get to bail out.
+  const renderTab = useCallback(
+    (key: LibTab) =>
+      key === "all" ? (
+        <AllLibraryTab
+          contentPad={contentPad}
+          lib={lib}
+          openCollections={openCollections}
+          openDoc={openDoc}
+          openDocMenu={openDocMenu}
+          refreshControl={refreshControl}
+        />
+      ) : key === "files" ? (
+        <FilesLibraryTab
+          contentPad={contentPad}
+          lib={lib}
+          openCollections={openCollections}
+          openDoc={openDoc}
+          openDocMenu={openDocMenu}
+          openUri={openFolderUri}
+          refreshControl={refreshControl}
+          setOpenUri={setOpenFolderUri}
+        />
+      ) : (
+        <ScrollView
+          contentContainerStyle={contentPad}
+          refreshControl={refreshControl}
+          style={{ flex: 1 }}
+        >
+          {key === "recent" ? (
+            <RecentLibraryTab
+              openCollections={openCollections}
+              openDoc={openDoc}
+            />
+          ) : key === "coll" ? (
+            <CollectionsTab
+              openBook={openBook}
+              openCollection={setOpenShelf}
+              openCollections={openCollections}
+              openDoc={openDoc}
+              shelf={openShelf}
+            />
+          ) : (
+            <NotesLibraryTab openReader={openReader} />
+          )}
+        </ScrollView>
+      ),
+    [
+      contentPad,
+      lib,
+      openBook,
+      openCollections,
+      openDoc,
+      openDocMenu,
+      openFolderUri,
+      openReader,
+      openShelf,
+      refreshControl,
+    ],
   );
 
   return (
@@ -243,22 +345,20 @@ export default function LibraryScreen() {
       onOpen={openSettings}
       open={settingsOpen}
       renderDrawerContent={renderSettings}
-      swipeEdgeWidth={40}
+      swipeEdgeWidth={DRAWER_EDGE}
     >
       <ProtoScreen>
         {/* top icon row */}
-        <Box
+        {/* <Box
           align="center"
           direction="row"
           justify="between"
           paddingLeft={20}
           paddingRight={20}
           paddingTop={8}
-        >
-          <HeaderButton onPress={openSettings}>
-            <IconSliders bg={t.bg} color={t.ink} size={20} />
-          </HeaderButton>
-          <Box direction="row" gap={10}>
+        > */}
+
+        {/* <Box direction="row" gap={10}>
             <HeaderButton onPress={() => router.push("/today")}>
               <IconSun color={t.ink} size={19} />
             </HeaderButton>
@@ -273,8 +373,8 @@ export default function LibraryScreen() {
                 SB
               </Text>
             </HeaderButton>
-          </Box>
-        </Box>
+          </Box> */}
+        {/* </Box> */}
 
         {searching ? (
           <Box
@@ -336,9 +436,14 @@ export default function LibraryScreen() {
               paddingRight={20}
               paddingTop={18}
             >
-              <Text ls={-0.3} serif size={30} weight="600">
-                {tr("library.title")}
-              </Text>
+              <Box direction="row" align="center" gap={10}>
+                <HeaderButton onPress={openSettings}>
+                  <IconSliders bg={t.bg} color={t.ink} size={20} />
+                </HeaderButton>
+                <Text ls={-0.3} serif size={30} weight="600">
+                  {tr("library.title")}
+                </Text>
+              </Box>
               <HeaderButton onPress={() => setSearching(true)}>
                 <IconSearch color={t.ink} size={19} />
               </HeaderButton>
@@ -362,61 +467,29 @@ export default function LibraryScreen() {
             lib={lib}
             openCollections={openCollections}
             openDoc={openDoc}
+            openDocMenu={openDocMenu}
             query={query}
-            refreshControl={renderRefresh()}
+            refreshControl={refreshControl}
           />
         ) : (
-          <SwipeTabsPager
-            renderTab={(key) =>
-              key === "all" ? (
-                <AllLibraryTab
-                  contentPad={contentPad}
-                  lib={lib}
-                  openCollections={openCollections}
-                  openDoc={openDoc}
-                  refreshControl={renderRefresh()}
-                />
-              ) : key === "files" ? (
-                <FilesLibraryTab
-                  contentPad={contentPad}
-                  lib={lib}
-                  openCollections={openCollections}
-                  openDoc={openDoc}
-                  openUri={openFolderUri}
-                  refreshControl={renderRefresh()}
-                  setOpenUri={setOpenFolderUri}
-                />
-              ) : (
-                <ScrollView
-                  contentContainerStyle={contentPad}
-                  refreshControl={renderRefresh()}
-                  style={{ flex: 1 }}
-                >
-                  {key === "recent" ? (
-                    <RecentLibraryTab
-                      openCollections={openCollections}
-                      openDoc={openDoc}
-                    />
-                  ) : key === "coll" ? (
-                    <CollectionsTab
-                      openBook={openBook}
-                      openCollection={setOpenShelf}
-                      openCollections={openCollections}
-                      openDoc={openDoc}
-                      shelf={openShelf}
-                    />
-                  ) : (
-                    <NotesLibraryTab openReader={openReader} />
-                  )}
-                </ScrollView>
-              )
-            }
-            tabs={tabs}
-          />
+          <SwipeTabsPager renderTab={renderTab} tabs={tabs} />
         )}
 
         {filing ? (
-          <CollectionPicker doc={filing} onClose={() => setFiling(null)} />
+          <CollectionPicker
+            anchor={filingAnchor}
+            doc={filing}
+            onClose={() => setFiling(null)}
+          />
+        ) : null}
+
+        {menuDoc ? (
+          <DocMenu
+            anchor={menuAnchor}
+            doc={menuDoc}
+            onChanged={lib.refresh}
+            onClose={() => setMenuDoc(null)}
+          />
         ) : null}
       </ProtoScreen>
     </Drawer>

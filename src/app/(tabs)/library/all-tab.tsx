@@ -10,6 +10,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { anchorOf } from "@/components/library/AnchoredPopover";
 import {
   sortByLibrarySort,
   type DeviceDoc,
@@ -21,11 +22,13 @@ import { useProtoTheme } from "@/theme/proto";
 import {
   docMeta,
   DocRow,
+  DotsButton,
   GRID_COLUMNS,
   PdfThumb,
   SortBar,
   SwipeToFavorite,
   type OpenCollections,
+  type OpenDocMenu,
   type ScrollerProps,
 } from "./shared";
 
@@ -34,11 +37,13 @@ export function AllTab({
   lib,
   openCollections,
   openDoc,
+  openDocMenu,
   refreshControl,
 }: ScrollerProps & {
   lib: DeviceLibrary;
   openCollections: OpenCollections;
   openDoc: (doc: DeviceDoc) => void;
+  openDocMenu: OpenDocMenu;
 }) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
@@ -144,13 +149,23 @@ export function AllTab({
       renderItem={({ item }) =>
         grid ? (
           <Tap
-            onLongPress={() => openCollections(item)}
+            onLongPress={(e) => openCollections(item, anchorOf(e))}
             onPress={() => openDoc(item)}
             scale={0.96}
             style={{ paddingHorizontal: 7, paddingBottom: 16 }}
           >
             <Box gap={7}>
-              <PdfThumb doc={item} style={{ aspectRatio: 3 / 4 }} />
+              <Box>
+                <PdfThumb doc={item} style={{ aspectRatio: 3 / 4 }} />
+                {/* scrim keeps the dots readable over any cover art */}
+                <Box style={{ position: "absolute", right: 4, top: 4 }}>
+                  <DotsButton
+                    bg="rgba(20,16,12,0.45)"
+                    color="#FFFFFF"
+                    onPress={(anchor) => openDocMenu(item, anchor)}
+                  />
+                </Box>
+              </Box>
               <Box gap={2}>
                 <Text lh={15} numberOfLines={2} size={11.5} weight="500">
                   {item.name}
@@ -166,7 +181,8 @@ export function AllTab({
             <DocRow
               doc={item}
               meta={docMeta(item.size, item.modifiedAt)}
-              onLongPress={() => openCollections(item)}
+              onLongPress={(e) => openCollections(item, anchorOf(e))}
+              onMore={(anchor) => openDocMenu(item, anchor)}
               onPress={() => openDoc(item)}
             />
           </SwipeToFavorite>

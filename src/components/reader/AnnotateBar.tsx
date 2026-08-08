@@ -23,7 +23,8 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
-import { MAX_TRANSLATE_WORDS } from "@/constants/limits";
+import { palette } from "@/constants/colors";
+import { isTranslatable, MAX_TRANSLATE_WORDS } from "@/constants/limits";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
@@ -78,6 +79,11 @@ export function AnnotateBar({
   // context — this only frames the action the way the reader is thinking of it.
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
   const translateLabel = wordCount <= 2 ? "Translate" : "Explain";
+  // Numbers, punctuation and lone initials have no word in them to explain.
+  // The action stays visible but inert, so the reader can see it exists and
+  // why it isn't available, rather than watching it appear and disappear as
+  // the selection moves.
+  const canTranslate = isTranslatable(text);
 
   // Null means "still just a selection". Once true, the note composer opens.
   const [noteFor, setNoteFor] = useState<boolean>(false);
@@ -261,7 +267,7 @@ export function AnnotateBar({
         >
           <SelAction
             highlight
-            icon={<IconHighlighter color="#E8B778" size={16} />}
+            icon={<IconHighlighter color={palette.pen.amberInk} size={16} />}
             label="Highlight"
             onPress={() => highlight("amber")}
           />
@@ -278,9 +284,20 @@ export function AnnotateBar({
           />
           {onTranslate ? (
             <SelAction
-              icon={<IconGlobe color="#F6F3EE" size={16} />}
+              disabled={!canTranslate}
+              icon={
+                <IconGlobe color={canTranslate ? "#F6F3EE" : "#8A8078"} size={16} />
+              }
               label={translateLabel}
               onPress={() => {
+                // Nothing to look up — say which selection would work rather
+                // than letting the tap do nothing at all.
+                if (!canTranslate) {
+                  showToast(
+                    `Select a word or phrase to ${translateLabel.toLowerCase()}`,
+                  );
+                  return;
+                }
                 // Guard against sending a whole chapter to the AI: a selection
                 // past the word cap gets a nudge instead of a request.
                 if (wordCount > MAX_TRANSLATE_WORDS) {
@@ -340,18 +357,22 @@ export function AnnotateBar({
 }
 
 function SelAction({
+  disabled,
   highlight,
   icon,
   label,
   onPress,
 }: {
+  /** Dims the action and drops its press animation. Still tappable — the
+   *  handler explains why it can't run, which a dead button couldn't. */
+  disabled?: boolean;
   highlight?: boolean;
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
 }) {
   return (
-    <Tap onPress={onPress} scale={0.94} style={{ flex: 1 }}>
+    <Tap onPress={onPress} scale={disabled ? 1 : 0.94} style={{ flex: 1 }}>
       <Box
         align="center"
         bg={highlight ? "rgba(246,243,238,.1)" : "transparent"}
@@ -360,7 +381,7 @@ function SelAction({
         rounded={11}
       >
         {icon}
-        <Text color="#F6F3EE" size={10.5} weight="500">
+        <Text color={disabled ? "#8A8078" : "#F6F3EE"} size={10.5} weight="500">
           {label}
         </Text>
       </Box>

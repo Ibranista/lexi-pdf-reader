@@ -66,6 +66,16 @@ export interface User {
    * identity but not an account, so the app still treats it as signed out.
    */
   isAnonymous?: boolean;
+  /**
+   * Decided server-side and stored on this row — which for an anonymous reader
+   * is the row their device id owns. Linking upgrades that same row, so the
+   * answer follows them into their account rather than being re-asked.
+   */
+  hasCompletedOnboarding?: boolean;
+  /** The onboarding picks, in the order they were made. */
+  interests?: string[];
+  /** Epoch ms; null until onboarding completes. */
+  onboardedAt?: number | null;
 }
 
 export interface AuthResponse {

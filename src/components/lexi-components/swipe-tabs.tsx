@@ -11,7 +11,15 @@ import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import type { GestureType } from "react-native-gesture-handler";
 import type { SharedValue } from "react-native-reanimated";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
@@ -41,7 +49,7 @@ const EDGE_RESISTANCE = 0.32;
 /** Fling speed (px/s) that carries to the next page short of the halfway mark. */
 const FLING_VELOCITY = 420;
 /** Left strip left alone, so the Settings drawer keeps its edge swipe. */
-const DRAWER_EDGE = 44;
+export const DRAWER_EDGE = 44;
 /** Inner padding of the bar — the pill insets by the same amount. */
 const BAR_PAD = 3;
 
@@ -126,47 +134,63 @@ export function useSwipeTabs<K extends string>({
     onChange(key);
   };
 
-  const gesture = Gesture.Pan()
-    .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
-    .failOffsetY([-FAIL_Y, FAIL_Y])
-    .onTouchesDown((event, manager) => {
-      // The drawer owns the left edge; don't race it for the same drag.
-      const touch = event.allTouches[0];
-      if (touch && touch.absoluteX < DRAWER_EDGE) manager.fail();
-    })
-    .onBegin(() => {
-      from.value = Math.round(progress.value);
-    })
-    .onUpdate((event) => {
-      const raw = from.value - event.translationX / (width.value || 1);
-      const last = count - 1;
-      // Rubber-band past the ends rather than stopping dead.
-      progress.value =
-        raw < 0
-          ? raw * EDGE_RESISTANCE
-          : raw > last
-            ? last + (raw - last) * EDGE_RESISTANCE
-            : raw;
-    })
-    .onEnd((event) => {
-      const flung = Math.abs(event.velocityX) > FLING_VELOCITY;
-      const landed = flung
-        ? event.velocityX < 0
-          ? Math.ceil(progress.value)
-          : Math.floor(progress.value)
-        : Math.round(progress.value);
-      // One page per swipe, however fast or far the finger went.
-      const target = Math.min(
-        count - 1,
-        Math.max(0, Math.min(from.value + 1, Math.max(from.value - 1, landed))),
-      );
-      progress.value = withSpring(target, SPRING);
-      if (target !== from.value) runOnJS(commit)(target);
-    })
-    .onFinalize((_event, success) => {
-      // Cancelled mid-drag (a child gesture won): fall back where we were.
-      if (!success) progress.value = withSpring(from.value, SPRING);
-    });
+  // The gesture reaches `commit` through a ref so the pan can be built once:
+  // a Gesture.Pan() rebuilt every render re-attaches to the GestureDetector
+  // mid-animation, and the churn lands as a visible hitch.
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+  const commitJS = useCallback((target: number) => {
+    commitRef.current(target);
+  }, []);
+
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
+        .failOffsetY([-FAIL_Y, FAIL_Y])
+        .onTouchesDown((event, manager) => {
+          // The drawer owns the left edge; don't race it for the same drag.
+          const touch = event.allTouches[0];
+          if (touch && touch.absoluteX < DRAWER_EDGE) manager.fail();
+        })
+        .onBegin(() => {
+          from.value = Math.round(progress.value);
+        })
+        .onUpdate((event) => {
+          const raw = from.value - event.translationX / (width.value || 1);
+          const last = count - 1;
+          // Rubber-band past the ends rather than stopping dead.
+          progress.value =
+            raw < 0
+              ? raw * EDGE_RESISTANCE
+              : raw > last
+                ? last + (raw - last) * EDGE_RESISTANCE
+                : raw;
+        })
+        .onEnd((event) => {
+          const flung = Math.abs(event.velocityX) > FLING_VELOCITY;
+          const landed = flung
+            ? event.velocityX < 0
+              ? Math.ceil(progress.value)
+              : Math.floor(progress.value)
+            : Math.round(progress.value);
+          // One page per swipe, however fast or far the finger went.
+          const target = Math.min(
+            count - 1,
+            Math.max(
+              0,
+              Math.min(from.value + 1, Math.max(from.value - 1, landed)),
+            ),
+          );
+          progress.value = withSpring(target, SPRING);
+          if (target !== from.value) runOnJS(commitJS)(target);
+        })
+        .onFinalize((_event, success) => {
+          // Cancelled mid-drag (a child gesture won): fall back where we were.
+          if (!success) progress.value = withSpring(from.value, SPRING);
+        }),
+    [commitJS, count, from, progress, width],
+  );
 
   const setWidth = (next: number) => {
     width.value = next;

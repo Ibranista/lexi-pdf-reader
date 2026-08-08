@@ -2,18 +2,23 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { type ReactElement, type ReactNode, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import type { RefreshControlProps } from "react-native";
+import type {
+  GestureResponderEvent,
+  RefreshControlProps,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from "react-native-reanimated";
 
 import { Box } from "@/components/atoms";
 import {
   IconChevron,
+  IconDots,
   IconGrid,
   IconList,
   IconStar,
@@ -21,6 +26,10 @@ import {
   Text,
   usePagerGesture,
 } from "@/components/lexi-components";
+import {
+  anchorOf,
+  type Anchor,
+} from "@/components/library/AnchoredPopover";
 import { FAVORITE_COLLECTION } from "@/constants/collections";
 import { bookCoverFromUri } from "@/hooks/use-book-suggestions";
 import { formatSize, formatWhen } from "@/hooks/use-device-library";
@@ -44,8 +53,46 @@ export interface ScrollerProps {
   refreshControl: ReactElement<RefreshControlProps>;
 }
 
-/** Long-press hook every document surface shares: opens the collection sheet. */
-export type OpenCollections = (doc: FilableDoc) => void;
+/**
+ * Long-press hook every document surface shares: opens the collection sheet.
+ * The anchor is the touch point, so the picker opens beside the document
+ * rather than in a corner of the screen.
+ */
+export type OpenCollections = (doc: FilableDoc, anchor?: Anchor) => void;
+
+/** ⋮ hook: opens the document actions menu (rename / share / delete). */
+export type OpenDocMenu = (doc: FilableDoc, anchor?: Anchor) => void;
+
+/**
+ * The ⋮ that opens a document's actions — sized for the end of a row or,
+ * with a scrim background, the corner of a grid cover.
+ */
+export function DotsButton({
+  bg,
+  color,
+  onPress,
+}: {
+  bg?: string;
+  color?: string;
+  /** Handed the touch point, so the menu can open next to this ⋮. */
+  onPress: (anchor?: Anchor) => void;
+}) {
+  const t = useProtoTheme();
+  return (
+    <Tap onPress={(e) => onPress(anchorOf(e))} scale={0.88}>
+      <Box
+        align="center"
+        bg={bg}
+        height={28}
+        justify="center"
+        rounded={14}
+        width={28}
+      >
+        <IconDots color={color ?? t.sub} size={16} />
+      </Box>
+    </Tap>
+  );
+}
 
 export function PdfThumb({
   doc,
@@ -232,7 +279,11 @@ export function SwipeToFavorite({
     })
     .onEnd(() => {
       if (tx.value <= -SWIPE_COMMIT) runOnJS(commit)();
-      tx.value = withSpring(0, { damping: 22, stiffness: 240 });
+      // Ease out rather than spring back — the row settles with no bounce.
+      tx.value = withTiming(0, {
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+      });
     });
   const pan = pager ? swipe.blocksExternalGesture(pager) : swipe;
 
@@ -286,12 +337,15 @@ export function DocRow({
   doc,
   meta,
   onLongPress,
+  onMore,
   onPress,
   trailing,
 }: {
   doc: { uri: string; name: string; ext: string };
   meta: string;
-  onLongPress?: () => void;
+  onLongPress?: (event: GestureResponderEvent) => void;
+  /** When set, a ⋮ ends the row (replacing the decorative chevron). */
+  onMore?: (anchor?: Anchor) => void;
   onPress: () => void;
   trailing?: ReactNode;
 }) {
@@ -307,7 +361,7 @@ export function DocRow({
         direction="row"
         gap={14}
         paddingY={12}
-        style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
+        // style={{ borderBottomWidth: 1, borderBottomColor: t.line }}
       >
         <PdfThumb doc={doc} rounded={8} style={{ width: 44, height: 58 }} />
         <Box flex={1}>
@@ -319,7 +373,9 @@ export function DocRow({
           </Text>
         </Box>
         {filed ? <IconStar color={t.accent} fill={t.accent} size={14} /> : null}
-        {trailing ?? <IconChevron color={t.faint} size={16} />}
+        {trailing ??
+          (onMore ? null : <IconChevron color={t.faint} size={16} />)}
+        {onMore ? <DotsButton onPress={onMore} /> : null}
       </Box>
     </Tap>
   );

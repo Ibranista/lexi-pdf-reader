@@ -4,7 +4,7 @@ import { colors } from '@/constants/colors';
 import { sansFamily, serifFamily } from '@/theme/app-fonts';
 
 // ============================================================================
-// Text — typographic primitive for the LexiPDF paper theme
+// Text — typographic primitive for the Liqrai Reader paper theme
 // ============================================================================
 
 type Variant =
