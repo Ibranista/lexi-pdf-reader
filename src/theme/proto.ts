@@ -116,12 +116,27 @@ interface ThemeModeState {
 export const useThemeModeStore = create<ThemeModeState>()(
   persist(
     (set) => ({
-      mode: "auto",
+      // Light, not "auto". The reader is a paper surface — the serif column,
+      // the highlight colours and the cover art are all designed against it —
+      // so a phone that happens to be in dark mode should not decide that for
+      // someone who has never expressed a preference. Dark is still one tap
+      // away in Settings.
+      mode: "light",
       setMode: (mode) => set({ mode }),
     }),
     {
       name: "proto-theme-mode",
       storage: createJSONStorage(() => zustandStorage),
+      version: 1,
+      // Installs from before this default already have "auto" written to disk,
+      // and a stored value wins over the default above — so without a migration
+      // the change would only ever reach new installs. Anyone who genuinely
+      // wants to follow the system can pick it again.
+      migrate: (state, from) => {
+        const stored = state as ThemeModeState | undefined;
+        if (from >= 1 || !stored) return stored;
+        return stored.mode === "auto" ? { ...stored, mode: "light" } : stored;
+      },
     },
   ),
 );

@@ -11,7 +11,13 @@ export const LINE_SPACING = {
   comfy: 1.75,
   airy: 2.05,
 } as const;
-export type FontFam = "dys" | "sans" | "serif";
+/**
+ * The reader's typeface. `dys` is Atkinson Hyperlegible — the key predates the
+ * font being named in the UI and is left alone deliberately: it is written into
+ * every reader's persisted settings, and renaming it would silently reset their
+ * choice back to the default.
+ */
+export type FontFam = "comic" | "dys" | "sans" | "serif";
 export type LineSpacing = "airy" | "comfy" | "compact";
 export type ReadWidth = "comfort" | "full" | "narrow";
 export type Contrast = "soft" | "std";

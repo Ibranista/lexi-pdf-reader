@@ -22,6 +22,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { mergeDeviceData } from "@/services/sync";
 import { useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -63,16 +64,22 @@ export default function LoginScreen() {
       // reading already saved on it carries over; if that Google identity
       // already owns an account, sign into it instead (`/auth/google`).
       let result;
+      // Upgraded in place, so the anonymous row *is* the account and there is
+      // nothing to fold in. Signing into an account that already exists leaves
+      // that row behind, and everything on it has to be carried across.
+      let absorbed = false;
       if (tokenStorage.getAccessToken()) {
         try {
           result = await authApi.linkGoogle(idToken);
         } catch {
           result = await authApi.google(idToken);
+          absorbed = true;
         }
       } else {
         result = await authApi.google(idToken);
       }
       setUser(result.user);
+      if (absorbed) await mergeDeviceData();
       showToast("Signed in with Google");
       router.back();
     } catch (e) {
@@ -119,6 +126,10 @@ export default function LoginScreen() {
           })
         : await authApi.login({ email: email.trim(), password });
       setUser(result.user);
+      // Signing in adopts an account that already exists, so whatever this
+      // phone read anonymously is sitting on a row nothing now points at.
+      // Registering upgraded that row in place and has nothing to carry.
+      if (!registering) await mergeDeviceData();
       showToast(registering ? "Account created" : "Signed in");
       router.back();
     } catch (e) {

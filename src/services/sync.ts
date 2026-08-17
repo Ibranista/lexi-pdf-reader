@@ -135,6 +135,42 @@ async function roundTrip(): Promise<void> {
   useSyncStore.getState().setCursor(data.cursor);
 }
 
+/** What a merge moved across, for the toast that reports it. */
+export interface MergeResult {
+  documents: number;
+  annotations: number;
+  vocab: number;
+  sessions: number;
+  messages: number;
+}
+
+/**
+ * Fold everything this device read anonymously into the account just signed
+ * into, then get out of the way.
+ *
+ * Only needed on the sign-in path. Creating an account upgrades the anonymous
+ * row in place, so its data is already the account's — but signing into an
+ * account that *already exists* leaves the anonymous row behind, holding every
+ * highlight, saved word and conversation from before. Without this call that
+ * row is simply orphaned, which reads to the reader as signing in and losing
+ * everything they had.
+ *
+ * Idempotent server-side, so a retry after a dropped connection is free.
+ */
+export async function mergeDeviceData(): Promise<MergeResult | null> {
+  try {
+    const { data } = await api.post<{ merged: MergeResult }>("/sync/merge", {
+      fromDeviceId: await deviceId(),
+    });
+    return data.merged;
+  } catch {
+    // The account is signed into either way; the anonymous row is still there
+    // and the next sign-in on this device will find it. Failing the sign-in
+    // over this would be the worse trade.
+    return null;
+  }
+}
+
 /** Shared, so a reconnect landing mid-sync rides the one already running. */
 let inFlight: Promise<void> | null = null;
 /** Set when something changed while a sync was in the air. */

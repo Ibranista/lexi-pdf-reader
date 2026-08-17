@@ -417,7 +417,10 @@ export interface ChatHistoryMessage {
 // history in memory lets the panel mount with the full thread already present,
 // instead of rendering a placeholder and replacing it after an HTTP round trip.
 const chatHistoryCache = new Map<string, ChatHistoryMessage[]>();
-const chatHistoryRequests = new Map<string, Promise<ChatHistoryMessage[]>>();
+const chatHistoryRequests = new Map<
+  string,
+  Promise<ChatHistoryMessage[] | null>
+>();
 
 export interface ChatStreamHandlers {
   /** A piece of the reply, as it's generated. */
@@ -530,6 +533,134 @@ export async function streamChat(
   return () => finish();
 }
 
+/* =========================
+   Live voice chat
+========================= */
+
+/** A sentence of the reply, rendered to audio while the rest is still writing. */
+export interface SpeechClip {
+  /** Play order. Clips can arrive out of order — a repeated sentence is a
+   *  server-side cache hit and comes back instantly where a fresh one doesn't. */
+  seq: number;
+  url: string;
+  /** The sentence this clip says, as the voice was given it. */
+  text: string;
+}
+
+export interface LiveChatHandlers extends ChatStreamHandlers {
+  /** A clip is ready to play. Play by `seq`, holding anything that arrives early. */
+  onSpeech: (clip: SpeechClip) => void;
+}
+
+/**
+ * One turn of a spoken conversation: everything {@link streamChat} delivers,
+ * plus the reply's audio, cut into sentences and voiced as it is written.
+ *
+ * The two travel on one stream so the transcript and the voice can never
+ * disagree about what was said, and so playback can start on the first sentence
+ * instead of after the last word — the gap between those two is the difference
+ * between talking to Liqrai and leaving it a voicemail.
+ *
+ * `onDone` fires when the turn ends, which is also when the audio queue is
+ * complete: no clip is announced after it.
+ */
+export async function streamChatLive(
+  input: ChatInput,
+  handlers: LiveChatHandlers,
+): Promise<() => void> {
+  // The EventSource bypasses the axios interceptors, so guarantee a session.
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {
+    // offline on first launch — the connection below fails and onError fires
+  }
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/chat/live`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      author: input.author,
+      docKey: input.docKey,
+      excerpt: input.excerpt,
+      message: input.message,
+      page: input.page,
+      sessionId: input.sessionId,
+      // Asks for an answer written to be *heard*: a few sentences, no lists or
+      // file names, ending in something the reader can answer out loud.
+      spoken: true,
+      style: input.style ?? "balanced",
+      title: input.title,
+    }),
+    // One-shot: never auto-reconnect after the turn ends or fails.
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      t?: string;
+      s?: number;
+      url?: string;
+      text?: string;
+      done?: boolean;
+      kind?: ChatKind;
+      sessionId?: string;
+      quota?: AiQuota;
+      error?: boolean;
+      message?: string;
+    };
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.t) {
+      handlers.onToken(obj.t);
+    } else if (obj.url && obj.s !== undefined) {
+      handlers.onSpeech({ seq: obj.s, text: obj.text ?? "", url: obj.url });
+    } else if (obj.done) {
+      handlers.onDone({
+        kind: obj.kind ?? "normal",
+        quota: obj.quota,
+        sessionId: obj.sessionId ?? input.sessionId,
+      });
+      finish();
+    } else if (obj.error) {
+      handlers.onError(
+        new Error(obj.message ?? "Liqrai couldn't finish that."),
+      );
+      finish();
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true),
+      );
+    } else {
+      handlers.onError(new Error("Couldn't reach Liqrai."));
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
 /** Prior turns for a book's conversation, oldest first — to rehydrate the sheet. */
 export function cachedChatHistory(
   sessionId: string,
@@ -537,7 +668,18 @@ export function cachedChatHistory(
   return chatHistoryCache.get(sessionId);
 }
 
-export function fetchChatHistory(sessionId: string): Promise<ChatHistoryMessage[]> {
+/**
+ * A document's thread, or `null` when it couldn't be fetched.
+ *
+ * The distinction matters: this used to answer `[]` for both, so a reader whose
+ * history failed to load was shown a fresh greeting that looked exactly like
+ * having no history — the conversation appearing to have been lost when it was
+ * sitting on the server the whole time. A failure is not cached, so the next
+ * open tries again.
+ */
+export function fetchChatHistory(
+  sessionId: string,
+): Promise<ChatHistoryMessage[] | null> {
   const cached = chatHistoryCache.get(sessionId);
   if (cached) return Promise.resolve(cached);
 
@@ -553,7 +695,7 @@ export function fetchChatHistory(sessionId: string): Promise<ChatHistoryMessage[
       chatHistoryCache.set(sessionId, history);
       return history;
     })
-    .catch(() => [])
+    .catch(() => null)
     .finally(() => {
       chatHistoryRequests.delete(sessionId);
     });

@@ -12,12 +12,18 @@ export const READ_WIDTH_PX: Record<string, number> = {
   full: 12,
 };
 
-/** Same family map as the prototype: Literata / Hanken Grotesk / Atkinson
- *  Hyperlegible, with system fallbacks while the webfonts load. */
+/** The reader's typeface as a CSS stack, with system fallbacks for while the
+ *  webfonts load. `dys` is Atkinson Hyperlegible; see FontFam on the store for
+ *  why the key doesn't say so. */
 export function fontStack(fam: string): string {
   if (fam === 'serif') return "'Literata', Georgia, 'Times New Roman', serif";
   if (fam === 'dys')
     return "'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif";
+  // Comic Sans MS is the fallback rather than the choice: we cannot ship it,
+  // but a device that already has it should use it — it is what Comic Relief
+  // was drawn to stand in for, matching it metrically.
+  if (fam === 'comic')
+    return "'Comic Relief', 'Comic Sans MS', 'Chalkboard SE', cursive";
   return "'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 }
 
