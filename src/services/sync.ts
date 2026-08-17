@@ -93,6 +93,25 @@ async function roundTrip(): Promise<void> {
   useSyncStore.getState().setCursor(data.cursor);
 }
 
+export interface MergeResult {
+  documents: number;
+  annotations: number;
+  vocab: number;
+  sessions: number;
+  messages: number;
+}
+
+export async function mergeDeviceData(): Promise<MergeResult | null> {
+  try {
+    const { data } = await api.post<{ merged: MergeResult }>("/sync/merge", {
+      fromDeviceId: await deviceId(),
+    });
+    return data.merged;
+  } catch {
+    return null;
+  }
+}
+
 let inFlight: Promise<void> | null = null;
 let again = false;
 

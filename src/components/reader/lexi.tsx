@@ -41,6 +41,7 @@ import {
   IconSpark,
   IconSpeaker,
   IconTrash,
+  IconWave,
   LiveWave,
   SpeakingWave,
   Tap,
@@ -49,7 +50,9 @@ import {
 import { CenterModal } from "@/components/modals";
 import { palette } from "@/constants/colors";
 import { LEXI_SEED } from "@/constants/library";
+import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { recordRealtimeTurn } from "@/services/realtime";
 import {
   AiQuotaError,
   cachedChatHistory,
@@ -57,6 +60,7 @@ import {
   fetchChatHistory,
   speakText,
   streamChat,
+  type AiQuota,
 } from "@/services/lexi-ai";
 import {
   useAnnotationsStore,
@@ -359,13 +363,14 @@ export function LexiSheet({
   );
 
   const initialHistory = book ? cachedChatHistory(sessionId) : undefined;
-  const [messages, setMessages] = useState<LexiMsg[]>(
-    () =>
-      initialHistory?.map((m) => ({
-        role: m.role === "user" ? "user" : "lexi",
-        kind: m.kind,
-        text: m.content,
-      })) ?? greeting,
+  const [messages, setMessages] = useState<LexiMsg[]>(() =>
+    initialHistory?.length
+      ? initialHistory.map((m) => ({
+          role: m.role === "user" ? "user" : "lexi",
+          kind: m.kind,
+          text: m.content,
+        }))
+      : greeting,
   );
   const [historyReady, setHistoryReady] = useState(
     !book || initialHistory !== undefined,
@@ -405,9 +410,12 @@ export function LexiSheet({
         return fetchChatHistory(sessionId);
       })
       .then((history) => {
-        if (cancelled || !history) return;
+        if (cancelled) return;
+        if (history === null) {
+          showToast("Couldn't load this conversation — check your connection");
+        }
         setMessages(
-          history.length
+          history?.length
             ? history.map((m) => ({
                 role: m.role === "user" ? "user" : "lexi",
                 kind: m.kind,
@@ -421,7 +429,7 @@ export function LexiSheet({
     return () => {
       cancelled = true;
     };
-  }, [book, greeting, sessionId]);
+  }, [book, greeting, sessionId, showToast]);
 
   useEffect(() => () => abortRef.current?.(), []);
 
@@ -523,11 +531,13 @@ export function LexiSheet({
       .join("\n\n");
   };
 
-  const runChat = async (q: string) => {
-    accRef.current = "";
-    setStreaming("");
-    abortRef.current = await streamChat(
-      {
+  const runChat = (q: string) =>
+    new Promise<void>((resolve, reject) => {
+      accRef.current = "";
+      setStreaming("");
+
+      let settled = false;
+      const input = {
         author: book!.author,
         docKey: book!.docKey,
         excerpt: readerContext(),
@@ -536,14 +546,16 @@ export function LexiSheet({
         sessionId,
         style: explStyle,
         title: book!.title,
-      },
-      {
-        onToken: (token) => {
+      };
+
+      const handlers = {
+        onToken: (token: string) => {
           accRef.current += token;
           setStreaming(accRef.current);
           scrollToEnd();
         },
-        onDone: ({ kind, quota }) => {
+        onDone: ({ kind, quota }: { kind: LexiMsg["kind"]; quota?: AiQuota }) => {
+          settled = true;
           abortRef.current = null;
           setStreaming(null);
           if (quota) setQuota(quota);
@@ -558,14 +570,17 @@ export function LexiSheet({
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
           scrollToEnd();
+          resolve();
         },
-        onError: (error) => {
+        onError: (error: unknown) => {
+          settled = true;
           abortRef.current = null;
           setStreaming(null);
           if (error instanceof AiQuotaError) {
             setQuota(error.quota);
             if (error.requiresAuth) openWall("quota");
             close();
+            reject(error);
             return;
           }
           push({
@@ -578,10 +593,16 @@ export function LexiSheet({
           });
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           scrollToEnd();
+          reject(error);
         },
-      },
-    );
-  };
+      };
+
+      streamChat(input, handlers)
+        .then((abort) => {
+          if (!settled) abortRef.current = abort;
+        })
+        .catch(handlers.onError);
+    });
 
   const canSend = input.trim().length > 0 && !busy;
   const canClear = messages.length > 1 && !busy;
@@ -622,7 +643,7 @@ export function LexiSheet({
     }
 
     lastQuestion.current = q;
-    void runChat(q);
+    runChat(q).catch(() => {});
   };
 
   const retry = () => {
@@ -632,10 +653,80 @@ export function LexiSheet({
         ? prev.slice(0, -1)
         : prev,
     );
-    void runChat(lastQuestion.current);
+    runChat(lastQuestion.current).catch(() => {});
   };
 
-  const mic = useVoiceInput(showToast);
+  const mic = useVoiceInput(showToast, {
+    onTranscript: (text) =>
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text)),
+  });
+
+  const live = useRealtimeVoice({
+    context: () =>
+      book
+        ? {
+            author: book.author,
+            docKey: book.docKey,
+            page: book.page,
+            style: explStyle,
+            title: book.title,
+          }
+        : null,
+    handlers: {
+      onAsk: (text) => {
+        push({ role: "user", kind: "normal", text });
+        lastQuestion.current = text;
+        setStreaming("");
+        scrollToEnd();
+      },
+      onReplyProgress: (text) => {
+        setStreaming(text);
+        scrollToEnd();
+      },
+      onTurn: ({ message, reply }) => {
+        setStreaming(null);
+        push({
+          role: "lexi",
+          kind: "normal",
+          text: reply,
+          cite: citedHighlight(reply, notesRef.current),
+        });
+        scrollToEnd();
+        recordRealtimeTurn({
+          docKey: book!.docKey,
+          message,
+          page: book!.page,
+          reply,
+          sessionId,
+          title: book!.title,
+        })
+          .then((quota) => {
+            if (quota) setQuota(quota);
+          })
+          .catch((error) => {
+            if (!(error instanceof AiQuotaError)) return;
+            setQuota(error.quota);
+            if (error.requiresAuth) openWall("quota");
+            live.stop();
+            close();
+          });
+      },
+      onError: showToast,
+    },
+  });
+
+  const startLive = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Keyboard.dismiss();
+    setVoice(null);
+    live.start();
+  };
+
+  const endLive = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setStreaming(null);
+    live.stop();
+  };
 
   const finishVoice = async () => {
     try {
@@ -978,7 +1069,7 @@ export function LexiSheet({
           </Box>
 
           <Reanimated.View style={[composerStyle, { paddingTop: 6 }]}>
-            {!busy && !input.trim() && mic.phase === "idle" ? (
+            {!busy && !input.trim() && mic.phase === "idle" && !live.on ? (
               <Box
                 direction="row"
                 gap={7}
@@ -1006,7 +1097,75 @@ export function LexiSheet({
               </Box>
             ) : null}
 
-            {mic.phase !== "idle" ? (
+            {live.on ? (
+              <Box align="center" direction="row" gap={10} paddingX={12}>
+                <Tap onPress={endLive} scale={0.9}>
+                  <Box
+                    align="center"
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconClose color={t.sub} size={16} />
+                  </Box>
+                </Tap>
+
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  borderColor={
+                    live.phase === "listening" ? t.accentMid : t.line
+                  }
+                  borderWidth={1}
+                  direction="row"
+                  flex={1}
+                  gap={10}
+                  paddingX={14}
+                  paddingY={9}
+                  rounded={22}
+                >
+                  {live.phase === "connecting" ? (
+                    <>
+                      <ActivityIndicator color={t.accent} size="small" />
+                      <Text color={t.sub} size={12}>
+                        Connecting…
+                      </Text>
+                    </>
+                  ) : live.phase === "speaking" ? (
+                    <>
+                      <SpeakingWave color={t.accent} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Speaking
+                        </Text>
+                      </Box>
+                      <Text color={t.accent} size={11.5} weight="600">
+                        Talk to cut in
+                      </Text>
+                    </>
+                  ) : live.phase === "thinking" ? (
+                    <>
+                      <TypingDots color={t.accent} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Thinking…
+                        </Text>
+                      </Box>
+                    </>
+                  ) : (
+                    <>
+                      <SpeakingWave color={t.accent} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Listening — just talk
+                        </Text>
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              </Box>
+            ) : mic.phase !== "idle" ? (
               <Box align="center" direction="row" gap={10} paddingX={12}>
                 <Tap
                   disabled={mic.phase !== "recording"}
@@ -1150,20 +1309,38 @@ export function LexiSheet({
                     </Box>
                   </Tap>
                 ) : (
-                  <Tap onPress={startVoice} scale={0.92}>
-                    <Box
-                      align="center"
-                      bg={t.chip}
-                      borderColor={t.line}
-                      borderWidth={1}
-                      height={38}
-                      justify="center"
-                      rounded={19}
-                      width={38}
-                    >
-                      <IconMic color={t.sub} size={17} />
-                    </Box>
-                  </Tap>
+                  <>
+                    {book ? (
+                      <Tap onPress={startLive} scale={0.92}>
+                        <Box
+                          align="center"
+                          bg={t.accentSoft}
+                          borderColor={t.accentMid}
+                          borderWidth={1}
+                          height={38}
+                          justify="center"
+                          rounded={19}
+                          width={38}
+                        >
+                          <IconWave color={t.accent} size={18} />
+                        </Box>
+                      </Tap>
+                    ) : null}
+                    <Tap onPress={startVoice} scale={0.92}>
+                      <Box
+                        align="center"
+                        bg={t.chip}
+                        borderColor={t.line}
+                        borderWidth={1}
+                        height={38}
+                        justify="center"
+                        rounded={19}
+                        width={38}
+                      >
+                        <IconMic color={t.sub} size={17} />
+                      </Box>
+                    </Tap>
+                  </>
                 )}
               </Box>
             )}

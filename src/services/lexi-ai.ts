@@ -310,7 +310,10 @@ export interface ChatHistoryMessage {
 }
 
 const chatHistoryCache = new Map<string, ChatHistoryMessage[]>();
-const chatHistoryRequests = new Map<string, Promise<ChatHistoryMessage[]>>();
+const chatHistoryRequests = new Map<
+  string,
+  Promise<ChatHistoryMessage[] | null>
+>();
 
 export interface ChatStreamHandlers {
   onToken: (token: string) => void;
@@ -407,13 +410,116 @@ export async function streamChat(
   return () => finish();
 }
 
+export interface SpeechClip {
+  seq: number;
+  url: string;
+  text: string;
+}
+
+export interface LiveChatHandlers extends ChatStreamHandlers {
+  onSpeech: (clip: SpeechClip) => void;
+}
+
+export async function streamChatLive(
+  input: ChatInput,
+  handlers: LiveChatHandlers,
+): Promise<() => void> {
+  try {
+    if (!tokenStorage.getAccessToken()) await ensureSession();
+  } catch {}
+  const token = tokenStorage.getAccessToken();
+
+  const source = new EventSource(`${API_BASE_URL}/ai/chat/live`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      author: input.author,
+      docKey: input.docKey,
+      excerpt: input.excerpt,
+      message: input.message,
+      page: input.page,
+      sessionId: input.sessionId,
+      spoken: true,
+      style: input.style ?? "balanced",
+      title: input.title,
+    }),
+    pollingInterval: 0,
+  });
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    source.removeAllEventListeners();
+    source.close();
+  };
+
+  source.addEventListener("message", (event) => {
+    if (finished || !event.data) return;
+    let obj: {
+      t?: string;
+      s?: number;
+      url?: string;
+      text?: string;
+      done?: boolean;
+      kind?: ChatKind;
+      sessionId?: string;
+      quota?: AiQuota;
+      error?: boolean;
+      message?: string;
+    };
+    try {
+      obj = JSON.parse(event.data);
+    } catch {
+      return; // partial/garbled frame — ignore
+    }
+    if (obj.t) {
+      handlers.onToken(obj.t);
+    } else if (obj.url && obj.s !== undefined) {
+      handlers.onSpeech({ seq: obj.s, text: obj.text ?? "", url: obj.url });
+    } else if (obj.done) {
+      handlers.onDone({
+        kind: obj.kind ?? "normal",
+        quota: obj.quota,
+        sessionId: obj.sessionId ?? input.sessionId,
+      });
+      finish();
+    } else if (obj.error) {
+      handlers.onError(
+        new Error(obj.message ?? "Liqrai couldn't finish that."),
+      );
+      finish();
+    }
+  });
+
+  source.addEventListener("error", (event) => {
+    if (finished) return; // a close after `done` also lands here — ignore it
+    const status = "xhrStatus" in event ? event.xhrStatus : 0;
+    if (status === 402) {
+      handlers.onError(
+        new AiQuotaError("You've used your free AI credits.", null, true),
+      );
+    } else {
+      handlers.onError(new Error("Couldn't reach Liqrai."));
+    }
+    finish();
+  });
+
+  return () => finish();
+}
+
 export function cachedChatHistory(
   sessionId: string,
 ): ChatHistoryMessage[] | undefined {
   return chatHistoryCache.get(sessionId);
 }
 
-export function fetchChatHistory(sessionId: string): Promise<ChatHistoryMessage[]> {
+export function fetchChatHistory(
+  sessionId: string,
+): Promise<ChatHistoryMessage[] | null> {
   const cached = chatHistoryCache.get(sessionId);
   if (cached) return Promise.resolve(cached);
 
@@ -429,7 +535,7 @@ export function fetchChatHistory(sessionId: string): Promise<ChatHistoryMessage[
       chatHistoryCache.set(sessionId, history);
       return history;
     })
-    .catch(() => [])
+    .catch(() => null)
     .finally(() => {
       chatHistoryRequests.delete(sessionId);
     });

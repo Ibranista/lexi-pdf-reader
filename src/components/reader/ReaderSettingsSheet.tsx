@@ -35,7 +35,7 @@ import type {
   ReadWidth,
 } from "@/stores/app-store";
 import { useAppStore } from "@/stores/app-store";
-import { dysFamily, hankenFamily } from "@/theme/app-fonts";
+import { atkinsonFamily, comicFamily, hankenFamily } from "@/theme/app-fonts";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 
 type ThemeMode = "auto" | "dark" | "light";
@@ -59,10 +59,27 @@ const VIEW_MODE_ITEMS: SegmentItem<ViewMode>[] = [
   { key: "reflow", label: "Reflow" },
 ];
 
-const FAM_ITEMS: SegmentItem<FontFam>[] = [
-  { key: "sans", label: "Sans", font: hankenFamily },
+const FAM_ITEMS: {
+  key: FontFam;
+  label: string;
+  font?: { active: string; inactive: string };
+  serif?: boolean;
+  note?: string;
+}[] = [
   { key: "serif", label: "Serif", serif: true },
-  { key: "dys", label: "Dyslexic", font: dysFamily, flex: 1.3 },
+  { key: "sans", label: "Grotesk", font: hankenFamily },
+  {
+    key: "dys",
+    label: "Atkinson",
+    font: atkinsonFamily,
+    note: "Drawn by the Braille Institute to keep letters that mirror each other — b/d, p/q — apart.",
+  },
+  {
+    key: "comic",
+    label: "Dyslexic",
+    font: comicFamily,
+    note: "An openly licensed Comic Sans, matched to it letter for letter. Its uneven shapes are what make it easier to read for some.",
+  },
 ];
 
 const SPACING_ITEMS: SegmentItem<LineSpacing>[] = [
@@ -431,14 +448,62 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
             <Box paddingBottom={8} paddingTop={20}>
               <SectionLabel size={11}>Reflow text</SectionLabel>
             </Box>
+            <Box direction="row" gap={7} paddingBottom={10} wrap="wrap">
+              {FAM_ITEMS.map((item) => {
+                const on = item.key === app.fontFam;
+                return (
+                  <Tap
+                    key={item.key}
+                    onPress={() => app.set({ fontFam: item.key })}
+                    scale={0.96}
+                  >
+                    <Box
+                      bg={on ? t.accentSoft : t.chip}
+                      borderColor={on ? t.accentMid : t.line}
+                      borderWidth={1}
+                      paddingX={13}
+                      paddingY={9}
+                      rounded={20}
+                    >
+                      <Text
+                        color={on ? t.accentText : t.ink}
+                        serif={item.serif}
+                        size={13}
+                        style={
+                          item.font
+                            ? {
+                                fontFamily: on
+                                  ? item.font.active
+                                  : item.font.inactive,
+                              }
+                            : undefined
+                        }
+                        weight={on ? "600" : "500"}
+                      >
+                        {item.label}
+                      </Text>
+                    </Box>
+                  </Tap>
+                );
+              })}
+            </Box>
+
+            {FAM_ITEMS.find((item) => item.key === app.fontFam)?.note ? (
+              <Text
+                color={t.faint}
+                lh={17}
+                size={11.5}
+                style={{ paddingBottom: 12 }}
+              >
+                {FAM_ITEMS.find((item) => item.key === app.fontFam)?.note}
+              </Text>
+            ) : null}
+
             <Box align="center" direction="row" gap={10}>
               <Box flex={1}>
-                <Segmented
-                  items={FAM_ITEMS}
-                  onChange={(key) => app.set({ fontFam: key })}
-                  size={12.5}
-                  value={app.fontFam}
-                />
+                <Text color={t.sub} size={12.5} weight="600">
+                  Text size
+                </Text>
               </Box>
               <Box
                 align="center"

@@ -14,6 +14,8 @@ export const fontAssets = {
   'HankenGrotesk-SemiBold': require('./assets/fonts/hanken-grotesk/HankenGrotesk-SemiBold.ttf'),
   'AtkinsonHyperlegible-Regular': require('./assets/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-Regular.ttf'),
   'AtkinsonHyperlegible-Bold': require('./assets/fonts/atkinson-hyperlegible/AtkinsonHyperlegible-Bold.ttf'),
+  'ComicRelief-Regular': require('./assets/fonts/comic-relief/ComicRelief-Regular.ttf'),
+  'ComicRelief-Bold': require('./assets/fonts/comic-relief/ComicRelief-Bold.ttf'),
 };
 
 export type FontWeight = '200' | '300' | '400' | '500' | '600' | '700' | '800';
@@ -36,9 +38,14 @@ export const hankenFamily = {
   inactive: 'HankenGrotesk-Medium',
 };
 
-export const dysFamily = {
+export const atkinsonFamily = {
   active: 'AtkinsonHyperlegible-Bold',
   inactive: 'AtkinsonHyperlegible-Regular',
+};
+
+export const comicFamily = {
+  active: 'ComicRelief-Bold',
+  inactive: 'ComicRelief-Regular',
 };
 
 export const monoFamily = Platform.select({

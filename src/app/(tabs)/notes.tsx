@@ -19,11 +19,11 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { CenterModal } from "@/components/modals";
 import {
   HIGHLIGHT_FILL,
   useAnnotationsStore,
 } from "@/stores/annotations-store";
-import { CenterModal } from "@/components/modals";
 import { useReaderJumpStore, useToastStore } from "@/stores/app-store";
 import { useRecentsStore } from "@/stores/recents-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -130,7 +130,7 @@ export default function NotesScreen() {
         </HeaderButton>
         <Box flex={1}>
           <Text serif size={20} weight="600">
-            My Notes
+            Notes
           </Text>
           <Text color={t.sub} numberOfLines={1} size={12}>
             {name ?? "This document"}
@@ -223,7 +223,11 @@ export default function NotesScreen() {
         ) : (
           <>
             {noteList.map((a) => (
-              <Tap key={a.id} onPress={() => jump(a.page, a.text)} scale={0.985}>
+              <Tap
+                key={a.id}
+                onPress={() => jump(a.page, a.text)}
+                scale={0.985}
+              >
                 <Card
                   gap={10}
                   style={

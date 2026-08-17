@@ -22,9 +22,10 @@ import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 
 const FAM_ITEMS: { key: FontFam; label: string; serif?: boolean }[] = [
-  { key: "sans", label: "Sans" },
-  { key: "serif", label: "Serif", serif: true },
-  { key: "dys", label: "Dyslexic" },
+  { key: "serif", label: "Literata", serif: true },
+  { key: "sans", label: "Hanken" },
+  { key: "dys", label: "Atkinson" },
+  { key: "comic", label: "Comic" },
 ];
 
 const LS_ITEMS: { key: LineSpacing; label: string }[] = [

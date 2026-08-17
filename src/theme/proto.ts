@@ -104,12 +104,18 @@ interface ThemeModeState {
 export const useThemeModeStore = create<ThemeModeState>()(
   persist(
     (set) => ({
-      mode: "auto",
+      mode: "light",
       setMode: (mode) => set({ mode }),
     }),
     {
       name: "proto-theme-mode",
       storage: createJSONStorage(() => zustandStorage),
+      version: 1,
+      migrate: (state, from) => {
+        const stored = state as ThemeModeState | undefined;
+        if (from >= 1 || !stored) return stored;
+        return stored.mode === "auto" ? { ...stored, mode: "light" } : stored;
+      },
     },
   ),
 );

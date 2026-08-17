@@ -43,6 +43,10 @@ interface ReaderStyle {
 
 function readerCss(s: ReaderStyle): string {
   return `
+  /* Must stay the first rule — an @import anywhere else is dropped. Without
+     it the reader's chosen typeface silently fell back to whatever the device
+     happened to have, so picking Atkinson Hyperlegible here did nothing. */
+  @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Hanken+Grotesk:wght@400;500;600&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Comic+Relief:wght@400;700&display=swap');
   html { -webkit-text-size-adjust: 100%; }
   html, body {
     background: ${s.bg} !important;

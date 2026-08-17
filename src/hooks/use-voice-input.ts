@@ -19,6 +19,11 @@ const MIN_DURATION_MS = 700;
 
 const DB_FLOOR = -50;
 
+const SPEECH_LEVEL = 0.28;
+const SILENCE_LEVEL = 0.16;
+
+const NO_SPEECH_TIMEOUT_MS = 7000;
+
 function levelFrom(metering: number | undefined): number {
   if (metering === undefined || Number.isNaN(metering)) return 0;
   if (metering <= DB_FLOOR) return 0;
@@ -27,6 +32,12 @@ function levelFrom(metering: number | undefined): number {
 }
 
 export type VoicePhase = "idle" | "recording" | "transcribing";
+
+export interface VoiceInputOptions {
+  silenceMs?: number;
+  onTranscript?: (text: string) => void;
+  onTranscriptError?: (error: unknown) => void;
+}
 
 export interface VoiceInput {
   level: number;
@@ -38,7 +49,10 @@ export interface VoiceInput {
   cancel: () => Promise<void>;
 }
 
-export function useVoiceInput(onError: (message: string) => void): VoiceInput {
+export function useVoiceInput(
+  onError: (message: string) => void,
+  options: VoiceInputOptions = {},
+): VoiceInput {
   const recorder = useAudioRecorder({
     ...RecordingPresets.HIGH_QUALITY,
     isMeteringEnabled: true,
@@ -52,6 +66,12 @@ export function useVoiceInput(onError: (message: string) => void): VoiceInput {
     durationRef.current = state.durationMillis ?? 0;
   }, [state.durationMillis]);
   const stoppingRef = useRef(false);
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+  const heardSpeech = useRef(false);
+  const lastSpeechAt = useRef(0);
 
   const finishRecording = useCallback(async () => {
     try {
@@ -87,6 +107,8 @@ export function useVoiceInput(onError: (message: string) => void): VoiceInput {
       await recorder.prepareToRecordAsync();
       recorder.record();
       stoppingRef.current = false;
+      heardSpeech.current = false;
+      lastSpeechAt.current = 0;
       setPhase("recording");
     } catch {
       await finishRecording();
@@ -131,12 +153,44 @@ export function useVoiceInput(onError: (message: string) => void): VoiceInput {
     }
   }, [finishRecording, onError, phase, recorder]);
 
+  const selfStop = useCallback(async () => {
+    try {
+      const text = await stop();
+      if (text) optionsRef.current.onTranscript?.(text);
+    } catch (error) {
+      optionsRef.current.onTranscriptError?.(error);
+    }
+  }, [stop]);
+
   useEffect(() => {
     if (phase !== "recording" || stoppingRef.current) return;
     if ((state.durationMillis ?? 0) < MAX_DURATION_MS) return;
     stoppingRef.current = true;
-    void stop();
-  }, [phase, state.durationMillis, stop]);
+    void selfStop();
+  }, [phase, selfStop, state.durationMillis]);
+
+  useEffect(() => {
+    const { silenceMs } = optionsRef.current;
+    if (!silenceMs || phase !== "recording" || stoppingRef.current) return;
+
+    const elapsed = state.durationMillis ?? 0;
+    const level = levelFrom(state.metering);
+
+    if (level >= SPEECH_LEVEL) {
+      heardSpeech.current = true;
+      lastSpeechAt.current = elapsed;
+      return;
+    }
+    if (level > SILENCE_LEVEL) return;
+
+    const done = heardSpeech.current
+      ? elapsed - lastSpeechAt.current >= silenceMs
+      : elapsed >= NO_SPEECH_TIMEOUT_MS;
+    if (!done) return;
+
+    stoppingRef.current = true;
+    void selfStop();
+  }, [phase, selfStop, state.durationMillis, state.metering]);
 
   useEffect(
     () => () => {

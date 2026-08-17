@@ -8,6 +8,8 @@ export function fontStack(fam: string): string {
   if (fam === 'serif') return "'Literata', Georgia, 'Times New Roman', serif";
   if (fam === 'dys')
     return "'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif";
+  if (fam === 'comic')
+    return "'Comic Relief', 'Comic Sans MS', 'Chalkboard SE', cursive";
   return "'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 }
 

@@ -15,6 +15,7 @@ import {
   Tap,
   Text,
 } from "@/components/lexi-components";
+import { mergeDeviceData } from "@/services/sync";
 import { useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useProtoTheme } from "@/theme/proto";
@@ -49,16 +50,19 @@ export default function LoginScreen() {
     setError(null);
     try {
       let result;
+      let absorbed = false;
       if (tokenStorage.getAccessToken()) {
         try {
           result = await authApi.linkGoogle(idToken);
         } catch {
           result = await authApi.google(idToken);
+          absorbed = true;
         }
       } else {
         result = await authApi.google(idToken);
       }
       setUser(result.user);
+      if (absorbed) await mergeDeviceData();
       showToast("Signed in with Google");
       router.back();
     } catch (e) {
@@ -101,6 +105,7 @@ export default function LoginScreen() {
           })
         : await authApi.login({ email: email.trim(), password });
       setUser(result.user);
+      if (!registering) await mergeDeviceData();
       showToast(registering ? "Account created" : "Signed in");
       router.back();
     } catch (e) {

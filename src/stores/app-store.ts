@@ -10,7 +10,7 @@ export const LINE_SPACING = {
   comfy: 1.75,
   airy: 2.05,
 } as const;
-export type FontFam = "dys" | "sans" | "serif";
+export type FontFam = "comic" | "dys" | "sans" | "serif";
 export type LineSpacing = "airy" | "comfy" | "compact";
 export type ReadWidth = "comfort" | "full" | "narrow";
 export type Contrast = "soft" | "std";
