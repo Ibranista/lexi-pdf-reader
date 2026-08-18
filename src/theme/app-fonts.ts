@@ -48,6 +48,18 @@ export const comicFamily = {
   inactive: 'ComicRelief-Regular',
 };
 
+export function readerBodyFont(
+  fam: 'comic' | 'dys' | 'sans' | 'serif',
+  bold = false,
+): string | undefined {
+  if (fam === 'serif') return undefined;
+  if (fam === 'dys') {
+    return bold ? atkinsonFamily.active : atkinsonFamily.inactive;
+  }
+  if (fam === 'comic') return bold ? comicFamily.active : comicFamily.inactive;
+  return bold ? hankenFamily.active : hankenFamily.inactive;
+}
+
 export const monoFamily = Platform.select({
   ios: 'Menlo',
   default: 'monospace',

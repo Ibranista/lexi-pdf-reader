@@ -93,6 +93,7 @@ interface AppState {
   flowRead: boolean;
   fmTimer: boolean;
   aiOn: boolean;
+  factCheck: boolean;
   lang: Lang;
   explStyle: ExplainStyle;
   defaultReader: ReaderMode;
@@ -139,6 +140,7 @@ export const useAppStore = create<AppState>()(
       fmTimer: true,
 
       aiOn: true,
+      factCheck: false,
       lang: "am",
       explStyle: "balanced",
       defaultReader: "reflow",

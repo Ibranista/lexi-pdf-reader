@@ -586,6 +586,22 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         )}
 
         <Box paddingBottom={2} paddingTop={20}>
+          <SectionLabel size={11}>Accuracy</SectionLabel>
+        </Box>
+
+        <Row
+          sub="Underline claims worth checking as you read. Skips fiction; uses a credit per page."
+          title="Check facts"
+        >
+          <Toggle
+            on={app.factCheck}
+            onToggle={() => app.set({ factCheck: !app.factCheck })}
+          />
+        </Row>
+
+        <Divider />
+
+        <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>
         </Box>
 

@@ -3,6 +3,7 @@ import EventSource from "react-native-sse";
 
 import { DICT, LANG_NAMES } from "@/constants/library";
 import { ensureSession } from "@/services/device-session";
+import type { SpokenWord } from "@/utils/spoken-words";
 import type { ExplainStyle, Lang } from "@/stores/app-store";
 import { API_BASE_URL, api, tokenStorage } from "@/utils/axios";
 
@@ -557,14 +558,17 @@ export async function clearChatHistory(sessionId: string): Promise<boolean> {
   }
 }
 
-export async function speakText(text: string): Promise<string | undefined> {
+export async function speakText(
+  text: string,
+): Promise<{ audioUrl?: string; words: SpokenWord[] }> {
   try {
-    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", {
-      text,
-    });
-    return data.audioUrl;
+    const { data } = await api.post<{
+      audioUrl?: string;
+      words?: SpokenWord[];
+    }>("/ai/speak", { text });
+    return { audioUrl: data.audioUrl, words: data.words ?? [] };
   } catch {
-    return undefined;
+    return { words: [] };
   }
 }
 

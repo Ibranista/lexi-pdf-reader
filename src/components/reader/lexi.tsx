@@ -68,8 +68,9 @@ import {
 } from "@/stores/annotations-store";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { sansFamily } from "@/theme/app-fonts";
+import { readerBodyFont, sansFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
+import { alignWords, tokenize, type WordSpan } from "@/utils/spoken-words";
 
 interface LexiMsg {
   role: "lexi" | "user";
@@ -273,9 +274,11 @@ export interface LexiBook {
 }
 
 export function LexiSheet({
+  ask,
   book,
   onClose,
 }: {
+  ask?: string;
   book?: LexiBook;
   onClose: () => void;
 }) {
@@ -283,6 +286,10 @@ export function LexiSheet({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const explStyle = useAppStore((s) => s.explStyle);
+  const fontFam = useAppStore((s) => s.fontFam);
+  const bodyFont = readerBodyFont(fontFam);
+  const bodyFontBold = readerBodyFont(fontFam, true);
+  const bodySerif = fontFam === "serif";
   const showToast = useToastStore((s) => s.showToast);
   const setQuota = useAuthStore((s) => s.setQuota);
   const openWall = useAuthStore((s) => s.openWall);
@@ -376,7 +383,7 @@ export function LexiSheet({
     !book || initialHistory !== undefined,
   );
   const [historyVisible, setHistoryVisible] = useState(!book);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(ask ?? "");
   const [inputH, setInputH] = useState(INPUT_MIN);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -480,11 +487,35 @@ export function LexiSheet({
     key: number;
     seq: number;
     url?: string;
+    spans?: WordSpan[];
   } | null>(null);
+  const [spokenAt, setSpokenAt] = useState(-1);
 
   const audioNode = useMemo(() => {
     if (!voice?.url) return null;
-    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>var a=document.getElementById('a');var done=function(){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage('ended')};a.addEventListener('ended',done);a.addEventListener('error',done);</script></body></html>`;
+    const spans = JSON.stringify(voice.spans ?? []);
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>
+var a=document.getElementById('a');
+var S=${spans};
+var last=-1;
+function post(m){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(m)}
+function tick(){
+  if(S.length){
+    /* The furthest word started, not the word straddling the clock. Words do
+       not butt up against each other — there is a gap at every comma, every
+       full stop, every breath — and asking "which word contains this instant"
+       answers "none" in all of them, blanking the trail between one word and
+       the next. This only ever moves forward. */
+    var t=a.currentTime,i=last;
+    for(var k=0;k<S.length;k++){if(S[k].s>t)break;i=S[k].i}
+    if(i!==last){last=i;post('w:'+i)}
+  }
+  if(!a.paused&&!a.ended)requestAnimationFrame(tick);
+}
+a.addEventListener('playing',function(){requestAnimationFrame(tick)});
+var done=function(){post('ended')};
+a.addEventListener('ended',done);a.addEventListener('error',done);
+</script></body></html>`;
     return (
       <WebView
         allowsInlineMediaPlayback
@@ -492,7 +523,11 @@ export function LexiSheet({
         key={voice.seq}
         mediaPlaybackRequiresUserAction={false}
         mixedContentMode="always"
-        onMessage={() => setVoice(null)}
+        onMessage={(e) => {
+          const data = e.nativeEvent.data;
+          if (data.startsWith("w:")) setSpokenAt(Number(data.slice(2)));
+          else setVoice(null);
+        }}
         pointerEvents="none"
         source={{ html }}
         style={ZERO_SIZE}
@@ -507,11 +542,22 @@ export function LexiSheet({
     }
     const seq = (voice?.seq ?? 0) + 1;
     setVoice({ key, seq });
-    const url = await speakText(text);
+    setSpokenAt(-1);
+    const { audioUrl, words } = await speakText(text);
     setVoice((cur) =>
-      cur && cur.seq === seq ? (url ? { ...cur, url } : null) : cur,
+      cur && cur.seq === seq
+        ? audioUrl
+          ? { ...cur, spans: alignWords(tokenize(text), words), url: audioUrl }
+          : null
+        : cur,
     );
   };
+
+  const spokenTokens = useMemo(() => {
+    if (!voice?.url || !voice.spans?.length) return null;
+    const text = messages[voice.key]?.text;
+    return text ? tokenize(text) : null;
+  }, [messages, voice]);
 
   const readerContext = () => {
     if (!book) return undefined;
@@ -755,8 +801,9 @@ export function LexiSheet({
     const armed = voice?.key === i;
     const playing = armed && Boolean(voice?.url);
     const loading = armed && !playing;
+    const dimmed = Boolean(voice?.url) && !playing;
     return (
-      <Box key={i} paddingY={5}>
+      <Box key={i} paddingY={5} style={{ opacity: dimmed ? 0.27 : 1 }}>
         <Box
           bg={user ? t.onAccent : isError ? t.accentSoft : t.card}
           borderColor={
@@ -787,8 +834,39 @@ export function LexiSheet({
                 }),
           }}
         >
-          <Text color={user ? t.pill : t.ink} lh={21} size={13.5}>
-            {m.text}
+
+          <Text
+            color={user ? t.pill : t.ink}
+            lh={21}
+            serif={bodySerif}
+            size={13.5}
+            style={bodyFont ? { fontFamily: bodyFont } : undefined}
+          >
+            {playing && spokenTokens && spokenAt >= 0 ? (
+              <>
+                <Text
+                  color={t.accentText}
+                  serif={bodySerif}
+                  style={bodyFont ? { fontFamily: bodyFont } : undefined}
+                >
+                  {spokenTokens.slice(0, spokenAt).join("")}
+                </Text>
+                <Text
+                  serif={bodySerif}
+                  style={{
+                    backgroundColor: t.accentSoft,
+                    color: t.accentText,
+                    ...(bodyFontBold ? { fontFamily: bodyFontBold } : null),
+                  }}
+                  weight="600"
+                >
+                  {spokenTokens[spokenAt] ?? ""}
+                </Text>
+                {spokenTokens.slice(spokenAt + 1).join("")}
+              </>
+            ) : (
+              m.text
+            )}
           </Text>
           {isError ? (
             <Tap
@@ -1019,7 +1097,15 @@ export function LexiSheet({
                         style={{ alignSelf: "flex-start", maxWidth: "88%" }}
                       >
                         {streaming ? (
-                          <Text color={t.ink} lh={21} size={13.5}>
+                          <Text
+                            color={t.ink}
+                            lh={21}
+                            serif={bodySerif}
+                            size={13.5}
+                            style={
+                              bodyFont ? { fontFamily: bodyFont } : undefined
+                            }
+                          >
                             {streaming}
                           </Text>
                         ) : (

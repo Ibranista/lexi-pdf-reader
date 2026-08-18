@@ -43,6 +43,8 @@ import { SignInWall } from "@/components/auth/SignInWall";
 import { NoteCard } from "@/components/reader/NoteCard";
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
+import { ClaimCard } from "@/components/reader/ClaimCard";
+import { usePageCheck } from "@/hooks/use-page-check";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import type { TranslateTarget } from "@/components/reader/TranslateCard";
 import { TranslateCard } from "@/components/reader/TranslateCard";
@@ -144,6 +146,14 @@ export default function PdfViewerScreen() {
   >([]);
   const [indexed, setIndexed] = useState(false);
   const contextSent = useRef<string | null>(null);
+  const pageTexts = useRef(new Map<number, string>());
+  const [extractedPages, setExtractedPages] = useState(0);
+  const [pageText, setPageText] = useState("");
+  const [openClaim, setOpenClaim] = useState<{
+    page: number;
+    id: string;
+  } | null>(null);
+  const [lexiAsk, setLexiAsk] = useState<string | undefined>(undefined);
   const [highlight, setHighlight] = useState<{
     query: string;
     index: number;
@@ -178,6 +188,27 @@ export default function PdfViewerScreen() {
     () => annotations.find((a) => a.id === openNoteId) ?? null,
     [annotations, openNoteId],
   );
+
+  useEffect(() => {
+    setPageText(pageTexts.current.get(page) ?? "");
+  }, [extractedPages, page]);
+
+  const { claims } = usePageCheck({
+    docKey: docKey ?? "",
+    page,
+    text: pageText,
+    title: name ?? undefined,
+  });
+
+  const checks = useMemo(
+    () => claims.map((c, i) => ({ id: `chk-${i}`, page, quote: c.quote })),
+    [claims, page],
+  );
+  const openCheckId = openClaim?.page === page ? openClaim.id : null;
+  const openClaimBody = useMemo(() => {
+    const at = checks.findIndex((c) => c.id === openCheckId);
+    return at === -1 ? null : (claims[at] ?? null);
+  }, [checks, claims, openCheckId]);
   const [pageMarker, setPageMarker] = useState<{
     page: number;
     boxes: { x0: number; y0: number; x1: number; y1: number }[];
@@ -624,6 +655,9 @@ export default function PdfViewerScreen() {
               clearSelectionSeq={clearSelSeq}
               highlights={highlights}
               onHighlightPress={setOpenNoteId}
+              checks={checks}
+              openCheckId={openCheckId}
+              onCheckPress={(id) => setOpenClaim({ id, page })}
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -638,6 +672,12 @@ export default function PdfViewerScreen() {
               onContext={
                 aiOn && docKey
                   ? (pages, done) => {
+                      if (pages.length) {
+                        pages.forEach((p) =>
+                          pageTexts.current.set(p.page, p.text),
+                        );
+                        setExtractedPages((n) => n + pages.length);
+                      }
                       if (contextSent.current === docKey) return;
                       if (done) contextSent.current = docKey;
                       if (!pages.length) return;
@@ -924,10 +964,35 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
+      {openClaimBody ? (
+        <Box
+          style={{
+            bottom: 24 + insets.bottom,
+            left: 16,
+            position: "absolute",
+            right: 16,
+            zIndex: 30,
+          }}
+        >
+          <ClaimCard
+            claim={openClaimBody}
+            onAsk={(question) => {
+              setOpenClaim(null);
+              setLexiAsk(question);
+              setLexiOpen(true);
+            }}
+            onClose={() => setOpenClaim(null)}
+          />
+        </Box>
+      ) : null}
       {lexiOpen && aiOn && docKey ? (
         <LexiSheet
+          ask={lexiAsk}
           book={{ docKey, page, title: name ?? "Document" }}
-          onClose={() => setLexiOpen(false)}
+          onClose={() => {
+            setLexiOpen(false);
+            setLexiAsk(undefined);
+          }}
         />
       ) : null}
       {filingOpen ? (
