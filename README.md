@@ -1,56 +1,42 @@
-# Welcome to your Expo app 👋
+# Liqrai
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Liqrai is a reading app for PDFs and books that lets you actually talk to
+what you're reading.
 
-## Get started
+## Why
 
-1. Install dependencies
+Reading something dense on your own is slow. You hit a paragraph that
+doesn't make sense, a claim that sounds off, a name you don't recognize —
+and there's no one there to ask. Liqrai puts a companion right next to the
+page that has read the document with you, so you can just ask it.
 
-   ```bash
-   npm install
-   ```
+## What it does
 
-2. Start the app
+- **Talk to your book.** Open any PDF and ask Liqrai about it — not a
+  generic chatbot, one that knows what page you're on and what the book is
+  actually arguing.
+- **Voice, not just text.** Speak your question and hear Liqrai answer back,
+  so you don't have to stop reading to start typing.
+- **A second opinion on the page.** Liqrai quietly checks what you're
+  reading for claims that look wrong, outdated, or unsupported, and marks
+  them right on the page. It's not a verdict — it's a nudge to look closer,
+  and you can ask Liqrai to argue its case or take the book's side.
+- **Reads the way you like to read.** Fonts, layout, and page reflow are
+  yours to set, and Liqrai remembers your preferences.
+- **Start reading immediately.** No account needed to open a book and start
+  asking questions — Liqrai only asks you to sign in once you've used it
+  enough that it's worth remembering who you are, and everything you've done
+  carries over the moment you do.
 
-   ```bash
-   npx expo start
-   ```
+## Running it locally
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+You'll need [pnpm](https://pnpm.io) and the [Liqrai API](../liqrai-api)
+running alongside it.
 
 ```bash
-npm run reset-project
+pnpm install
+pnpm start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Then open the app in a development build, an Android/iOS simulator, or
+Expo Go, following the options Expo prints to the terminal.
