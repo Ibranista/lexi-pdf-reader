@@ -110,6 +110,15 @@ interface AppState {
   fmTimer: boolean;
   // AI & sync
   aiOn: boolean;
+  /**
+   * Read each page as it is reached and mark claims that look wrong.
+   *
+   * Off by default, and deliberately so. It spends a credit per page, which is
+   * not something to start doing to someone without being asked — and a mark
+   * carries the authority of a check, so a reader should have chosen to trust
+   * it before it starts drawing on their book.
+   */
+  factCheck: boolean;
   lang: Lang;
   explStyle: ExplainStyle;
   /** Which reader a document opens in by default (offline always uses page). */
@@ -163,6 +172,7 @@ export const useAppStore = create<AppState>()(
       fmTimer: true,
 
       aiOn: true,
+      factCheck: false,
       lang: "am",
       explStyle: "balanced",
       defaultReader: "reflow",

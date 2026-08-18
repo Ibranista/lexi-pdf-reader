@@ -646,6 +646,25 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         )}
 
         <Box paddingBottom={2} paddingTop={20}>
+          <SectionLabel size={11}>Accuracy</SectionLabel>
+        </Box>
+
+        {/* Off by default and honest about its cost in the subtitle: it reads
+            every page you settle on, which is a credit each, and it can be
+            wrong. Somebody should choose this rather than find it running. */}
+        <Row
+          sub="Underline claims worth checking as you read. Skips fiction; uses a credit per page."
+          title="Check facts"
+        >
+          <Toggle
+            on={app.factCheck}
+            onToggle={() => app.set({ factCheck: !app.factCheck })}
+          />
+        </Row>
+
+        <Divider />
+
+        <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>
         </Box>
 

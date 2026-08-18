@@ -19,6 +19,7 @@ import EventSource from "react-native-sse";
 
 import { DICT, LANG_NAMES } from "@/constants/library";
 import { ensureSession } from "@/services/device-session";
+import type { SpokenWord } from "@/utils/spoken-words";
 import type { ExplainStyle, Lang } from "@/stores/app-store";
 import { API_BASE_URL, api, tokenStorage } from "@/utils/axios";
 
@@ -727,15 +728,25 @@ export async function clearChatHistory(sessionId: string): Promise<boolean> {
    Speech
 ========================= */
 
-/** Voice arbitrary text (a chat reply's speaker button). Undefined on failure. */
-export async function speakText(text: string): Promise<string | undefined> {
+/**
+ * Voice arbitrary text (a chat reply's speaker button).
+ *
+ * `words` carries when each word is spoken, so the reply can be followed along
+ * as it is read. It comes back empty when the alignment failed or wasn't worth
+ * doing — the clip still plays, it just plays with nothing following it — so
+ * callers treat it as an enhancement and never as a precondition.
+ */
+export async function speakText(
+  text: string,
+): Promise<{ audioUrl?: string; words: SpokenWord[] }> {
   try {
-    const { data } = await api.post<{ audioUrl?: string }>("/ai/speak", {
-      text,
-    });
-    return data.audioUrl;
+    const { data } = await api.post<{
+      audioUrl?: string;
+      words?: SpokenWord[];
+    }>("/ai/speak", { text });
+    return { audioUrl: data.audioUrl, words: data.words ?? [] };
   } catch {
-    return undefined;
+    return { words: [] };
   }
 }
 

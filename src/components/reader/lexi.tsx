@@ -85,8 +85,9 @@ import {
 } from "@/stores/annotations-store";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { sansFamily } from "@/theme/app-fonts";
+import { readerBodyFont, sansFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
+import { alignWords, tokenize, type WordSpan } from "@/utils/spoken-words";
 
 interface LexiMsg {
   role: "lexi" | "user";
@@ -331,9 +332,17 @@ export interface LexiBook {
 }
 
 export function LexiSheet({
+  ask,
   book,
   onClose,
 }: {
+  /**
+   * A question the panel opens holding — sent from somewhere else in the
+   * reader, like the card behind a flagged claim. It lands in the composer as a
+   * draft rather than being sent, the same rule the opener chips follow: the
+   * reader gets to see, edit or drop it before it goes anywhere.
+   */
+  ask?: string;
   /**
    * Omitted by the prototype reader, which has no real document behind it and
    * falls back to its scripted replies.
@@ -345,6 +354,15 @@ export function LexiSheet({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const explStyle = useAppStore((s) => s.explStyle);
+  // The typeface chosen in the reader's settings, carried into the chat. The
+  // reply is reading too, and someone who needs Atkinson to read the book needs
+  // it here as well.
+  const fontFam = useAppStore((s) => s.fontFam);
+  const bodyFont = readerBodyFont(fontFam);
+  // `Text` sets a family on every instance, so a nested span would drop back to
+  // the app's own sans unless it is told too — the trail below is nested spans.
+  const bodyFontBold = readerBodyFont(fontFam, true);
+  const bodySerif = fontFam === "serif";
   const showToast = useToastStore((s) => s.showToast);
   const setQuota = useAuthStore((s) => s.setQuota);
   const openWall = useAuthStore((s) => s.openWall);
@@ -467,7 +485,10 @@ export function LexiSheet({
     !book || initialHistory !== undefined,
   );
   const [historyVisible, setHistoryVisible] = useState(!book);
-  const [input, setInput] = useState("");
+  // Seeded from `ask` when the panel is opened from elsewhere in the reader —
+  // as a draft, never a send. Only the initial value: re-sending the same
+  // question because the prop happened to still be set would be worse.
+  const [input, setInput] = useState(ask ?? "");
   const [inputH, setInputH] = useState(INPUT_MIN);
   // Confirmation for wiping the thread, and the wipe itself once confirmed.
   const [confirmClear, setConfirmClear] = useState(false);
@@ -590,13 +611,46 @@ export function LexiSheet({
     key: number;
     seq: number;
     url?: string;
+    /** Which token to light, and when — empty when alignment wasn't available. */
+    spans?: WordSpan[];
   } | null>(null);
+  /**
+   * The token the voice is on. Held apart from `voice` deliberately: the
+   * WebView below is memoised on `voice`, so folding this into it would rebuild
+   * the player several times a second and restart the audio on every word.
+   */
+  const [spokenAt, setSpokenAt] = useState(-1);
 
   const audioNode = useMemo(() => {
     if (!voice?.url) return null;
-    // The clip reports back when it runs out, which is what flips the bubble's
-    // stop button back to a speaker without the reader having to touch it.
-    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>var a=document.getElementById('a');var done=function(){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage('ended')};a.addEventListener('ended',done);a.addEventListener('error',done);</script></body></html>`;
+    // The page reports two things: that the clip ran out — which flips the
+    // bubble's stop button back to a speaker on its own — and which word is
+    // being said. The word is worked out *here* rather than in React and sent
+    // only when it changes, so following a reply costs a handful of messages
+    // rather than one per frame.
+    const spans = JSON.stringify(voice.spans ?? []);
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>
+var a=document.getElementById('a');
+var S=${spans};
+var last=-1;
+function post(m){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(m)}
+function tick(){
+  if(S.length){
+    /* The furthest word started, not the word straddling the clock. Words do
+       not butt up against each other — there is a gap at every comma, every
+       full stop, every breath — and asking "which word contains this instant"
+       answers "none" in all of them, blanking the trail between one word and
+       the next. This only ever moves forward. */
+    var t=a.currentTime,i=last;
+    for(var k=0;k<S.length;k++){if(S[k].s>t)break;i=S[k].i}
+    if(i!==last){last=i;post('w:'+i)}
+  }
+  if(!a.paused&&!a.ended)requestAnimationFrame(tick);
+}
+a.addEventListener('playing',function(){requestAnimationFrame(tick)});
+var done=function(){post('ended')};
+a.addEventListener('ended',done);a.addEventListener('error',done);
+</script></body></html>`;
     return (
       <WebView
         allowsInlineMediaPlayback
@@ -606,7 +660,11 @@ export function LexiSheet({
         key={voice.seq}
         mediaPlaybackRequiresUserAction={false}
         mixedContentMode="always"
-        onMessage={() => setVoice(null)}
+        onMessage={(e) => {
+          const data = e.nativeEvent.data;
+          if (data.startsWith("w:")) setSpokenAt(Number(data.slice(2)));
+          else setVoice(null);
+        }}
         pointerEvents="none"
         source={{ html }}
         style={ZERO_SIZE}
@@ -622,13 +680,29 @@ export function LexiSheet({
     }
     const seq = (voice?.seq ?? 0) + 1;
     setVoice({ key, seq });
-    const url = await speakText(text);
+    setSpokenAt(-1);
+    const { audioUrl, words } = await speakText(text);
     // A stop, or a tap on another bubble, happened while the clip was being
     // fetched — that newer intent wins.
     setVoice((cur) =>
-      cur && cur.seq === seq ? (url ? { ...cur, url } : null) : cur,
+      cur && cur.seq === seq
+        ? audioUrl
+          ? { ...cur, spans: alignWords(tokenize(text), words), url: audioUrl }
+          : null
+        : cur,
     );
   };
+
+  /**
+   * The bubble being read, split for the highlight. Only the one — tokenising
+   * every reply in the thread to light a word in one of them would be work
+   * thrown away, and this is rebuilt as often as the reply is played.
+   */
+  const spokenTokens = useMemo(() => {
+    if (!voice?.url || !voice.spans?.length) return null;
+    const text = messages[voice.key]?.text;
+    return text ? tokenize(text) : null;
+  }, [messages, voice]);
 
   /**
    * What Liqrai can see beyond the page text: the passages this reader marked
@@ -927,8 +1001,12 @@ export function LexiSheet({
     const armed = voice?.key === i;
     const playing = armed && Boolean(voice?.url);
     const loading = armed && !playing;
+    // Focus, the same as the reader's: while one reply is being read the rest
+    // of the thread steps back, at the same 0.27 the page dims to, so the two
+    // feel like one idea rather than two features that both dim things.
+    const dimmed = Boolean(voice?.url) && !playing;
     return (
-      <Box key={i} paddingY={5}>
+      <Box key={i} paddingY={5} style={{ opacity: dimmed ? 0.27 : 1 }}>
         <Box
           bg={user ? t.onAccent : isError ? t.accentSoft : t.card}
           borderColor={
@@ -959,8 +1037,47 @@ export function LexiSheet({
                 }),
           }}
         >
-          <Text color={user ? t.pill : t.ink} lh={21} size={13.5}>
-            {m.text}
+          {/* While this reply is being read it is drawn in three pieces:
+              what has been said, the word being said, and what is still to
+              come. A single moving highlight says where the voice is but not
+              how far it has got, which leaves you scanning the paragraph to
+              work out what you have already heard.
+
+              Sliced rather than mapped per word — three Texts instead of one
+              per token, rebuilt several times a second. Every other bubble
+              stays a single plain string. */}
+          <Text
+            color={user ? t.pill : t.ink}
+            lh={21}
+            serif={bodySerif}
+            size={13.5}
+            style={bodyFont ? { fontFamily: bodyFont } : undefined}
+          >
+            {playing && spokenTokens && spokenAt >= 0 ? (
+              <>
+                <Text
+                  color={t.accentText}
+                  serif={bodySerif}
+                  style={bodyFont ? { fontFamily: bodyFont } : undefined}
+                >
+                  {spokenTokens.slice(0, spokenAt).join("")}
+                </Text>
+                <Text
+                  serif={bodySerif}
+                  style={{
+                    backgroundColor: t.accentSoft,
+                    color: t.accentText,
+                    ...(bodyFontBold ? { fontFamily: bodyFontBold } : null),
+                  }}
+                  weight="600"
+                >
+                  {spokenTokens[spokenAt] ?? ""}
+                </Text>
+                {spokenTokens.slice(spokenAt + 1).join("")}
+              </>
+            ) : (
+              m.text
+            )}
           </Text>
           {isError ? (
             <Tap
@@ -1216,7 +1333,15 @@ export function LexiSheet({
                         style={{ alignSelf: "flex-start", maxWidth: "88%" }}
                       >
                         {streaming ? (
-                          <Text color={t.ink} lh={21} size={13.5}>
+                          <Text
+                            color={t.ink}
+                            lh={21}
+                            serif={bodySerif}
+                            size={13.5}
+                            style={
+                              bodyFont ? { fontFamily: bodyFont } : undefined
+                            }
+                          >
                             {streaming}
                           </Text>
                         ) : (

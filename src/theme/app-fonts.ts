@@ -71,6 +71,29 @@ export const comicFamily = {
   inactive: 'ComicRelief-Regular',
 };
 
+/**
+ * The typeface the reader chose, for body text outside the reader itself.
+ *
+ * Someone who picked Atkinson Hyperlegible because ordinary type is hard work
+ * did not pick it only for the pages of the book — Liqrai's replies are just
+ * as much reading. Serif returns undefined because Literata is reached through
+ * `Text`'s own `serif` prop, which handles its variable weight axis.
+ *
+ * @param fam - the reader's `fontFam` setting
+ * @param bold - the heavier of the two weights each face ships
+ */
+export function readerBodyFont(
+  fam: 'comic' | 'dys' | 'sans' | 'serif',
+  bold = false,
+): string | undefined {
+  if (fam === 'serif') return undefined;
+  if (fam === 'dys') {
+    return bold ? atkinsonFamily.active : atkinsonFamily.inactive;
+  }
+  if (fam === 'comic') return bold ? comicFamily.active : comicFamily.inactive;
+  return bold ? hankenFamily.active : hankenFamily.inactive;
+}
+
 export const monoFamily = Platform.select({
   ios: 'Menlo',
   default: 'monospace',
