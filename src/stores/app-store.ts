@@ -11,7 +11,13 @@ export const LINE_SPACING = {
   comfy: 1.75,
   airy: 2.05,
 } as const;
-export type FontFam = "dys" | "sans" | "serif";
+/**
+ * The reader's typeface. `dys` is Atkinson Hyperlegible — the key predates the
+ * font being named in the UI and is left alone deliberately: it is written into
+ * every reader's persisted settings, and renaming it would silently reset their
+ * choice back to the default.
+ */
+export type FontFam = "comic" | "dys" | "sans" | "serif";
 export type LineSpacing = "airy" | "comfy" | "compact";
 export type ReadWidth = "comfort" | "full" | "narrow";
 export type Contrast = "soft" | "std";
@@ -104,6 +110,15 @@ interface AppState {
   fmTimer: boolean;
   // AI & sync
   aiOn: boolean;
+  /**
+   * Read each page as it is reached and mark claims that look wrong.
+   *
+   * Off by default, and deliberately so. It spends a credit per page, which is
+   * not something to start doing to someone without being asked — and a mark
+   * carries the authority of a check, so a reader should have chosen to trust
+   * it before it starts drawing on their book.
+   */
+  factCheck: boolean;
   lang: Lang;
   explStyle: ExplainStyle;
   /** Which reader a document opens in by default (offline always uses page). */
@@ -157,6 +172,7 @@ export const useAppStore = create<AppState>()(
       fmTimer: true,
 
       aiOn: true,
+      factCheck: false,
       lang: "am",
       explStyle: "balanced",
       defaultReader: "reflow",

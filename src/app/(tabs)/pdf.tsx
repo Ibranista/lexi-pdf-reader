@@ -43,6 +43,8 @@ import { SignInWall } from "@/components/auth/SignInWall";
 import { NoteCard } from "@/components/reader/NoteCard";
 import type { PdfOutlineEntry } from "@/components/reader/PdfReflowView";
 import { PdfReflowView } from "@/components/reader/PdfReflowView";
+import { ClaimCard } from "@/components/reader/ClaimCard";
+import { usePageCheck } from "@/hooks/use-page-check";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import type { TranslateTarget } from "@/components/reader/TranslateCard";
 import { TranslateCard } from "@/components/reader/TranslateCard";
@@ -180,6 +182,20 @@ export default function PdfViewerScreen() {
   // The docKey whose text has been uploaded, so re-extraction (a font change
   // reloads the reflow page) doesn't send the whole book up a second time.
   const contextSent = useRef<string | null>(null);
+  // Extracted page text, kept for the accuracy check. A ref rather than state
+  // because a whole book's text has no business causing a render; the counter
+  // beside it is what tells the effect below there is something new to read.
+  const pageTexts = useRef(new Map<number, string>());
+  const [extractedPages, setExtractedPages] = useState(0);
+  // Just the page in view — the only text the check ever needs at once.
+  const [pageText, setPageText] = useState("");
+  // The flagged claim whose card is open, and the page it belongs to.
+  const [openClaim, setOpenClaim] = useState<{
+    page: number;
+    id: string;
+  } | null>(null);
+  // A question the reader sent to Liqrai from a claim card; consumed on open.
+  const [lexiAsk, setLexiAsk] = useState<string | undefined>(undefined);
   const [highlight, setHighlight] = useState<{
     query: string;
     index: number;
@@ -236,6 +252,35 @@ export default function PdfViewerScreen() {
     () => annotations.find((a) => a.id === openNoteId) ?? null,
     [annotations, openNoteId],
   );
+
+  // ── accuracy check ─────────────────────────────────────────────
+  // Hand the page in view's text to the check once extraction has reached it.
+  useEffect(() => {
+    setPageText(pageTexts.current.get(page) ?? "");
+  }, [extractedPages, page]);
+
+  const { claims } = usePageCheck({
+    docKey: docKey ?? "",
+    page,
+    text: pageText,
+    title: name ?? undefined,
+  });
+
+  // Indexed rather than hashed: claims belong to one page and are replaced
+  // wholesale when it turns, so position is a stable enough identity.
+  const checks = useMemo(
+    () => claims.map((c, i) => ({ id: `chk-${i}`, page, quote: c.quote })),
+    [claims, page],
+  );
+  // A card belongs to the page it was opened on, so the page is part of what
+  // "open" means. Carrying it here rather than clearing the card when the page
+  // turns means there is no moment where a card is open over a passage that has
+  // already scrolled away.
+  const openCheckId = openClaim?.page === page ? openClaim.id : null;
+  const openClaimBody = useMemo(() => {
+    const at = checks.findIndex((c) => c.id === openCheckId);
+    return at === -1 ? null : (claims[at] ?? null);
+  }, [checks, claims, openCheckId]);
   const [pageMarker, setPageMarker] = useState<{
     page: number;
     /** Word-accurate boxes; a single full-width entry when geometry is
@@ -751,6 +796,9 @@ export default function PdfViewerScreen() {
               clearSelectionSeq={clearSelSeq}
               highlights={highlights}
               onHighlightPress={setOpenNoteId}
+              checks={checks}
+              openCheckId={openCheckId}
+              onCheckPress={(id) => setOpenClaim({ id, page })}
               focusMode={focusOn}
               gotoPage={reflowGoto}
               highlight={highlight ?? undefined}
@@ -773,6 +821,15 @@ export default function PdfViewerScreen() {
               onContext={
                 aiOn && docKey
                   ? (pages, done) => {
+                      // Kept before the upload's early return: the accuracy
+                      // check wants this text too, and on a second open the
+                      // upload is skipped while the check still needs it.
+                      if (pages.length) {
+                        pages.forEach((p) =>
+                          pageTexts.current.set(p.page, p.text),
+                        );
+                        setExtractedPages((n) => n + pages.length);
+                      }
                       if (contextSent.current === docKey) return;
                       if (done) contextSent.current = docKey;
                       if (!pages.length) return;
@@ -1091,10 +1148,37 @@ export default function PdfViewerScreen() {
           onClose={() => setSummary("closed")}
         />
       ) : null}
+      {/* The explanation behind a red mark. Sits above the reader's chrome and
+          below the Liqrai panel, so opening one from the card covers it. */}
+      {openClaimBody ? (
+        <Box
+          style={{
+            bottom: 24 + insets.bottom,
+            left: 16,
+            position: "absolute",
+            right: 16,
+            zIndex: 30,
+          }}
+        >
+          <ClaimCard
+            claim={openClaimBody}
+            onAsk={(question) => {
+              setOpenClaim(null);
+              setLexiAsk(question);
+              setLexiOpen(true);
+            }}
+            onClose={() => setOpenClaim(null)}
+          />
+        </Box>
+      ) : null}
       {lexiOpen && aiOn && docKey ? (
         <LexiSheet
+          ask={lexiAsk}
           book={{ docKey, page, title: name ?? "Document" }}
-          onClose={() => setLexiOpen(false)}
+          onClose={() => {
+            setLexiOpen(false);
+            setLexiAsk(undefined);
+          }}
         />
       ) : null}
       {filingOpen ? (

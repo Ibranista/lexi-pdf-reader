@@ -49,6 +49,28 @@ const MIN_DURATION_MS = 700;
 const DB_FLOOR = -50;
 
 /**
+ * Loudness that counts as someone talking, and the quieter level they have to
+ * fall back below before a pause counts as a pause.
+ *
+ * The gap between the two is hysteresis, and it is the whole trick: speech is
+ * full of dips — between words, inside a stop consonant — and a single
+ * threshold ends the turn in the middle of a sentence. A level in the band
+ * between these two decides nothing and waits for the next sample.
+ *
+ * Both are levels on {@link levelFrom}'s 0..1 scale, so they are relative to a
+ * -50dBFS floor rather than to the room. A loud room may need them raised.
+ */
+const SPEECH_LEVEL = 0.28;
+const SILENCE_LEVEL = 0.16;
+
+/**
+ * A mic opened and never spoken into closes itself. Without this the live
+ * conversation would sit with the microphone on for the full minute after the
+ * reader put the phone down.
+ */
+const NO_SPEECH_TIMEOUT_MS = 7000;
+
+/**
  * Recorder level as 0..1, ready to scale a bar.
  *
  * `metering` is in dBFS — a logarithmic scale where ordinary speech sits
@@ -64,6 +86,28 @@ function levelFrom(metering: number | undefined): number {
 }
 
 export type VoicePhase = "idle" | "recording" | "transcribing";
+
+/**
+ * Hands-free operation, for the live conversation. Left out entirely by the
+ * composer's press-to-talk button, which ends its own recordings.
+ */
+export interface VoiceInputOptions {
+  /**
+   * End the turn automatically once the reader has been quiet this long after
+   * speaking. This is what lets them just talk and be answered, rather than
+   * reaching for a button to say they've finished.
+   */
+  silenceMs?: number;
+  /**
+   * Where a *self-ended* recording's transcript goes — silence, or the
+   * one-minute ceiling. Both used to resolve out of `stop()` with nobody
+   * holding the promise, which meant a recording that ran long was transcribed,
+   * charged for, and then dropped on the floor.
+   */
+  onTranscript?: (text: string) => void;
+  /** A self-ended recording that threw: a quota wall for the caller to raise. */
+  onTranscriptError?: (error: unknown) => void;
+}
 
 export interface VoiceInput {
   /** Live 0..1 loudness while recording, for the wave. */
@@ -84,7 +128,10 @@ export interface VoiceInput {
  * @param onError Told what to say when something fails, so the surface owning
  *   the composer decides how to show it (a toast here, a bubble elsewhere).
  */
-export function useVoiceInput(onError: (message: string) => void): VoiceInput {
+export function useVoiceInput(
+  onError: (message: string) => void,
+  options: VoiceInputOptions = {},
+): VoiceInput {
   // The API accepts AAC/M4A. Expo's low-quality Android preset instead
   // records AMR-NB in a .3gp container, which cannot truthfully be uploaded
   // as audio/m4a and is rejected by common transcription providers.
@@ -105,6 +152,16 @@ export function useVoiceInput(onError: (message: string) => void): VoiceInput {
   }, [state.durationMillis]);
   // Guards the auto-stop below against firing twice on consecutive polls.
   const stoppingRef = useRef(false);
+  // Read from inside the metering effect, which fires ~11 times a second: a ref
+  // keeps a caller's inline callbacks from rebuilding it on every sample.
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+  // Whether this recording has heard speech yet, and the point it was last
+  // heard at, both in recorder time so they compare against `durationMillis`.
+  const heardSpeech = useRef(false);
+  const lastSpeechAt = useRef(0);
 
   const finishRecording = useCallback(async () => {
     try {
@@ -149,6 +206,8 @@ export function useVoiceInput(onError: (message: string) => void): VoiceInput {
       await recorder.prepareToRecordAsync();
       recorder.record();
       stoppingRef.current = false;
+      heardSpeech.current = false;
+      lastSpeechAt.current = 0;
       setPhase("recording");
     } catch {
       await finishRecording();
@@ -196,14 +255,62 @@ export function useVoiceInput(onError: (message: string) => void): VoiceInput {
     }
   }, [finishRecording, onError, phase, recorder]);
 
+  /**
+   * End a recording nobody asked to end — and hand the transcript somewhere.
+   * `stop()`'s promise is the only route the text has out, so a self-stop that
+   * ignores it has charged the reader a credit for nothing.
+   */
+  const selfStop = useCallback(async () => {
+    try {
+      const text = await stop();
+      if (text) optionsRef.current.onTranscript?.(text);
+    } catch (error) {
+      optionsRef.current.onTranscriptError?.(error);
+    }
+  }, [stop]);
+
   // A recording that runs long stops itself and transcribes what it has,
   // rather than being thrown away for the reader's not having noticed.
   useEffect(() => {
     if (phase !== "recording" || stoppingRef.current) return;
     if ((state.durationMillis ?? 0) < MAX_DURATION_MS) return;
     stoppingRef.current = true;
-    void stop();
-  }, [phase, state.durationMillis, stop]);
+    void selfStop();
+  }, [phase, selfStop, state.durationMillis]);
+
+  /**
+   * Hands-free endpointing: the reader stops talking, so the turn ends.
+   *
+   * Runs off the same ~11Hz metering the wave is drawn from, so it costs
+   * nothing extra and reacts at the speed the reader can already see. A turn
+   * ends on a pause only *after* speech has been heard — otherwise a reader
+   * gathering their thoughts would be cut off before saying anything, so an
+   * unused mic falls to the longer `NO_SPEECH_TIMEOUT_MS` instead.
+   */
+  useEffect(() => {
+    const { silenceMs } = optionsRef.current;
+    if (!silenceMs || phase !== "recording" || stoppingRef.current) return;
+
+    const elapsed = state.durationMillis ?? 0;
+    const level = levelFrom(state.metering);
+
+    if (level >= SPEECH_LEVEL) {
+      heardSpeech.current = true;
+      lastSpeechAt.current = elapsed;
+      return;
+    }
+    // Between the two thresholds nothing is decided — wait for a clearer sample
+    // rather than treating the quiet half of a word as the end of the turn.
+    if (level > SILENCE_LEVEL) return;
+
+    const done = heardSpeech.current
+      ? elapsed - lastSpeechAt.current >= silenceMs
+      : elapsed >= NO_SPEECH_TIMEOUT_MS;
+    if (!done) return;
+
+    stoppingRef.current = true;
+    void selfStop();
+  }, [phase, selfStop, state.durationMillis, state.metering]);
 
   // Leaving the panel mid-recording must not leave the mic open.
   useEffect(

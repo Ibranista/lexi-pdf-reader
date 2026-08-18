@@ -106,7 +106,7 @@ export function buildHtml(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Hanken+Grotesk:wght@400;500;600&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Hanken+Grotesk:wght@400;500;600&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Comic+Relief:wght@400;700&display=swap');
   :root {
     --fs: ${s.baseFs}px;
     --lh: ${s.lh};
@@ -129,6 +129,35 @@ export function buildHtml(
   mark.lexi-hl[data-c="sage"] { background: rgba(180,212,180,.42); }
   mark.lexi-hl[data-c="sky"]  { background: rgba(174,203,232,.42); }
   mark.lexi-hl[data-c="rose"] { background: rgba(232,184,180,.42); }
+
+  /* A claim worth checking. Dotted, not solid, and an outline rather than a
+     fill: this is a question mark over the sentence, not a verdict on it, and
+     it must never look more certain than a highlight the reader made
+     themselves. The dot in the margin is what makes it findable when the
+     border alone reads as an underline. */
+  mark.lexi-chk {
+    color: inherit;
+    background: transparent;
+    border-bottom: 2px dotted rgba(199,74,62,.85);
+    padding-bottom: 1px;
+    cursor: pointer;
+  }
+  mark.lexi-chk::after {
+    content: '';
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin: 0 1px 0 3px;
+    border-radius: 50%;
+    background: rgba(199,74,62,.9);
+    vertical-align: super;
+  }
+  /* The one the reader has open, so tapping a mark shows which card belongs to
+     which sentence when several are on a page. */
+  mark.lexi-chk[data-open="1"] {
+    background: rgba(199,74,62,.12);
+    border-radius: 2px;
+  }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); }
@@ -684,6 +713,18 @@ export function buildHtml(
       post({ type: 'highlighttap', id: onMark.getAttribute('data-id') || '' });
       return;
     }
+    /* A flagged claim opens its explanation. Checked after the highlight so a
+       sentence the reader has both highlighted and had flagged still opens
+       their own note first — their mark outranks ours. */
+    var onCheck = e.target && e.target.closest
+      ? e.target.closest('mark.lexi-chk')
+      : null;
+    if (onCheck) {
+      if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+      e.preventDefault();
+      post({ type: 'checktap', id: onCheck.getAttribute('data-id') || '' });
+      return;
+    }
     var now = Date.now();
     if (now - lastTap < DBL_WINDOW) {
       if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
@@ -865,6 +906,77 @@ export function buildHtml(
         markPassage(sec.nextElementSibling, hl.text, hl.color, hl.id);
       } else {
         pendingHighlights++;
+      }
+    }
+  };
+
+  /* Claims flagged on the page in view. Anchored exactly like highlights —
+     by finding the quoted text — which is why the server insists the model
+     quote verbatim. A claim that cannot be found is left undrawn rather than
+     attached to whatever was nearest; a mark on the wrong sentence is worse
+     than no mark at all. */
+  var pageChecks = [];
+
+  window.applyChecks = function(list){
+    if (list) pageChecks = list;
+
+    var marks = document.querySelectorAll('mark.lexi-chk');
+    for (var i = 0; i < marks.length; i++) unwrap(marks[i]);
+
+    for (var k = 0; k < pageChecks.length; k++){
+      var c = pageChecks[k];
+      var sec = document.querySelector('section[data-page="' + c.page + '"]');
+      if (!sec) continue;
+      if (markCheck(sec, c.quote, c.id)) continue;
+      /* A sentence can run past its own page break, same as a highlight. */
+      if (sec.nextElementSibling) markCheck(sec.nextElementSibling, c.quote, c.id);
+    }
+  };
+
+  /* Same search as markPassage, a different wrapper. Kept separate rather than
+     parameterised because the two disagree about what to do when the text is
+     not found: a highlight waits for its page to be extracted, a claim gives
+     up — it belongs to the page currently in view or to nothing. */
+  function markCheck(sec, needle, id){
+    var nodes = textNodesOf(sec);
+    if (!nodes.length) return false;
+    var full = '', starts = [];
+    for (var i = 0; i < nodes.length; i++){
+      starts.push(full.length);
+      full += nodes[i].nodeValue;
+    }
+    var nm = normMap(full);
+    var want = normMap(needle).text.trim();
+    if (!want) return false;
+    var at = nm.text.indexOf(want);
+    if (at < 0) return false;
+    var from = nm.map[at], to = nm.map[at + want.length - 1] + 1;
+
+    for (var j = 0; j < nodes.length; j++){
+      var ns = starts[j], ne = ns + nodes[j].nodeValue.length;
+      var s = Math.max(from, ns), e = Math.min(to, ne);
+      if (s >= e) continue;
+      try {
+        var r = document.createRange();
+        r.setStart(nodes[j], s - ns);
+        r.setEnd(nodes[j], e - ns);
+        var m = document.createElement('mark');
+        m.className = 'lexi-chk';
+        m.setAttribute('data-id', id);
+        r.surroundContents(m);
+      } catch (err) { /* node vanished mid-pass — skip it */ }
+    }
+    return true;
+  }
+
+  /* Which claim's card is open, so the sentence it belongs to is obvious. */
+  window.setOpenCheck = function(id){
+    var marks = document.querySelectorAll('mark.lexi-chk');
+    for (var i = 0; i < marks.length; i++){
+      if (id && marks[i].getAttribute('data-id') === id) {
+        marks[i].setAttribute('data-open', '1');
+      } else {
+        marks[i].removeAttribute('data-open');
       }
     }
   };
@@ -2176,6 +2288,16 @@ interface Props {
   highlights?: { id: string; page: number; text: string; color: string }[];
   /** A saved highlight was tapped in the page. */
   onHighlightPress?: (id: string) => void;
+  /**
+   * Claims flagged on the page in view, to underline in red. Anchored by
+   * searching for `quote`, so it has to be verbatim from the page — one that
+   * can't be found is left undrawn rather than attached to something near it.
+   */
+  checks?: { id: string; page: number; quote: string }[];
+  /** Which flagged claim's card is open, so its sentence is picked out. */
+  openCheckId?: string | null;
+  /** A flagged claim was tapped in the page. */
+  onCheckPress?: (id: string) => void;
   /** Fires once every page has been extracted — search is then complete. */
   onIndexed?: () => void;
   /** The document's outline, embedded or parsed off a contents page. */
@@ -2260,6 +2382,9 @@ export function PdfReflowView({
   clearSelectionSeq = 0,
   highlights,
   onHighlightPress,
+  checks,
+  openCheckId,
+  onCheckPress,
   onPageChange,
   onSearchResults,
   onSelection,
@@ -2411,6 +2536,29 @@ export function PdfReflowView({
     );
   }, [highlights, status, extractedSeq]);
 
+  /**
+   * Repaint the page's flagged claims. Unlike highlights these belong to one
+   * page rather than the document, so they are redrawn from scratch each time
+   * rather than reconciled — the previous page's marks are never wanted.
+   */
+  useEffect(() => {
+    if (status !== "ready") return;
+    webRef.current?.injectJavaScript(
+      `window.applyChecks && window.applyChecks(${JSON.stringify(
+        checks ?? [],
+      )}); true;`,
+    );
+  }, [checks, status, extractedSeq]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    webRef.current?.injectJavaScript(
+      `window.setOpenCheck && window.setOpenCheck(${JSON.stringify(
+        openCheckId ?? null,
+      )}); true;`,
+    );
+  }, [openCheckId, status]);
+
   // Drop the selection when the reader dismisses the annotate bar, so the
   // handles go away and a stale selection can't re-open it.
   useEffect(() => {
@@ -2525,6 +2673,7 @@ export function PdfReflowView({
                 onPageChange?.(msg.page);
               else if (msg.type === "highlighttap")
                 onHighlightPress?.(msg.id ?? "");
+              else if (msg.type === "checktap") onCheckPress?.(msg.id ?? "");
               else if (msg.type === "selection")
                 onSelection?.(msg.text ?? "", msg.page ?? 0);
               else if (msg.type === "tap") onSingleTap?.();

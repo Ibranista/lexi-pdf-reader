@@ -58,6 +58,7 @@ import {
   IconSpark,
   IconSpeaker,
   IconTrash,
+  IconWave,
   LiveWave,
   SpeakingWave,
   Tap,
@@ -66,7 +67,9 @@ import {
 import { CenterModal } from "@/components/modals";
 import { palette } from "@/constants/colors";
 import { LEXI_SEED } from "@/constants/library";
+import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { recordRealtimeTurn } from "@/services/realtime";
 import {
   AiQuotaError,
   cachedChatHistory,
@@ -74,6 +77,7 @@ import {
   fetchChatHistory,
   speakText,
   streamChat,
+  type AiQuota,
 } from "@/services/lexi-ai";
 import {
   useAnnotationsStore,
@@ -81,8 +85,9 @@ import {
 } from "@/stores/annotations-store";
 import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { sansFamily } from "@/theme/app-fonts";
+import { readerBodyFont, sansFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
+import { alignWords, tokenize, type WordSpan } from "@/utils/spoken-words";
 
 interface LexiMsg {
   role: "lexi" | "user";
@@ -327,9 +332,17 @@ export interface LexiBook {
 }
 
 export function LexiSheet({
+  ask,
   book,
   onClose,
 }: {
+  /**
+   * A question the panel opens holding — sent from somewhere else in the
+   * reader, like the card behind a flagged claim. It lands in the composer as a
+   * draft rather than being sent, the same rule the opener chips follow: the
+   * reader gets to see, edit or drop it before it goes anywhere.
+   */
+  ask?: string;
   /**
    * Omitted by the prototype reader, which has no real document behind it and
    * falls back to its scripted replies.
@@ -341,6 +354,15 @@ export function LexiSheet({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const explStyle = useAppStore((s) => s.explStyle);
+  // The typeface chosen in the reader's settings, carried into the chat. The
+  // reply is reading too, and someone who needs Atkinson to read the book needs
+  // it here as well.
+  const fontFam = useAppStore((s) => s.fontFam);
+  const bodyFont = readerBodyFont(fontFam);
+  // `Text` sets a family on every instance, so a nested span would drop back to
+  // the app's own sans unless it is told too — the trail below is nested spans.
+  const bodyFontBold = readerBodyFont(fontFam, true);
+  const bodySerif = fontFam === "serif";
   const showToast = useToastStore((s) => s.showToast);
   const setQuota = useAuthStore((s) => s.setQuota);
   const openWall = useAuthStore((s) => s.openWall);
@@ -444,13 +466,17 @@ export function LexiSheet({
   );
 
   const initialHistory = book ? cachedChatHistory(sessionId) : undefined;
-  const [messages, setMessages] = useState<LexiMsg[]>(
-    () =>
-      initialHistory?.map((m) => ({
-        role: m.role === "user" ? "user" : "lexi",
-        kind: m.kind,
-        text: m.content,
-      })) ?? greeting,
+  const [messages, setMessages] = useState<LexiMsg[]>(() =>
+    // `?? greeting` alone was not enough: a cached *empty* history is an array,
+    // so it satisfied the coalesce and opened the panel on nothing at all —
+    // no greeting, no thread, and no way to tell which had happened.
+    initialHistory?.length
+      ? initialHistory.map((m) => ({
+          role: m.role === "user" ? "user" : "lexi",
+          kind: m.kind,
+          text: m.content,
+        }))
+      : greeting,
   );
   // Wait for the persisted thread before mounting the list. Rendering the
   // greeting first and replacing it with history made the panel visibly jump
@@ -459,7 +485,10 @@ export function LexiSheet({
     !book || initialHistory !== undefined,
   );
   const [historyVisible, setHistoryVisible] = useState(!book);
-  const [input, setInput] = useState("");
+  // Seeded from `ask` when the panel is opened from elsewhere in the reader —
+  // as a draft, never a send. Only the initial value: re-sending the same
+  // question because the prop happened to still be set would be worse.
+  const [input, setInput] = useState(ask ?? "");
   const [inputH, setInputH] = useState(INPUT_MIN);
   // Confirmation for wiping the thread, and the wipe itself once confirmed.
   const [confirmClear, setConfirmClear] = useState(false);
@@ -501,9 +530,15 @@ export function LexiSheet({
         return fetchChatHistory(sessionId);
       })
       .then((history) => {
-        if (cancelled || !history) return;
+        if (cancelled) return;
+        // `null` is "couldn't reach it", which is not the same as "nothing was
+        // ever said here" — say so, rather than opening on a greeting that
+        // reads as a conversation that has been lost.
+        if (history === null) {
+          showToast("Couldn't load this conversation — check your connection");
+        }
         setMessages(
-          history.length
+          history?.length
             ? history.map((m) => ({
                 role: m.role === "user" ? "user" : "lexi",
                 kind: m.kind,
@@ -517,7 +552,7 @@ export function LexiSheet({
     return () => {
       cancelled = true;
     };
-  }, [book, greeting, sessionId]);
+  }, [book, greeting, sessionId, showToast]);
 
   // Abort any in-flight stream if the panel unmounts mid-reply.
   useEffect(() => () => abortRef.current?.(), []);
@@ -576,13 +611,46 @@ export function LexiSheet({
     key: number;
     seq: number;
     url?: string;
+    /** Which token to light, and when — empty when alignment wasn't available. */
+    spans?: WordSpan[];
   } | null>(null);
+  /**
+   * The token the voice is on. Held apart from `voice` deliberately: the
+   * WebView below is memoised on `voice`, so folding this into it would rebuild
+   * the player several times a second and restart the audio on every word.
+   */
+  const [spokenAt, setSpokenAt] = useState(-1);
 
   const audioNode = useMemo(() => {
     if (!voice?.url) return null;
-    // The clip reports back when it runs out, which is what flips the bubble's
-    // stop button back to a speaker without the reader having to touch it.
-    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>var a=document.getElementById('a');var done=function(){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage('ended')};a.addEventListener('ended',done);a.addEventListener('error',done);</script></body></html>`;
+    // The page reports two things: that the clip ran out — which flips the
+    // bubble's stop button back to a speaker on its own — and which word is
+    // being said. The word is worked out *here* rather than in React and sent
+    // only when it changes, so following a reply costs a handful of messages
+    // rather than one per frame.
+    const spans = JSON.stringify(voice.spans ?? []);
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0"><audio id="a" autoplay playsinline src="${voice.url}"></audio><script>
+var a=document.getElementById('a');
+var S=${spans};
+var last=-1;
+function post(m){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(m)}
+function tick(){
+  if(S.length){
+    /* The furthest word started, not the word straddling the clock. Words do
+       not butt up against each other — there is a gap at every comma, every
+       full stop, every breath — and asking "which word contains this instant"
+       answers "none" in all of them, blanking the trail between one word and
+       the next. This only ever moves forward. */
+    var t=a.currentTime,i=last;
+    for(var k=0;k<S.length;k++){if(S[k].s>t)break;i=S[k].i}
+    if(i!==last){last=i;post('w:'+i)}
+  }
+  if(!a.paused&&!a.ended)requestAnimationFrame(tick);
+}
+a.addEventListener('playing',function(){requestAnimationFrame(tick)});
+var done=function(){post('ended')};
+a.addEventListener('ended',done);a.addEventListener('error',done);
+</script></body></html>`;
     return (
       <WebView
         allowsInlineMediaPlayback
@@ -592,7 +660,11 @@ export function LexiSheet({
         key={voice.seq}
         mediaPlaybackRequiresUserAction={false}
         mixedContentMode="always"
-        onMessage={() => setVoice(null)}
+        onMessage={(e) => {
+          const data = e.nativeEvent.data;
+          if (data.startsWith("w:")) setSpokenAt(Number(data.slice(2)));
+          else setVoice(null);
+        }}
         pointerEvents="none"
         source={{ html }}
         style={ZERO_SIZE}
@@ -608,13 +680,29 @@ export function LexiSheet({
     }
     const seq = (voice?.seq ?? 0) + 1;
     setVoice({ key, seq });
-    const url = await speakText(text);
+    setSpokenAt(-1);
+    const { audioUrl, words } = await speakText(text);
     // A stop, or a tap on another bubble, happened while the clip was being
     // fetched — that newer intent wins.
     setVoice((cur) =>
-      cur && cur.seq === seq ? (url ? { ...cur, url } : null) : cur,
+      cur && cur.seq === seq
+        ? audioUrl
+          ? { ...cur, spans: alignWords(tokenize(text), words), url: audioUrl }
+          : null
+        : cur,
     );
   };
+
+  /**
+   * The bubble being read, split for the highlight. Only the one — tokenising
+   * every reply in the thread to light a word in one of them would be work
+   * thrown away, and this is rebuilt as often as the reply is played.
+   */
+  const spokenTokens = useMemo(() => {
+    if (!voice?.url || !voice.spans?.length) return null;
+    const text = messages[voice.key]?.text;
+    return text ? tokenize(text) : null;
+  }, [messages, voice]);
 
   /**
    * What Liqrai can see beyond the page text: the passages this reader marked
@@ -639,11 +727,20 @@ export function LexiSheet({
       .join("\n\n");
   };
 
-  const runChat = async (q: string) => {
-    accRef.current = "";
-    setStreaming("");
-    abortRef.current = await streamChat(
-      {
+  /**
+   * One typed turn, streamed into the transcript.
+   *
+   * Resolves when the reply is complete and rejects when it failed. Spoken
+   * turns do not come through here — the live conversation runs device to
+   * model and arrives already finished — but they land in the same transcript.
+   */
+  const runChat = (q: string) =>
+    new Promise<void>((resolve, reject) => {
+      accRef.current = "";
+      setStreaming("");
+
+      let settled = false;
+      const input = {
         author: book!.author,
         docKey: book!.docKey,
         excerpt: readerContext(),
@@ -652,14 +749,16 @@ export function LexiSheet({
         sessionId,
         style: explStyle,
         title: book!.title,
-      },
-      {
-        onToken: (token) => {
+      };
+
+      const handlers = {
+        onToken: (token: string) => {
           accRef.current += token;
           setStreaming(accRef.current);
           scrollToEnd();
         },
-        onDone: ({ kind, quota }) => {
+        onDone: ({ kind, quota }: { kind: LexiMsg["kind"]; quota?: AiQuota }) => {
+          settled = true;
           abortRef.current = null;
           setStreaming(null);
           if (quota) setQuota(quota);
@@ -676,8 +775,10 @@ export function LexiSheet({
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
           scrollToEnd();
+          resolve();
         },
-        onError: (error) => {
+        onError: (error: unknown) => {
+          settled = true;
           abortRef.current = null;
           setStreaming(null);
           // Out of credits: bank it, raise the wall, and get out of the way.
@@ -685,6 +786,7 @@ export function LexiSheet({
             setQuota(error.quota);
             if (error.requiresAuth) openWall("quota");
             close();
+            reject(error);
             return;
           }
           push({
@@ -697,10 +799,18 @@ export function LexiSheet({
           });
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           scrollToEnd();
+          reject(error);
         },
-      },
-    );
-  };
+      };
+
+      streamChat(input, handlers)
+        .then((abort) => {
+          // A cached turn can finish before its own abort handle exists;
+          // keeping it then would leave a spent stream armed for cancelling.
+          if (!settled) abortRef.current = abort;
+        })
+        .catch(handlers.onError);
+    });
 
   const canSend = input.trim().length > 0 && !busy;
   // Nothing but the opener means there is nothing to clear.
@@ -750,7 +860,9 @@ export function LexiSheet({
     }
 
     lastQuestion.current = q;
-    void runChat(q);
+    // The handlers have already put the failure in the transcript; this only
+    // keeps the rejection from surfacing as an unhandled one.
+    runChat(q).catch(() => {});
   };
 
   const retry = () => {
@@ -761,13 +873,93 @@ export function LexiSheet({
         ? prev.slice(0, -1)
         : prev,
     );
-    void runChat(lastQuestion.current);
+    runChat(lastQuestion.current).catch(() => {});
   };
 
-  // ── voice input ────────────────────────────────────────────────
+  // ── voice ──────────────────────────────────────────────────────
   // Named `mic` because `voice` above is the other direction: reading a reply
-  // aloud. This one is the reader talking to Liqrai.
-  const mic = useVoiceInput(showToast);
+  // aloud. This one is the reader talking to Liqrai — a held button that drafts
+  // what they said into the composer for them to check before it goes.
+  const mic = useVoiceInput(showToast, {
+    onTranscript: (text) =>
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text)),
+  });
+
+  /**
+   * The live conversation. A separate path from `runChat` on purpose: the audio
+   * never passes through our server, so what arrives here is a finished
+   * exchange rather than a stream to render. It lands in the same transcript.
+   */
+  const live = useRealtimeVoice({
+    context: () =>
+      book
+        ? {
+            author: book.author,
+            docKey: book.docKey,
+            page: book.page,
+            style: explStyle,
+            title: book.title,
+          }
+        : null,
+    handlers: {
+      onAsk: (text) => {
+        push({ role: "user", kind: "normal", text });
+        lastQuestion.current = text;
+        setStreaming("");
+        scrollToEnd();
+      },
+      onReplyProgress: (text) => {
+        setStreaming(text);
+        scrollToEnd();
+      },
+      onTurn: ({ message, reply }) => {
+        setStreaming(null);
+        push({
+          role: "lexi",
+          kind: "normal",
+          text: reply,
+          cite: citedHighlight(reply, notesRef.current),
+        });
+        scrollToEnd();
+        // Kept and charged for out of band: the call itself never reaches our
+        // server, so this is the only record of it that ever will.
+        recordRealtimeTurn({
+          docKey: book!.docKey,
+          message,
+          page: book!.page,
+          reply,
+          sessionId,
+          title: book!.title,
+        })
+          .then((quota) => {
+            if (quota) setQuota(quota);
+          })
+          .catch((error) => {
+            if (!(error instanceof AiQuotaError)) return;
+            setQuota(error.quota);
+            if (error.requiresAuth) openWall("quota");
+            live.stop();
+            close();
+          });
+      },
+      onError: showToast,
+    },
+  });
+
+  const startLive = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Nothing half-typed is lost: the composer is empty whenever the control
+    // that starts this is on screen.
+    Keyboard.dismiss();
+    setVoice(null);
+    live.start();
+  };
+
+  const endLive = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setStreaming(null);
+    live.stop();
+  };
 
   /**
    * End the recording and drop what was said into the composer.
@@ -809,8 +1001,12 @@ export function LexiSheet({
     const armed = voice?.key === i;
     const playing = armed && Boolean(voice?.url);
     const loading = armed && !playing;
+    // Focus, the same as the reader's: while one reply is being read the rest
+    // of the thread steps back, at the same 0.27 the page dims to, so the two
+    // feel like one idea rather than two features that both dim things.
+    const dimmed = Boolean(voice?.url) && !playing;
     return (
-      <Box key={i} paddingY={5}>
+      <Box key={i} paddingY={5} style={{ opacity: dimmed ? 0.27 : 1 }}>
         <Box
           bg={user ? t.onAccent : isError ? t.accentSoft : t.card}
           borderColor={
@@ -841,8 +1037,47 @@ export function LexiSheet({
                 }),
           }}
         >
-          <Text color={user ? t.pill : t.ink} lh={21} size={13.5}>
-            {m.text}
+          {/* While this reply is being read it is drawn in three pieces:
+              what has been said, the word being said, and what is still to
+              come. A single moving highlight says where the voice is but not
+              how far it has got, which leaves you scanning the paragraph to
+              work out what you have already heard.
+
+              Sliced rather than mapped per word — three Texts instead of one
+              per token, rebuilt several times a second. Every other bubble
+              stays a single plain string. */}
+          <Text
+            color={user ? t.pill : t.ink}
+            lh={21}
+            serif={bodySerif}
+            size={13.5}
+            style={bodyFont ? { fontFamily: bodyFont } : undefined}
+          >
+            {playing && spokenTokens && spokenAt >= 0 ? (
+              <>
+                <Text
+                  color={t.accentText}
+                  serif={bodySerif}
+                  style={bodyFont ? { fontFamily: bodyFont } : undefined}
+                >
+                  {spokenTokens.slice(0, spokenAt).join("")}
+                </Text>
+                <Text
+                  serif={bodySerif}
+                  style={{
+                    backgroundColor: t.accentSoft,
+                    color: t.accentText,
+                    ...(bodyFontBold ? { fontFamily: bodyFontBold } : null),
+                  }}
+                  weight="600"
+                >
+                  {spokenTokens[spokenAt] ?? ""}
+                </Text>
+                {spokenTokens.slice(spokenAt + 1).join("")}
+              </>
+            ) : (
+              m.text
+            )}
           </Text>
           {isError ? (
             <Tap
@@ -1098,7 +1333,15 @@ export function LexiSheet({
                         style={{ alignSelf: "flex-start", maxWidth: "88%" }}
                       >
                         {streaming ? (
-                          <Text color={t.ink} lh={21} size={13.5}>
+                          <Text
+                            color={t.ink}
+                            lh={21}
+                            serif={bodySerif}
+                            size={13.5}
+                            style={
+                              bodyFont ? { fontFamily: bodyFont } : undefined
+                            }
+                          >
                             {streaming}
                           </Text>
                         ) : (
@@ -1149,7 +1392,7 @@ export function LexiSheet({
 
           {/* Sticky footer: openers while idle, then the composer. */}
           <Reanimated.View style={[composerStyle, { paddingTop: 6 }]}>
-            {!busy && !input.trim() && mic.phase === "idle" ? (
+            {!busy && !input.trim() && mic.phase === "idle" && !live.on ? (
               <Box
                 direction="row"
                 gap={7}
@@ -1179,7 +1422,79 @@ export function LexiSheet({
               </Box>
             ) : null}
 
-            {mic.phase !== "idle" ? (
+            {live.on ? (
+              /* A conversation, not a composer. There is only one control:
+                 hanging up. Interrupting used to need a button and now doesn't
+                 — the reader just talks over it, the way they would with a
+                 person, and the model stops. */
+              <Box align="center" direction="row" gap={10} paddingX={12}>
+                <Tap onPress={endLive} scale={0.9}>
+                  <Box
+                    align="center"
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconClose color={t.sub} size={16} />
+                  </Box>
+                </Tap>
+
+                <Box
+                  align="center"
+                  bg={t.chip}
+                  borderColor={
+                    live.phase === "listening" ? t.accentMid : t.line
+                  }
+                  borderWidth={1}
+                  direction="row"
+                  flex={1}
+                  gap={10}
+                  paddingX={14}
+                  paddingY={9}
+                  rounded={22}
+                >
+                  {live.phase === "connecting" ? (
+                    <>
+                      <ActivityIndicator color={t.accent} size="small" />
+                      <Text color={t.sub} size={12}>
+                        Connecting…
+                      </Text>
+                    </>
+                  ) : live.phase === "speaking" ? (
+                    <>
+                      <SpeakingWave color={t.accent} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Speaking
+                        </Text>
+                      </Box>
+                      <Text color={t.accent} size={11.5} weight="600">
+                        Talk to cut in
+                      </Text>
+                    </>
+                  ) : live.phase === "thinking" ? (
+                    <>
+                      <TypingDots color={t.accent} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Thinking…
+                        </Text>
+                      </Box>
+                    </>
+                  ) : (
+                    <>
+                      <SpeakingWave color={t.accent} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Listening — just talk
+                        </Text>
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              </Box>
+            ) : mic.phase !== "idle" ? (
               /* Recording takes the composer's place rather than sitting
                  beside it: while the mic is open there is nothing else to do
                  down here, and the three targets — discard, level, keep —
@@ -1336,20 +1651,43 @@ export function LexiSheet({
                     </Box>
                   </Tap>
                 ) : (
-                  <Tap onPress={startVoice} scale={0.92}>
-                    <Box
-                      align="center"
-                      bg={t.chip}
-                      borderColor={t.line}
-                      borderWidth={1}
-                      height={38}
-                      justify="center"
-                      rounded={19}
-                      width={38}
-                    >
-                      <IconMic color={t.sub} size={17} />
-                    </Box>
-                  </Tap>
+                  <>
+                    {/* Two ways to talk, and the difference is who ends the
+                        turn. The mic drafts what you said into the composer so
+                        you can read it before it goes; this one hands the whole
+                        exchange over and answers you out loud. Only offered on
+                        a real document — the scripted reader has no voice. */}
+                    {book ? (
+                      <Tap onPress={startLive} scale={0.92}>
+                        <Box
+                          align="center"
+                          bg={t.accentSoft}
+                          borderColor={t.accentMid}
+                          borderWidth={1}
+                          height={38}
+                          justify="center"
+                          rounded={19}
+                          width={38}
+                        >
+                          <IconWave color={t.accent} size={18} />
+                        </Box>
+                      </Tap>
+                    ) : null}
+                    <Tap onPress={startVoice} scale={0.92}>
+                      <Box
+                        align="center"
+                        bg={t.chip}
+                        borderColor={t.line}
+                        borderWidth={1}
+                        height={38}
+                        justify="center"
+                        rounded={19}
+                        width={38}
+                      >
+                        <IconMic color={t.sub} size={17} />
+                      </Box>
+                    </Tap>
+                  </>
                 )}
               </Box>
             )}

@@ -42,7 +42,7 @@ import type {
   ReadWidth,
 } from "@/stores/app-store";
 import { useAppStore } from "@/stores/app-store";
-import { dysFamily, hankenFamily } from "@/theme/app-fonts";
+import { atkinsonFamily, comicFamily, hankenFamily } from "@/theme/app-fonts";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
 
 type ThemeMode = "auto" | "dark" | "light";
@@ -74,12 +74,37 @@ const VIEW_MODE_ITEMS: SegmentItem<ViewMode>[] = [
   { key: "reflow", label: "Reflow" },
 ];
 
-// Prototype order, each chip typeset in the family it selects:
-// Sans (Hanken Grotesk) · Serif (Literata) · Dyslexic (Atkinson Hyperlegible)
-const FAM_ITEMS: SegmentItem<FontFam>[] = [
-  { key: "sans", label: "Sans", font: hankenFamily },
+/**
+ * The typeface chips, each set in the face it selects — so the chip is the
+ * sample, and nobody has to guess what "Dyslexic" was going to look like.
+ *
+ * Named, not categorised. A reader who has been told by a teacher or an
+ * optometrist to try a particular font can only act on that if the font is on
+ * screen by name; "Dyslexic" told them nothing and hid which of the two
+ * recommended faces they were actually getting.
+ */
+const FAM_ITEMS: {
+  key: FontFam;
+  label: string;
+  font?: { active: string; inactive: string };
+  serif?: boolean;
+  /** Shown under the chips when chosen — why this face is on the list. */
+  note?: string;
+}[] = [
   { key: "serif", label: "Serif", serif: true },
-  { key: "dys", label: "Dyslexic", font: dysFamily, flex: 1.3 },
+  { key: "sans", label: "Grotesk", font: hankenFamily },
+  {
+    key: "dys",
+    label: "Atkinson",
+    font: atkinsonFamily,
+    note: "Drawn by the Braille Institute to keep letters that mirror each other — b/d, p/q — apart.",
+  },
+  {
+    key: "comic",
+    label: "Dyslexic",
+    font: comicFamily,
+    note: "An openly licensed Comic Sans, matched to it letter for letter. Its uneven shapes are what make it easier to read for some.",
+  },
 ];
 
 const SPACING_ITEMS: SegmentItem<LineSpacing>[] = [
@@ -478,14 +503,67 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
             <Box paddingBottom={8} paddingTop={20}>
               <SectionLabel size={11}>Reflow text</SectionLabel>
             </Box>
+            {/* Wrapped rather than segmented: four real font names will not fit
+                across a phone, and squeezing them would defeat the point of
+                naming them. */}
+            <Box direction="row" gap={7} paddingBottom={10} wrap="wrap">
+              {FAM_ITEMS.map((item) => {
+                const on = item.key === app.fontFam;
+                return (
+                  <Tap
+                    key={item.key}
+                    onPress={() => app.set({ fontFam: item.key })}
+                    scale={0.96}
+                  >
+                    <Box
+                      bg={on ? t.accentSoft : t.chip}
+                      borderColor={on ? t.accentMid : t.line}
+                      borderWidth={1}
+                      paddingX={13}
+                      paddingY={9}
+                      rounded={20}
+                    >
+                      <Text
+                        color={on ? t.accentText : t.ink}
+                        serif={item.serif}
+                        size={13}
+                        style={
+                          item.font
+                            ? {
+                                fontFamily: on
+                                  ? item.font.active
+                                  : item.font.inactive,
+                              }
+                            : undefined
+                        }
+                        weight={on ? "600" : "500"}
+                      >
+                        {item.label}
+                      </Text>
+                    </Box>
+                  </Tap>
+                );
+              })}
+            </Box>
+
+            {/* Only the chosen face's note, and only when it has one — the two
+                reading faces need no defence, the two accessibility ones do. */}
+            {FAM_ITEMS.find((item) => item.key === app.fontFam)?.note ? (
+              <Text
+                color={t.faint}
+                lh={17}
+                size={11.5}
+                style={{ paddingBottom: 12 }}
+              >
+                {FAM_ITEMS.find((item) => item.key === app.fontFam)?.note}
+              </Text>
+            ) : null}
+
             <Box align="center" direction="row" gap={10}>
               <Box flex={1}>
-                <Segmented
-                  items={FAM_ITEMS}
-                  onChange={(key) => app.set({ fontFam: key })}
-                  size={12.5}
-                  value={app.fontFam}
-                />
+                <Text color={t.sub} size={12.5} weight="600">
+                  Text size
+                </Text>
               </Box>
               <Box
                 align="center"
@@ -566,6 +644,25 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
             </Text>
           </Box>
         )}
+
+        <Box paddingBottom={2} paddingTop={20}>
+          <SectionLabel size={11}>Accuracy</SectionLabel>
+        </Box>
+
+        {/* Off by default and honest about its cost in the subtitle: it reads
+            every page you settle on, which is a credit each, and it can be
+            wrong. Somebody should choose this rather than find it running. */}
+        <Row
+          sub="Underline claims worth checking as you read. Skips fiction; uses a credit per page."
+          title="Check facts"
+        >
+          <Toggle
+            on={app.factCheck}
+            onToggle={() => app.set({ factCheck: !app.factCheck })}
+          />
+        </Row>
+
+        <Divider />
 
         <Box paddingBottom={2} paddingTop={20}>
           <SectionLabel size={11}>Focus support</SectionLabel>
