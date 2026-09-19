@@ -13,7 +13,6 @@ import {
   HeaderButton,
   IconBack,
   IconType,
-  Tap,
 } from "@/components/lexi-components";
 import type { BottomSheetModalReference } from "@/components/modals/BottomSheetModal/BottomSheetModal";
 import { AnnotateBar, PdfOutlineDrawer } from "@/components/reader";
@@ -398,13 +397,6 @@ export default function BookReaderScreen() {
     };
   }, [immersive]);
 
-  const swipeFromLeftEdge = Gesture.Pan()
-    .runOnJS(true)
-    .activeOffsetX([-20, 20])
-    .onEnd((e) => {
-      if (e.translationX > 30) setOutlineOpen(true);
-    });
-
   const swipeUpFromBottom = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetY([-20, 20])
@@ -608,40 +600,6 @@ export default function BookReaderScreen() {
             />
           ) : null}
 
-          {outline.length && !outlineOpen ? (
-            <GestureDetector gesture={swipeFromLeftEdge}>
-              <Box
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: 24,
-                  zIndex: 9,
-                }}
-              >
-                {!immersive ? (
-                  <Tap
-                    onPress={() => setOutlineOpen(true)}
-                    style={{ position: "absolute", left: 0, top: "46%" }}
-                  >
-                    <Box
-                      align="center"
-                      bg={t.chip}
-                      height={64}
-                      justify="center"
-                      roundedBottomRight={10}
-                      roundedTopRight={10}
-                      width={18}
-                    >
-                      <Box bg={t.faint} height={26} rounded={2} width={3} />
-                    </Box>
-                  </Tap>
-                ) : null}
-              </Box>
-            </GestureDetector>
-          ) : null}
-
           <GestureDetector gesture={swipeUpFromBottom}>
             <Box
               style={{
@@ -682,15 +640,19 @@ export default function BookReaderScreen() {
         />
       ) : null}
 
-      {outlineOpen ? (
+      {outline.length || outlineOpen ? (
         <PdfOutlineDrawer
           bookmarks={[]}
           entries={outline}
+          handleVisible={!immersive}
+          hintKey={STANDALONE_URI}
           onClose={() => setOutlineOpen(false)}
           onGoPage={(target) => {
             setOutlineOpen(false);
             goToPage(target);
           }}
+          onOpen={() => setOutlineOpen(true)}
+          open={outlineOpen}
           page={page}
           title={title ?? "Book"}
         />
