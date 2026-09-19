@@ -28,13 +28,14 @@ import Reanimated, {
 import { Box, Text } from "@/components/atoms";
 import { useProtoTheme } from "@/theme/proto";
 
+import { DRAWER_EDGE } from "./slide-drawer";
+
 const SPRING = { damping: 22, mass: 0.7, stiffness: 220 } as const;
 const TAP_TIMING = { duration: 240, easing: Easing.out(Easing.cubic) };
 const ACTIVATE_X = 18;
 const FAIL_Y = 14;
 const EDGE_RESISTANCE = 0.32;
 const FLING_VELOCITY = 420;
-export const DRAWER_EDGE = 44;
 const BAR_PAD = 3;
 
 export interface SwipeTabItem<K extends string = string> {

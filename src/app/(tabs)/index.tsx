@@ -3,16 +3,15 @@ import { router, useFocusEffect } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackHandler, RefreshControl, ScrollView } from "react-native";
-import { Drawer } from "react-native-drawer-layout";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Box, TextInput } from "@/components/atoms";
 import {
-  DRAWER_EDGE,
   HeaderButton,
   IconSearch,
   IconSliders,
   ProtoScreen,
+  SlideDrawer,
   SwipeTabsBar,
   SwipeTabsPager,
   Tap,
@@ -49,6 +48,48 @@ type LibTab = "all" | "coll" | "files" | "recent" | "vocab";
 const TAB_KEYS = ["recent", "all", "coll", "files", "vocab"] as const;
 
 export default function LibraryScreen() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpenRef = useRef(false);
+  const openSettings = useCallback(() => {
+    settingsOpenRef.current = true;
+    setSettingsOpen(true);
+  }, []);
+  const closeSettings = useCallback(() => {
+    settingsOpenRef.current = false;
+    setSettingsOpen(false);
+  }, []);
+  const closeSettingsIfOpen = useCallback(() => {
+    if (!settingsOpenRef.current) return false;
+    closeSettings();
+    return true;
+  }, [closeSettings]);
+  const renderSettings = useCallback(
+    () => <SettingsPanel onClose={closeSettings} />,
+    [closeSettings],
+  );
+
+  return (
+    <SlideDrawer
+      onClose={closeSettings}
+      onOpen={openSettings}
+      open={settingsOpen}
+      renderPanel={renderSettings}
+    >
+      <LibraryContent
+        closeSettingsIfOpen={closeSettingsIfOpen}
+        openSettings={openSettings}
+      />
+    </SlideDrawer>
+  );
+}
+
+const LibraryContent = memo(function LibraryContent({
+  closeSettingsIfOpen,
+  openSettings,
+}: {
+  closeSettingsIfOpen: () => boolean;
+  openSettings: () => void;
+}) {
   const t = useProtoTheme();
   const { t: tr } = useTranslation("home");
   const insets = useSafeAreaInsets();
@@ -64,8 +105,9 @@ export default function LibraryScreen() {
   const [filing, setFiling] = useState<FilableDoc | null>(null);
   const [menuDoc, setMenuDoc] = useState<FilableDoc | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<Anchor | undefined>(undefined);
-  const [filingAnchor, setFilingAnchor] = useState<Anchor | undefined>(undefined);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filingAnchor, setFilingAnchor] = useState<Anchor | undefined>(
+    undefined,
+  );
 
   const [pulled, setPulled] = useState(false);
   const refreshing = pulled && lib.scanning;
@@ -80,8 +122,9 @@ export default function LibraryScreen() {
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       const onBack = () => {
-        if (settingsOpen) {
-          setSettingsOpen(false);
+        if (closeSettingsIfOpen()) {
+          exitArmed.current = false;
+          clearTimeout(timer);
           return true;
         }
         if (menuDoc) {
@@ -121,7 +164,7 @@ export default function LibraryScreen() {
         exitArmed.current = false;
       };
     }, [
-      settingsOpen,
+      closeSettingsIfOpen,
       menuDoc,
       filing,
       searching,
@@ -156,13 +199,6 @@ export default function LibraryScreen() {
     onChange: setTab,
     value: tab,
   });
-
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const renderSettings = useCallback(
-    () => <SettingsPanel onClose={closeSettings} />,
-    [closeSettings],
-  );
 
   const openReader = useCallback(() => router.push("/reader"), []);
   const openBook = useCallback(
@@ -296,126 +332,121 @@ export default function LibraryScreen() {
   );
 
   return (
-    <Drawer
-      drawerStyle={{ width: "100%" }}
-      drawerType="slide"
-      onClose={closeSettings}
-      onOpen={openSettings}
-      open={settingsOpen}
-      renderDrawerContent={renderSettings}
-      swipeEdgeWidth={DRAWER_EDGE}
-    >
-      <ProtoScreen>
+    <ProtoScreen>
 
-        {searching ? (
+      {searching ? (
+        <Box
+          align="center"
+          direction="row"
+          gap={10}
+          paddingLeft={20}
+          paddingRight={20}
+          paddingTop={14}
+        >
+          <Box
+            align="center"
+            bg={t.card}
+            borderColor={t.line}
+            borderWidth={1}
+            direction="row"
+            flex={1}
+            gap={9}
+            paddingX={14}
+            rounded={12}
+          >
+            <IconSearch color={t.sub} size={16} />
+            <TextInput
+              autoFocus
+              backgroundColor="transparent"
+              borderColor="transparent"
+              borderWidth={0}
+              fontSize={14.5}
+              onChangeText={setQuery}
+              placeholder={tr("library.searchPlaceholder")}
+              placeholderTextColor={t.faint}
+              pl={0}
+              py={12}
+              rounded={0}
+              style={{ flex: 1, height: undefined }}
+              textColor={t.ink}
+              value={query}
+            />
+          </Box>
+          <Tap
+            onPress={() => {
+              setSearching(false);
+              setQuery("");
+            }}
+          >
+            <Text color={t.accentText} size={14} weight="500">
+              {tr("library.cancel")}
+            </Text>
+          </Tap>
+        </Box>
+      ) : (
+        <>
           <Box
             align="center"
             direction="row"
-            gap={10}
+            justify="between"
             paddingLeft={20}
             paddingRight={20}
-            paddingTop={14}
+            paddingTop={18}
           >
-            <Box
-              align="center"
-              bg={t.card}
-              borderColor={t.line}
-              borderWidth={1}
-              direction="row"
-              flex={1}
-              gap={9}
-              paddingX={14}
-              rounded={12}
-            >
-              <IconSearch color={t.sub} size={16} />
-              <TextInput
-                autoFocus
-                backgroundColor="transparent"
-                borderColor="transparent"
-                borderWidth={0}
-                fontSize={14.5}
-                onChangeText={setQuery}
-                placeholder={tr("library.searchPlaceholder")}
-                placeholderTextColor={t.faint}
-                pl={0}
-                py={12}
-                rounded={0}
-                style={{ flex: 1, height: undefined }}
-                textColor={t.ink}
-                value={query}
-              />
-            </Box>
-            <Tap
-              onPress={() => {
-                setSearching(false);
-                setQuery("");
-              }}
-            >
-              <Text color={t.accentText} size={14} weight="500">
-                {tr("library.cancel")}
-              </Text>
-            </Tap>
-          </Box>
-        ) : (
-          <>
-            <Box
-              align="center"
-              direction="row"
-              justify="between"
-              paddingLeft={20}
-              paddingRight={20}
-              paddingTop={18}
-            >
-              <Box direction="row" align="center" gap={10}>
-                <HeaderButton onPress={openSettings}>
-                  <IconSliders bg={t.bg} color={t.ink} size={20} />
-                </HeaderButton>
-                <Text ls={-0.3} serif size={30} weight="600">
-                  {tr("library.title")}
-                </Text>
-              </Box>
-              <HeaderButton onPress={() => setSearching(true)}>
-                <IconSearch color={t.ink} size={19} />
+            <Box direction="row" align="center" gap={10}>
+              <HeaderButton
+                onPress={() => {
+                  exitArmed.current = false;
+                  openSettings();
+                }}
+              >
+                <IconSliders bg={t.bg} color={t.ink} size={20} />
               </HeaderButton>
+              <Text ls={-0.3} serif size={30} weight="600">
+                {tr("library.title")}
+              </Text>
             </Box>
+            <HeaderButton onPress={() => setSearching(true)}>
+              <IconSearch color={t.ink} size={19} />
+            </HeaderButton>
+          </Box>
 
-            <Box marginTop={14} paddingLeft={20} paddingRight={20}>
-              <SwipeTabsBar items={TAB_ITEMS} tabs={tabs} />
-            </Box>
-          </>
-        )}
+          <Box marginTop={14} paddingLeft={20} paddingRight={20}>
+            <SwipeTabsBar items={TAB_ITEMS} tabs={tabs} />
+          </Box>
+        </>
+      )}
 
-        {searching ? (
-          <SearchLibraryResults
-            contentPad={contentPad}
-            lib={lib}
-            openCollections={openCollections}
-            openDoc={openDoc}
-            openDocMenu={openDocMenu}
-            query={query}
-            refreshControl={refreshControl}
-          />
-        ) : (
-          <SwipeTabsPager renderTab={renderTab} tabs={tabs} />
-        )}
+      {searching ? (
+        <SearchLibraryResults
+          contentPad={contentPad}
+          lib={lib}
+          openCollections={openCollections}
+          openDoc={openDoc}
+          openDocMenu={openDocMenu}
+          query={query}
+          refreshControl={refreshControl}
+        />
+      ) : (
+        <SwipeTabsPager renderTab={renderTab} tabs={tabs} />
+      )}
 
-        {filing ? (
-          <CollectionPicker
-            anchor={filingAnchor}
-            doc={filing}
-            onClose={() => setFiling(null)}
-          />
-        ) : null}
+      {filing ? (
+        <CollectionPicker
+          anchor={filingAnchor}
+          doc={filing}
+          onClose={() => setFiling(null)}
+        />
+      ) : null}
 
-        {menuDoc ? (
-          <DocMenu
-            anchor={menuAnchor}
-            doc={menuDoc}
-            onChanged={lib.refresh}
-            onClose={() => setMenuDoc(null)}
-          />
-        ) : null}
-      </ProtoScreen>
-    </Drawer>
+      {menuDoc ? (
+        <DocMenu
+          anchor={menuAnchor}
+          doc={menuDoc}
+          onChanged={lib.refresh}
+          onClose={() => setMenuDoc(null)}
+        />
+      ) : null}
+    </ProtoScreen>
   );
-}
+});

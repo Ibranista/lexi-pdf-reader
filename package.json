@@ -75,7 +75,6 @@
     "react-native": "0.86.0",
     "react-native-blob-util": "^0.24.10",
     "react-native-device-info": "^15.0.2",
-    "react-native-drawer-layout": "4.2.7",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-heroicons": "^4.0.0",
     "react-native-incall-manager": "^4.2.2",
