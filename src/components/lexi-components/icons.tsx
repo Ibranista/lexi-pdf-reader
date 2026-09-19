@@ -488,6 +488,30 @@ export function IconNoteDoc({
   );
 }
 
+export function IconCopy({
+  size,
+  color = "#000",
+  strokeWidth = 1.6,
+}: IconProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M7 7h9v10H7Z"
+        stroke={color}
+        strokeLinejoin="round"
+        strokeWidth={strokeWidth}
+      />
+      <Path
+        d="M4 13V3h9"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={strokeWidth}
+      />
+    </Frame>
+  );
+}
+
 export function IconCards({
   size,
   color = "#000",

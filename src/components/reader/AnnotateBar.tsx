@@ -1,3 +1,4 @@
+import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Keyboard } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
@@ -8,6 +9,7 @@ import {
   Backdrop,
   IconBookmark,
   IconClose,
+  IconCopy,
   IconGlobe,
   IconHighlighter,
   IconNoteDoc,
@@ -20,6 +22,7 @@ import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_FILL,
   type HighlightColor,
+  type PassageContext,
   useAnnotationsStore,
 } from "@/stores/annotations-store";
 import { useToastStore } from "@/stores/app-store";
@@ -30,20 +33,24 @@ const NOTE_MIN_HEIGHT = 88;
 const NOTE_MAX_HEIGHT = 200;
 
 export function AnnotateBar({
+  backdrop = true,
   onBookmark,
   onClose,
   onComposingChange,
   onTranslate,
   page,
+  context,
   source,
   text,
   uri,
 }: {
+  backdrop?: boolean;
   onBookmark?: () => void;
   onClose: () => void;
   onTranslate?: () => void;
   onComposingChange?: (composing: boolean) => void;
   page: number;
+  context?: PassageContext;
   source?: string;
   text: string;
   uri: string;
@@ -70,7 +77,7 @@ export function AnnotateBar({
   };
 
   const save = (color: HighlightColor) =>
-    add({ uri, page, source, text, color, note: "" });
+    add({ uri, page, source, text, color, note: "", ...context });
 
   const highlight = (color: HighlightColor) => {
     save(color);
@@ -177,6 +184,7 @@ export function AnnotateBar({
                     text,
                     color: NOTE_DEFAULT_COLOR,
                     note,
+                    ...context,
                   });
                   dismissComposer();
                   showToast(
@@ -200,7 +208,7 @@ export function AnnotateBar({
 
   return (
     <>
-      <Backdrop onPress={onClose} opacity={0} />
+      {backdrop ? <Backdrop onPress={onClose} opacity={0} /> : null}
       <Box
         gap={10}
         style={{
@@ -237,6 +245,15 @@ export function AnnotateBar({
               setDraft("");
               setNoteFor(true);
               onComposingChange?.(true);
+            }}
+          />
+          <SelAction
+            icon={<IconCopy color="#F6F3EE" size={16} />}
+            label="Copy"
+            onPress={async () => {
+              await Clipboard.setStringAsync(text);
+              dismissComposer();
+              showToast("Copied");
             }}
           />
           {onTranslate ? (

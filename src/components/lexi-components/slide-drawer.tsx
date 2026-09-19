@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { LayoutChangeEvent } from "react-native";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, StyleSheet, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
@@ -16,17 +16,18 @@ import { Box } from "@/components/atoms";
 export const DRAWER_EDGE = 52;
 
 const SPRING = {
-  damping: 22,
-  mass: 0.7,
+  damping: 28,
+  mass: 0.55,
   overshootClamping: true,
   restDisplacementThreshold: 0.002,
   restSpeedThreshold: 0.02,
-  stiffness: 220,
+  stiffness: 450,
 } as const;
 const ACTIVATE_X = 12;
 const FAIL_Y = 26;
 const FLING_VELOCITY = 450;
 const COMMIT_TRAVEL = 0.25;
+const SCRIM_OPACITY = 0.45;
 
 export function SlideDrawer({
   children,
@@ -52,6 +53,8 @@ export function SlideDrawer({
 
   const target = useRef(open);
 
+  const [arrived, setArrived] = useState(open);
+
   const syncRef = useRef<(next: boolean) => void>(() => undefined);
   useEffect(() => {
     syncRef.current = (next: boolean) => {
@@ -69,6 +72,9 @@ export function SlideDrawer({
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
   }, []);
+  const reportArrived = useCallback((next: boolean) => {
+    setArrived(next);
+  }, []);
 
   /* The gesture callbacks below reach `syncRef` when a finger lifts, not
      while this renders — which is the only thing the rule is guarding.
@@ -77,7 +83,13 @@ export function SlideDrawer({
   const pan = useMemo(() => {
     const settle = (next: boolean, velocity: number) => {
       "worklet";
-      progress.value = withSpring(next ? 1 : 0, { ...SPRING, velocity });
+      progress.value = withSpring(
+        next ? 1 : 0,
+        { ...SPRING, velocity },
+        (finished) => {
+          if (finished) runOnJS(reportArrived)(next);
+        },
+      );
       runOnJS(syncJS)(next);
     };
 
@@ -118,13 +130,15 @@ export function SlideDrawer({
         })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dismissKeyboard, edgeWidth, syncJS]);
+  }, [dismissKeyboard, edgeWidth, reportArrived, syncJS]);
   /* eslint-enable react-hooks/refs */
 
   useEffect(() => {
     if (target.current === open) return;
     target.current = open;
-    progress.value = withSpring(open ? 1 : 0, SPRING);
+    progress.value = withSpring(open ? 1 : 0, SPRING, (finished) => {
+      if (finished) runOnJS(reportArrived)(open);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -133,9 +147,9 @@ export function SlideDrawer({
     if (next > 0) width.value = next;
   };
 
-  const contentStyle = useAnimatedStyle(() => ({
+  const scrimStyle = useAnimatedStyle(() => ({
+    opacity: progress.value * SCRIM_OPACITY,
     transform: [{ translateX: progress.value * width.value }],
-    zIndex: progress.value === 0 ? 1 : 0,
   }));
   const panelStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: (progress.value - 1) * width.value }],
@@ -146,11 +160,15 @@ export function SlideDrawer({
     <Box flex={1} onLayout={onLayout} style={styles.clip}>
       <GestureDetector gesture={pan}>
         <Reanimated.View style={styles.fill}>
-          <Reanimated.View style={[styles.fill, contentStyle]}>
+          <Box aria-hidden={arrived} flex={1}>
             {children}
-          </Reanimated.View>
+          </Box>
           <Reanimated.View
-            pointerEvents={open ? "auto" : "none"}
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.scrim, scrimStyle]}
+          />
+          <Reanimated.View
+            pointerEvents={arrived ? "auto" : "none"}
             style={[StyleSheet.absoluteFill, panelStyle]}
           >
             {renderPanel()}
@@ -164,4 +182,5 @@ export function SlideDrawer({
 const styles = StyleSheet.create({
   clip: { overflow: "hidden" },
   fill: { flex: 1 },
+  scrim: { backgroundColor: "#000", zIndex: 1 },
 });

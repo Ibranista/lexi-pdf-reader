@@ -49,7 +49,11 @@ import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import type { TranslateTarget } from "@/components/reader/TranslateCard";
 import { TranslateCard } from "@/components/reader/TranslateCard";
 import { preloadChatHistory, uploadContext } from "@/services/lexi-ai";
-import { useAnnotationsStore } from "@/stores/annotations-store";
+import {
+  HIGHLIGHT_FILL,
+  type PassageContext,
+  useAnnotationsStore,
+} from "@/stores/annotations-store";
 import {
   useAppStore,
   useReaderJumpStore,
@@ -171,9 +175,12 @@ export default function PdfViewerScreen() {
   const [selection, setSelection] = useState<{
     text: string;
     page: number;
+    context?: PassageContext;
   } | null>(null);
   const [clearSelSeq, setClearSelSeq] = useState(0);
-  const [translating, setTranslating] = useState<TranslateTarget | null>(null);
+  const [translating, setTranslating] = useState<
+    (TranslateTarget & { anchor?: PassageContext }) | null
+  >(null);
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const annotations = useAnnotationsStore((s) => s.items);
@@ -181,8 +188,22 @@ export default function PdfViewerScreen() {
     () =>
       annotations
         .filter((a) => a.uri === uri)
-        .map((a) => ({ id: a.id, page: a.page, text: a.text, color: a.color })),
+        .map((a) => ({
+          id: a.id,
+          page: a.page,
+          text: a.text,
+          color: a.color,
+          prefix: a.prefix,
+          suffix: a.suffix,
+        })),
     [annotations, uri],
+  );
+  const pageHighlights = useMemo(
+    () =>
+      JSON.stringify(
+        highlights.map((h) => ({ ...h, color: HIGHLIGHT_FILL[h.color] })),
+      ),
+    [highlights],
   );
   const openNote = useMemo(
     () => annotations.find((a) => a.id === openNoteId) ?? null,
@@ -346,6 +367,9 @@ export default function PdfViewerScreen() {
   const switchTo = (next: ViewMode) => {
     if (next === mode) return;
     userPickedView.current = true;
+    setComposing(false);
+    setSelection(null);
+    setClearSelSeq((n) => n + 1);
     if (next === "page") {
       setPdfPage(page);
     } else {
@@ -534,6 +558,10 @@ export default function PdfViewerScreen() {
             <Pdf
               enableAntialiasing
               enablePaging={false}
+              enableTextSelection={mode === "page"}
+              clearSelectionSeq={clearSelSeq}
+              highlights={pageHighlights}
+              onHighlightPress={setOpenNoteId}
               maxScale={Math.max(3, smartScale)}
               minScale={1}
               onError={(err) =>
@@ -563,6 +591,22 @@ export default function PdfViewerScreen() {
               }}
               onPageSingleTap={() => setImmersive((v) => !v)}
               onScaleChanged={() => setPageMarker(null)}
+              onTextSelectionChange={({ nativeEvent }) => {
+                if (mode !== "page" || composing) return;
+                const text = nativeEvent.text?.trim() ?? "";
+                setSelection(
+                  nativeEvent.type === "selectionChanged" && text
+                    ? {
+                        text,
+                        page: nativeEvent.page || page,
+                        context: {
+                          prefix: nativeEvent.prefix ?? "",
+                          suffix: nativeEvent.suffix ?? "",
+                        },
+                      }
+                    : null,
+                );
+              }}
               page={pdfPage}
               renderActivityIndicator={() => (
                 <ActivityIndicator color={t.accent} size="large" />
@@ -700,9 +744,11 @@ export default function PdfViewerScreen() {
                 if (counts.length) setPageCount((c) => c || counts.length);
               }}
               onSearchResults={setSearchResults}
-              onSelection={(text, selPage) => {
-                if (composing) return;
-                setSelection(text ? { text, page: selPage || page } : null);
+              onSelection={(text, selPage, context) => {
+                if (mode !== "reflow" || composing) return;
+                setSelection(
+                  text ? { text, page: selPage || page, context } : null,
+                );
               }}
               onSingleTap={() => setImmersive((v) => !v)}
               onSwitchToPage={() => switchTo("page")}
@@ -894,18 +940,14 @@ export default function PdfViewerScreen() {
           setSettingsOpen(false);
           setFilingOpen(true);
         }}
-        onOpenNotes={
-          mode === "reflow"
-            ? () => {
-                sheetRef.current?.dismiss();
-                setSettingsOpen(false);
-                router.push({
-                  pathname: "/notes",
-                  params: { uri, name: name ?? "Document" },
-                });
-              }
-            : undefined
-        }
+        onOpenNotes={() => {
+          sheetRef.current?.dismiss();
+          setSettingsOpen(false);
+          router.push({
+            pathname: "/notes",
+            params: { uri, name: name ?? "Document" },
+          });
+        }}
         onToggleBookmark={() => {
           toggleBookmark(page);
           showToast(
@@ -1001,8 +1043,9 @@ export default function PdfViewerScreen() {
           onClose={() => setFilingOpen(false)}
         />
       ) : null}
-      {selection && mode === "reflow" && !translating ? (
+      {selection && !translating ? (
         <AnnotateBar
+          backdrop={mode !== "page"}
           onBookmark={() => {
             toggleBookmark(selection.page);
             showToast(`Page ${selection.page} bookmarked`);
@@ -1024,9 +1067,11 @@ export default function PdfViewerScreen() {
               source: name ?? "Document",
               text: selection.text,
               uri,
+              anchor: selection.context,
             });
             setClearSelSeq((n) => n + 1);
           }}
+          context={selection.context}
           page={selection.page}
           source={name ?? "Document"}
           text={selection.text}
@@ -1049,6 +1094,7 @@ export default function PdfViewerScreen() {
               source: name ?? "Document",
               text: translating.text,
               uri,
+              ...translating.anchor,
             });
           }}
           target={translating}

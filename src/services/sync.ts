@@ -28,6 +28,8 @@ const toWire = (a: Annotation | Tombstone, docKey: string) => ({
   docKey,
   page: a.page,
   text: a.text,
+  prefix: a.prefix,
+  suffix: a.suffix,
   source: a.source,
   color: a.color,
   note: a.note,

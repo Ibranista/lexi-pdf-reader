@@ -1,0 +1,899 @@
+diff --git a/android/src/main/java/com/github/barteksc/pdfviewer/SelectionGeometry.java b/android/src/main/java/com/github/barteksc/pdfviewer/SelectionGeometry.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..34e472b4c567377725d6686ee7d4763ec1dc630d
+--- /dev/null
++++ b/android/src/main/java/com/github/barteksc/pdfviewer/SelectionGeometry.java
+@@ -0,0 +1,47 @@
++package com.github.barteksc.pdfviewer;
++
++import android.graphics.RectF;
++import android.util.SizeF;
++
++/** Uses the viewer's own layout, including mixed page sizes, spacing and zoom. */
++public final class SelectionGeometry {
++    public static RectF bounds(PDFView view, int page) {
++        if (view.isRecycled() || view.pdfFile == null || page < 0 || page >= view.getPageCount()) return null;
++        float zoom = view.getZoom();
++        SizeF size = view.pdfFile.getScaledPageSize(page, zoom);
++        float primary = view.pdfFile.getPageOffset(page, zoom);
++        float secondary = view.pdfFile.getSecondaryPageOffset(page, zoom);
++        float x = view.getCurrentXOffset() + (view.isSwipeVertical() ? secondary : primary);
++        float y = view.getCurrentYOffset() + (view.isSwipeVertical() ? primary : secondary);
++        return new RectF(x, y, x + size.getWidth(), y + size.getHeight());
++    }
++
++    public static int pageAt(PDFView view, float x, float y) {
++        if (view.isRecycled() || view.pdfFile == null) return -1;
++        float offset = view.isSwipeVertical() ? y - view.getCurrentYOffset() : x - view.getCurrentXOffset();
++        int page = view.pdfFile.getPageAtOffset(offset, view.getZoom());
++        RectF box = bounds(view, page);
++        return box != null && box.contains(x, y) ? page : -1;
++    }
++
++    /** First and last page index currently on screen, or null before load. */
++    public static int[] visiblePages(PDFView view) {
++        if (view.isRecycled() || view.pdfFile == null || view.getPageCount() == 0) return null;
++        float zoom = view.getZoom();
++        boolean vertical = view.isSwipeVertical();
++        float from = -(vertical ? view.getCurrentYOffset() : view.getCurrentXOffset());
++        float to = from + (vertical ? view.getHeight() : view.getWidth());
++        return new int[] { view.pdfFile.getPageAtOffset(from, zoom), view.pdfFile.getPageAtOffset(to, zoom) };
++    }
++
++    /** Scrolls like a finger drag would, loading pages that come into view. */
++    public static void scrollBy(PDFView view, float dy) {
++        if (view.isRecycled() || view.pdfFile == null) return;
++        view.moveRelativeTo(0, dy);
++        view.loadPageByOffset();
++    }
++
++    public static int documentPage(PDFView view, int page) {
++        return view.pdfFile == null ? -1 : view.pdfFile.documentPage(page);
++    }
++}
+diff --git a/android/src/main/java/org/wonday/pdf/PdfManager.java b/android/src/main/java/org/wonday/pdf/PdfManager.java
+index 03e6de2fd385b833223d90375423e0b323bb5fff..ad8351bcdbdf9ac2bd5daa6ddea07d6e6e462a2c 100644
+--- a/android/src/main/java/org/wonday/pdf/PdfManager.java
++++ b/android/src/main/java/org/wonday/pdf/PdfManager.java
+@@ -60,7 +60,8 @@ public class PdfManager extends SimpleViewManager<PdfView> implements RNPDFPdfVi
+ 
+     @Override
+     public void onDropViewInstance(PdfView pdfView) {
+-        pdfView = null;
++        pdfView.recycle();
++        super.onDropViewInstance(pdfView);
+     }
+ 
+     @ReactProp(name = "path")
+@@ -139,6 +140,21 @@ public class PdfManager extends SimpleViewManager<PdfView> implements RNPDFPdfVi
+         pdfView.setEnableDoubleTapZoom(enableDoubleTap);
+     }
+ 
++    @ReactProp(name = "enableTextSelection")
++    public void setEnableTextSelection(PdfView pdfView, boolean enabled) {
++        pdfView.setEnableTextSelection(enabled);
++    }
++
++    @ReactProp(name = "highlights")
++    public void setHighlights(PdfView pdfView, String highlights) {
++        pdfView.setHighlights(highlights);
++    }
++
++    @ReactProp(name = "clearSelectionSeq")
++    public void setClearSelectionSeq(PdfView pdfView, int seq) {
++        pdfView.setClearSelectionSeq(seq);
++    }
++
+     @ReactProp(name = "enablePaging")
+     public void setEnablePaging(PdfView pdfView, boolean enablePaging) {
+         pdfView.setEnablePaging(enablePaging);
+diff --git a/android/src/main/java/org/wonday/pdf/PdfTextSelection.java b/android/src/main/java/org/wonday/pdf/PdfTextSelection.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce85f97b8928418b7c61a09da491532fe9ee2242
+--- /dev/null
++++ b/android/src/main/java/org/wonday/pdf/PdfTextSelection.java
+@@ -0,0 +1,627 @@
++package org.wonday.pdf;
++
++import android.graphics.Canvas;
++import android.graphics.Color;
++import android.graphics.Paint;
++import android.graphics.PointF;
++import android.graphics.Rect;
++import android.graphics.RectF;
++import android.net.Uri;
++import android.os.ParcelFileDescriptor;
++import android.view.GestureDetector;
++import android.view.HapticFeedbackConstants;
++import android.view.MotionEvent;
++import com.github.barteksc.pdfviewer.PDFView;
++import com.github.barteksc.pdfviewer.SelectionGeometry;
++import io.legere.pdfiumandroid.PdfDocument;
++import io.legere.pdfiumandroid.PdfPage;
++import io.legere.pdfiumandroid.PdfTextPage;
++import io.legere.pdfiumandroid.PdfiumCore;
++import java.io.File;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.Iterator;
++import java.util.List;
++import java.util.Map;
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++/**
++ * On-device selection and saved-highlight painting for AndroidPdfViewer 4.0.1 /
++ * PdfiumAndroid 1.0.32. The viewer draws pages as bitmaps, so both read the
++ * text layer straight from pdfium and paint over the page in dispatchDraw.
++ *
++ * A selection runs from (startPage, start) to (endPage, end) — display pages
++ * and pdfium char indexes, both inclusive — so it can cross page breaks.
++ */
++public final class PdfTextSelection {
++    public interface Listener {
++        void onSelection(String text, int page, String prefix, String suffix);
++        void cancelPdfTouch(MotionEvent event);
++    }
++
++    /** A page's text layer, kept open while the selection touches it. */
++    private static final class PageText {
++        PdfPage page;
++        PdfTextPage text;
++        int count;
++    }
++
++    /** A highlight rect, as a fraction of its document page. */
++    private static final class MarkRect {
++        final int page;
++        final RectF fraction;
++        MarkRect(int page, RectF fraction) { this.page = page; this.fraction = fraction; }
++    }
++
++    /** A saved highlight. Fractional rects mean zoom never invalidates them. */
++    private static final class Mark {
++        String id;
++        int page; // 0-based document page the passage starts on
++        String text;
++        String prefix;
++        String suffix;
++        int color;
++        boolean resolved;
++        final List<MarkRect> rects = new ArrayList<>();
++    }
++
++    // Normalised page space used to store highlight rects as fractions.
++    private static final int UNIT = 100000;
++    // How many pages one selection or highlight may span.
++    private static final int MAX_SPAN = 8;
++    // Page text kept either side of a selection, matching the reflow reader.
++    private static final int CONTEXT_CHARS = 32;
++
++    private final PDFView view;
++    private final Listener listener;
++    private final GestureDetector detector;
++    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
++    private final float density;
++    private final Map<Integer, PageText> pages = new HashMap<>();
++    private final Map<Integer, List<RectF>> rectangles = new HashMap<>();
++    private final List<Mark> marks = new ArrayList<>();
++    private String marksJson = "";
++    private PdfDocument document;
++    private String path;
++    private String password = "";
++    private boolean enabled = true;
++    private int startPage = -1;
++    private int start = -1;
++    private int endPage = -1;
++    private int end = -1;
++    private int anchorStartPage;
++    private int anchorStart;
++    private int anchorEndPage;
++    private int anchorEnd;
++    // 1/2 drag the start/end handle, 3 extends the initial long press by word.
++    private int dragging;
++    private float dragOffsetX;
++    private float dragOffsetY;
++    private float lastX;
++    private float lastY;
++    private boolean autoScrolling;
++    private String lastText = "";
++
++    // Dragging a handle near the top or bottom edge scrolls the document, so
++    // the selection can reach a page that isn't on screen yet.
++    private final Runnable autoScroll = new Runnable() {
++        @Override public void run() {
++            float speed = edgeSpeed(lastY);
++            if (dragging == 0 || speed == 0 || view.isRecycled()) {
++                autoScrolling = false;
++                view.loadPages();
++                return;
++            }
++            SelectionGeometry.scrollBy(view, speed);
++            drag(lastX, lastY);
++            view.postOnAnimation(this);
++        }
++    };
++
++    public PdfTextSelection(PDFView view, Listener listener) {
++        this.view = view;
++        this.listener = listener;
++        density = view.getResources().getDisplayMetrics().density;
++        detector = new GestureDetector(view.getContext(), new GestureDetector.SimpleOnGestureListener() {
++            @Override public boolean onDown(MotionEvent event) { return true; }
++            @Override public void onLongPress(MotionEvent event) { selectWord(event); }
++        });
++    }
++
++    public void setSource(String path, String password) {
++        if (!java.util.Objects.equals(this.path, path) || !java.util.Objects.equals(this.password, password)) {
++            close();
++            this.path = path;
++            this.password = password;
++            for (Mark mark : marks) { mark.resolved = false; mark.rects.clear(); }
++        }
++    }
++
++    public void setEnabled(boolean enabled) {
++        this.enabled = enabled;
++        if (!enabled) clear();
++    }
++
++    /** JSON array of {id, page (1-based), text, color: "#RRGGBB"}. */
++    public void setHighlights(String json) {
++        if (json == null) json = "";
++        if (json.equals(marksJson)) return;
++        marksJson = json;
++        marks.clear();
++        try {
++            JSONArray items = new JSONArray(json.isEmpty() ? "[]" : json);
++            for (int i = 0; i < items.length(); i++) {
++                JSONObject item = items.getJSONObject(i);
++                Mark mark = new Mark();
++                mark.id = item.optString("id");
++                mark.page = item.optInt("page", 1) - 1;
++                mark.text = item.optString("text");
++                mark.prefix = normalise(item.optString("prefix", ""));
++                mark.suffix = normalise(item.optString("suffix", ""));
++                try { mark.color = Color.parseColor(item.optString("color", "#EFC57E")); }
++                catch (IllegalArgumentException error) { mark.color = 0xFFEFC57E; }
++                mark.color = (mark.color & 0x00FFFFFF) | 0x80000000;
++                if (!mark.id.isEmpty() && mark.page >= 0 && !normalise(mark.text).isEmpty()) marks.add(mark);
++            }
++        } catch (Exception error) {
++            android.util.Log.w("PdfTextSelection", "Bad highlights payload", error);
++        }
++        view.invalidate();
++    }
++
++    public void clear() {
++        startPage = start = endPage = end = -1;
++        dragging = 0;
++        rectangles.clear();
++        closePages(Integer.MAX_VALUE, Integer.MIN_VALUE);
++        if (!lastText.isEmpty()) {
++            lastText = "";
++            listener.onSelection("", 0, "", "");
++        }
++        view.invalidate();
++    }
++
++    /**
++     * A single tap on the page dismisses the selection, and is used up doing
++     * so rather than also toggling the reader's chrome. Scrolls, flings and
++     * pinches leave it alone — the rects are in page space and follow along.
++     */
++    public boolean dismissOnTap() {
++        if (start < 0) return false;
++        clear();
++        return true;
++    }
++
++    /** Closes cached text pages outside [from, to]. */
++    private void closePages(int from, int to) {
++        Iterator<Map.Entry<Integer, PageText>> it = pages.entrySet().iterator();
++        while (it.hasNext()) {
++            Map.Entry<Integer, PageText> entry = it.next();
++            if (entry.getKey() >= from && entry.getKey() <= to) continue;
++            entry.getValue().text.close();
++            entry.getValue().page.close();
++            it.remove();
++        }
++    }
++
++    public void close() {
++        clear();
++        if (document != null) { document.close(); document = null; }
++    }
++
++    private boolean ensureDocument() throws Exception {
++        if (document != null) return true;
++        if (path == null) return false;
++        // Separate ownership from the tile renderer: closing a selection page
++        // must never close a native page currently being drawn by its worker.
++        Uri uri = Uri.parse(path);
++        if (uri.getScheme() == null) uri = Uri.fromFile(new File(path));
++        ParcelFileDescriptor fd = view.getContext().getContentResolver().openFileDescriptor(uri, "r");
++        if (fd == null) return false;
++        try { document = new PdfiumCore().newDocument(fd, password); }
++        catch (Exception error) { fd.close(); throw error; }
++        return true;
++    }
++
++    /** The display page's text layer, or null if it has none. */
++    private PageText page(int display) throws Exception {
++        if (display < 0 || display >= view.getPageCount()) return null;
++        PageText cached = pages.get(display);
++        if (cached != null) return cached.count > 0 ? cached : null;
++        if (!ensureDocument()) return null;
++        PageText opened = new PageText();
++        opened.page = document.openPage(SelectionGeometry.documentPage(view, display));
++        opened.text = opened.page.openTextPage();
++        opened.count = opened.text.textPageCountChars();
++        pages.put(display, opened);
++        return opened.count > 0 ? opened : null;
++    }
++
++    /** {display page, char index} under a point, or null. */
++    private int[] hit(float x, float y) throws Exception {
++        int display = SelectionGeometry.pageAt(view, x, y);
++        PageText page = page(display);
++        if (page == null) return null;
++        RectF box = SelectionGeometry.bounds(view, display);
++        if (box == null || box.width() <= 0 || box.height() <= 0) return null;
++        int l = Math.round(box.left), t = Math.round(box.top), w = Math.round(box.width()), h = Math.round(box.height());
++        PointF p = page.page.mapDeviceCoordsToPage(l, t, w, h, 0, Math.round(x), Math.round(y));
++        PointF tolerance = page.page.mapDeviceCoordsToPage(l, t, w, h, 0,
++            Math.round(x + 10 * density), Math.round(y + 10 * density));
++        int index = page.text.textPageGetCharIndexAtPos(p.x, p.y, Math.abs(tolerance.x - p.x), Math.abs(tolerance.y - p.y));
++        return index >= 0 && index < page.count ? new int[] { display, index } : null;
++    }
++
++    private static int compare(int pageA, int indexA, int pageB, int indexB) {
++        return pageA != pageB ? Integer.compare(pageA, pageB) : Integer.compare(indexA, indexB);
++    }
++
++    private static boolean wordChar(PageText page, int index) {
++        char c = page.text.textPageGetUnicode(index);
++        int type = Character.getType(c);
++        return Character.isLetterOrDigit(c) || type == Character.NON_SPACING_MARK
++            || type == Character.COMBINING_SPACING_MARK || c == '\'' || c == '’';
++    }
++
++    private static int wordStart(PageText page, int index) {
++        if (!wordChar(page, index)) return index;
++        while (index > 0 && wordChar(page, index - 1)) index--;
++        return index;
++    }
++
++    private static int wordEnd(PageText page, int index) {
++        if (!wordChar(page, index)) return index;
++        while (index + 1 < page.count && wordChar(page, index + 1)) index++;
++        return index;
++    }
++
++    private void selectWord(MotionEvent event) {
++        if (!enabled || event.getPointerCount() != 1 || view.isRecycled()) return;
++        try {
++            int[] at = hit(event.getX(), event.getY());
++            if (at == null) return;
++            PageText page = pages.get(at[0]);
++            if (Character.isWhitespace(page.text.textPageGetUnicode(at[1]))) return;
++            startPage = endPage = at[0];
++            start = wordStart(page, at[1]);
++            end = wordEnd(page, at[1]);
++            anchorStartPage = anchorEndPage = at[0];
++            anchorStart = start;
++            anchorEnd = end;
++            dragging = 3;
++            dragOffsetX = dragOffsetY = 0;
++            lastX = event.getX();
++            lastY = event.getY();
++            view.stopFling();
++            listener.cancelPdfTouch(event);
++            if (view.getParent() != null) view.getParent().requestDisallowInterceptTouchEvent(true);
++            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
++            report();
++        } catch (Exception error) {
++            android.util.Log.w("PdfTextSelection", "Unable to select PDF text", error);
++            close();
++        }
++    }
++
++    /** Moves the dragged end of the selection to the text under (x, y). */
++    private void drag(float x, float y) {
++        try {
++            int[] at = hit(x + dragOffsetX, y + dragOffsetY);
++            if (at == null) return;
++            int page = at[0], index = at[1];
++            if (dragging == 1) {
++                if (compare(page, index, endPage, end) > 0) { page = endPage; index = end; }
++                if (endPage - page >= MAX_SPAN) return;
++                startPage = page;
++                start = index;
++            } else if (dragging == 2) {
++                if (compare(page, index, startPage, start) < 0) { page = startPage; index = start; }
++                if (page - startPage >= MAX_SPAN) return;
++                endPage = page;
++                end = index;
++            } else {
++                PageText text = pages.get(page);
++                int from = wordStart(text, index), to = wordEnd(text, index);
++                if (compare(page, from, anchorStartPage, anchorStart) < 0) {
++                    if (anchorEndPage - page >= MAX_SPAN) return;
++                    startPage = page; start = from;
++                    endPage = anchorEndPage; end = anchorEnd;
++                } else {
++                    int toPage = page;
++                    if (compare(toPage, to, anchorEndPage, anchorEnd) < 0) { toPage = anchorEndPage; to = anchorEnd; }
++                    if (toPage - anchorStartPage >= MAX_SPAN) return;
++                    startPage = anchorStartPage; start = anchorStart;
++                    endPage = toPage; end = to;
++                }
++            }
++            report();
++        } catch (Exception error) {
++            android.util.Log.w("PdfTextSelection", "Unable to extend PDF selection", error);
++        }
++    }
++
++    /** Scroll step for a finger at y: negative near the bottom edge, positive near the top. */
++    private float edgeSpeed(float y) {
++        if (!view.isSwipeVertical()) return 0;
++        float zone = 56 * density, max = 18 * density;
++        if (y < zone) return max * Math.min(1, (zone - y) / zone);
++        float bottom = view.getHeight() - zone;
++        if (y > bottom) return -max * Math.min(1, (y - bottom) / zone);
++        return 0;
++    }
++
++    private RectF deviceRect(int display, RectF rect) {
++        RectF pageBox = SelectionGeometry.bounds(view, display);
++        PageText page = pages.get(display);
++        if (pageBox == null || page == null) return new RectF();
++        Rect result = page.page.mapRectToDevice(Math.round(pageBox.left), Math.round(pageBox.top),
++            Math.round(pageBox.width()), Math.round(pageBox.height()), 0, rect);
++        RectF box = new RectF(result);
++        box.sort();
++        return box;
++    }
++
++    private RectF glyph(boolean first) {
++        int display = first ? startPage : endPage;
++        return deviceRect(display, pages.get(display).text.textPageGetCharBox(first ? start : end));
++    }
++
++    private PointF handle(boolean first) {
++        RectF box = glyph(first);
++        return new PointF(first ? box.left : box.right, box.bottom + 11 * density);
++    }
++
++    public boolean onTouch(MotionEvent event) {
++        if (!enabled) return false;
++        int action = event.getActionMasked();
++        try {
++            if (action == MotionEvent.ACTION_DOWN && start >= 0) {
++                PointF a = handle(true), b = handle(false);
++                double da = Math.hypot(event.getX() - a.x, event.getY() - a.y);
++                double db = Math.hypot(event.getX() - b.x, event.getY() - b.y);
++                if (Math.min(da, db) <= 32 * density) {
++                    dragging = da <= db ? 1 : 2;
++                    RectF glyph = glyph(dragging == 1);
++                    dragOffsetX = glyph.centerX() - event.getX();
++                    dragOffsetY = glyph.centerY() - event.getY();
++                    lastX = event.getX();
++                    lastY = event.getY();
++                    view.stopFling();
++                    if (view.getParent() != null) view.getParent().requestDisallowInterceptTouchEvent(true);
++                    return true;
++                }
++            }
++            if (event.getPointerCount() > 1) {
++                // Mid-drag, a stray second finger is ignored rather than
++                // handed to the viewer, which never saw this gesture begin.
++                if (dragging != 0) return true;
++                detector.onTouchEvent(event);
++                return false;
++            }
++            if (dragging != 0) {
++                if (action == MotionEvent.ACTION_MOVE) {
++                    lastX = event.getX();
++                    lastY = event.getY();
++                    drag(lastX, lastY);
++                    if (!autoScrolling && edgeSpeed(lastY) != 0) {
++                        autoScrolling = true;
++                        view.postOnAnimation(autoScroll);
++                    }
++                }
++                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
++                    dragging = 0;
++                    detector.onTouchEvent(event);
++                    if (view.getParent() != null) view.getParent().requestDisallowInterceptTouchEvent(false);
++                }
++                return true;
++            }
++            detector.onTouchEvent(event);
++            return false;
++        } catch (Exception error) {
++            close();
++            return false;
++        }
++    }
++
++    private void report() throws Exception {
++        rectangles.clear();
++        StringBuilder text = new StringBuilder();
++        for (int display = startPage; display <= endPage; display++) {
++            PageText page = page(display);
++            if (page == null) continue;
++            int from = display == startPage ? start : 0;
++            int to = display == endPage ? end : page.count - 1;
++            if (to < from) continue;
++            List<RectF> rects = new ArrayList<>();
++            int count = page.text.textPageCountRects(from, to - from + 1);
++            for (int i = 0; i < count; i++) rects.add(page.text.textPageGetRect(i));
++            rectangles.put(display, rects);
++            String piece = page.text.textPageGetText(from, to - from + 1);
++            if (piece == null || piece.trim().isEmpty()) continue;
++            if (text.length() > 0) text.append('\n');
++            text.append(piece.trim());
++        }
++        // Keep a page either side open: the next drag step usually lands there.
++        closePages(startPage - 1, endPage + 1);
++        String value = text.toString();
++        if (!value.equals(lastText)) {
++            lastText = value;
++            // Page text either side, so a highlight made from this selection
++            // lands on this occurrence when the passage repeats on the page.
++            PageText first = page(startPage), last = page(endPage);
++            String prefix = "", suffix = "";
++            if (first != null && start > 0) {
++                int from = Math.max(0, start - CONTEXT_CHARS);
++                prefix = first.text.textPageGetText(from, start - from);
++            }
++            if (last != null && end + 1 < last.count) {
++                suffix = last.text.textPageGetText(end + 1, Math.min(CONTEXT_CHARS, last.count - end - 1));
++            }
++            listener.onSelection(value, SelectionGeometry.documentPage(view, startPage) + 1,
++                prefix == null ? "" : prefix, suffix == null ? "" : suffix);
++        }
++        view.invalidate();
++    }
++
++    // ── saved highlights ────────────────────────────────────────────
++
++    /** Line breaks, hyphenation and case differ between pdfium and pdf.js text. */
++    private static boolean ignorable(char c) {
++        return Character.isWhitespace(c) || c == '-' || c == '­' || c == '‐'
++            || c == '‑' || c == '' || c == '￾' || c == '￿' || c == 0;
++    }
++
++    private static String normalise(String text) {
++        StringBuilder out = new StringBuilder();
++        for (int i = 0; i < text.length(); i++) {
++            char c = text.charAt(i);
++            if (!ignorable(c)) out.append(Character.toLowerCase(c));
++        }
++        return out.toString();
++    }
++
++    /**
++     * Finds the mark's passage once, starting on its page and running on into
++     * the following pages when it crosses a break, and stores its rects as
++     * page fractions.
++     */
++    private void resolve(Mark mark) {
++        mark.rects.clear();
++        try {
++            // Not loaded yet: try again on a later frame rather than giving up.
++            if (!ensureDocument()) return;
++            mark.resolved = true;
++            String needle = normalise(mark.text);
++            int last = Math.min(document.getPageCount(), mark.page + MAX_SPAN) - 1;
++            StringBuilder haystack = new StringBuilder();
++            List<long[]> map = new ArrayList<>(); // haystack index -> {page, char}
++            int firstLength = 0;
++            for (int p = mark.page; p <= last; p++) {
++                PdfPage page = document.openPage(p);
++                PdfTextPage text = page.openTextPage();
++                try {
++                    int count = text.textPageCountChars();
++                    for (int i = 0; i < count; i++) {
++                        char c = text.textPageGetUnicode(i);
++                        if (ignorable(c)) continue;
++                        haystack.append(Character.toLowerCase(c));
++                        map.add(new long[] { p, i });
++                    }
++                } finally { text.close(); page.close(); }
++                if (p == mark.page) firstLength = haystack.length();
++                if (haystack.length() >= firstLength + needle.length()) break;
++            }
++            int at = bestMatch(haystack, needle, firstLength, mark.prefix, mark.suffix);
++            if (at < 0) return;
++            long[] from = map.get(at), to = map.get(at + needle.length() - 1);
++            for (int p = (int) from[0]; p <= (int) to[0]; p++) {
++                PdfPage page = document.openPage(p);
++                PdfTextPage text = page.openTextPage();
++                try {
++                    int first = p == from[0] ? (int) from[1] : 0;
++                    int lastChar = p == to[0] ? (int) to[1] : text.textPageCountChars() - 1;
++                    if (lastChar < first) continue;
++                    int rects = text.textPageCountRects(first, lastChar - first + 1);
++                    for (int i = 0; i < rects; i++) {
++                        Rect device = page.mapRectToDevice(0, 0, UNIT, UNIT, 0, text.textPageGetRect(i));
++                        RectF fraction = new RectF(device.left / (float) UNIT, device.top / (float) UNIT,
++                            device.right / (float) UNIT, device.bottom / (float) UNIT);
++                        fraction.sort();
++                        mark.rects.add(new MarkRect(p, fraction));
++                    }
++                } finally { text.close(); page.close(); }
++            }
++        } catch (Exception error) {
++            mark.resolved = true;
++            android.util.Log.w("PdfTextSelection", "Unable to place highlight", error);
++        }
++    }
++
++    /**
++     * The occurrence of needle starting on the mark's own page whose
++     * surroundings best agree with its saved context, counted outward from
++     * the match on each side. The first one when there is no context.
++     */
++    private static int bestMatch(CharSequence haystack, String needle, int firstLength, String prefix, String suffix) {
++        String text = haystack.toString();
++        int best = -1, bestScore = -1;
++        for (int at = text.indexOf(needle); at >= 0 && at < firstLength; at = text.indexOf(needle, at + 1)) {
++            if (prefix.isEmpty() && suffix.isEmpty()) return at;
++            int score = 0;
++            for (int i = prefix.length() - 1, j = at - 1; i >= 0 && j >= 0 && prefix.charAt(i) == text.charAt(j); i--, j--) score++;
++            for (int k = 0, j = at + needle.length(); k < suffix.length() && j < text.length() && suffix.charAt(k) == text.charAt(j); k++, j++) score++;
++            if (score > bestScore) { best = at; bestScore = score; }
++        }
++        return best;
++    }
++
++    private static RectF onPage(RectF fraction, RectF box) {
++        return new RectF(box.left + fraction.left * box.width(), box.top + fraction.top * box.height(),
++            box.left + fraction.right * box.width(), box.top + fraction.bottom * box.height());
++    }
++
++    /** The saved highlight under a tap, if any. */
++    public String highlightAt(float x, float y) {
++        int display = SelectionGeometry.pageAt(view, x, y);
++        if (display < 0) return null;
++        RectF box = SelectionGeometry.bounds(view, display);
++        int docPage = SelectionGeometry.documentPage(view, display);
++        float slop = 4 * density;
++        for (int i = marks.size() - 1; i >= 0; i--) {
++            Mark mark = marks.get(i);
++            if (!mark.resolved) continue;
++            for (MarkRect markRect : mark.rects) {
++                if (markRect.page != docPage) continue;
++                RectF rect = onPage(markRect.fraction, box);
++                rect.inset(-slop, -slop);
++                if (rect.contains(x, y)) return mark.id;
++            }
++        }
++        return null;
++    }
++
++    private void drawMarks(Canvas canvas) {
++        if (marks.isEmpty()) return;
++        int[] range = SelectionGeometry.visiblePages(view);
++        if (range == null) return;
++        int firstDoc = SelectionGeometry.documentPage(view, range[0]);
++        int lastDoc = SelectionGeometry.documentPage(view, range[1]);
++        // A passage that starts a few pages up can still run onto this screen.
++        for (Mark mark : marks) {
++            if (!mark.resolved && mark.page <= lastDoc && mark.page > firstDoc - MAX_SPAN) resolve(mark);
++        }
++        for (int display = range[0]; display <= range[1]; display++) {
++            RectF box = SelectionGeometry.bounds(view, display);
++            if (box == null) continue;
++            int docPage = SelectionGeometry.documentPage(view, display);
++            for (Mark mark : marks) {
++                paint.setColor(mark.color);
++                for (MarkRect markRect : mark.rects) {
++                    if (markRect.page == docPage) canvas.drawRect(onPage(markRect.fraction, box), paint);
++                }
++            }
++        }
++    }
++
++    public void draw(Canvas canvas) {
++        try { drawMarks(canvas); } catch (Exception error) { /* never break page drawing */ }
++        if (start < 0 || !pages.containsKey(startPage) || !pages.containsKey(endPage)) return;
++        try {
++            paint.setColor(0x553B82F6);
++            for (Map.Entry<Integer, List<RectF>> entry : rectangles.entrySet()) {
++                if (SelectionGeometry.bounds(view, entry.getKey()) == null) continue;
++                for (RectF rect : entry.getValue()) canvas.drawRect(deviceRect(entry.getKey(), rect), paint);
++            }
++            paint.setColor(0xFF2563EB);
++            for (int i = 0; i < 2; i++) {
++                boolean first = i == 0;
++                RectF glyph = glyph(first);
++                PointF knob = handle(first);
++                float x = first ? glyph.left : glyph.right;
++                canvas.drawRect(x - density, glyph.top, x + density, knob.y, paint);
++                canvas.drawCircle(knob.x, knob.y, 9 * density, paint);
++            }
++        } catch (Exception error) { clear(); }
++    }
++}
+diff --git a/android/src/main/java/org/wonday/pdf/PdfView.java b/android/src/main/java/org/wonday/pdf/PdfView.java
+index e9a1d16c693837217095841179b59fb6c35632cc..1b374a0591f16b3b58172747afa8e3f96db0f1dc 100644
+--- a/android/src/main/java/org/wonday/pdf/PdfView.java
++++ b/android/src/main/java/org/wonday/pdf/PdfView.java
+@@ -65,6 +65,56 @@ import com.google.gson.Gson;
+ import org.wonday.pdf.events.TopChangeEvent;
+ 
+ public class PdfView extends PDFView implements OnPageChangeListener,OnLoadCompleteListener,OnErrorListener,OnTapListener,OnDrawListener,OnPageScrollListener, LinkHandler {
++    private PdfTextSelection textSelection;
++    private String loadedConfiguration;
++    private int clearSelectionSeq;
++
++    public void setEnableTextSelection(boolean enabled) { textSelection.setEnabled(enabled); }
++
++    public void setHighlights(String highlights) { textSelection.setHighlights(highlights); }
++
++    public void setClearSelectionSeq(int seq) {
++        if (clearSelectionSeq != seq) {
++            clearSelectionSeq = seq;
++            textSelection.clear();
++        }
++    }
++
++    @Override public boolean dispatchTouchEvent(MotionEvent event) {
++        if (textSelection != null && textSelection.onTouch(event)) return true;
++        return super.dispatchTouchEvent(event);
++    }
++
++    private void cancelPdfTouch(MotionEvent event) {
++        MotionEvent cancel = MotionEvent.obtain(event);
++        cancel.setAction(MotionEvent.ACTION_CANCEL);
++        super.dispatchTouchEvent(cancel);
++        cancel.recycle();
++    }
++
++    @Override protected void dispatchDraw(Canvas canvas) {
++        super.dispatchDraw(canvas);
++        if (textSelection != null) textSelection.draw(canvas);
++    }
++
++    @Override public void recycle() {
++        if (textSelection != null) textSelection.close();
++        loadedConfiguration = null;
++        super.recycle();
++    }
++
++    private void reportSelection(String text, int page, String prefix, String suffix) {
++        WritableMap payload = Arguments.createMap();
++        java.util.Map<String, Object> selection = new java.util.HashMap<>();
++        selection.put("type", text.isEmpty() ? "selectionCleared" : "selectionChanged");
++        selection.put("text", text);
++        selection.put("page", page);
++        selection.put("prefix", prefix);
++        selection.put("suffix", suffix);
++        payload.putString("message", "textSelection|" + new Gson().toJson(selection));
++        EventDispatcher dispatcher = UIManagerHelper.getEventDispatcherForReactTag((ReactContext)getContext(), getId());
++        if (dispatcher != null) dispatcher.dispatchEvent(new TopChangeEvent(UIManagerHelper.getSurfaceId(this), getId(), payload));
++    }
+     private int page = 1;               // start from 1
+     private boolean horizontal = false;
+     private float scale = 1;
+@@ -97,6 +147,10 @@ public class PdfView extends PDFView implements OnPageChangeListener,OnLoadCompl
+     public PdfView(Context context, AttributeSet set){
+         super(context, set);
+         ConfigKt.setPdfiumConfig(new Config(new DefaultLogger(), AlreadyClosedBehavior.IGNORE));
++        textSelection = new PdfTextSelection(this, new PdfTextSelection.Listener() {
++            @Override public void onSelection(String text, int page, String prefix, String suffix) { reportSelection(text, page, prefix, suffix); }
++            @Override public void cancelPdfTouch(MotionEvent event) { PdfView.this.cancelPdfTouch(event); }
++        });
+     }
+ 
+     @Override
+@@ -220,6 +274,17 @@ public class PdfView extends PDFView implements OnPageChangeListener,OnLoadCompl
+     @Override
+     public boolean onTap(MotionEvent e){
+ 
++        // A tap that only dismissed a selection shouldn't also toggle the chrome.
++        if (textSelection.dismissOnTap()) return true;
++        String highlightId = textSelection.highlightAt(e.getX(), e.getY());
++        if (highlightId != null) {
++            WritableMap payload = Arguments.createMap();
++            payload.putString("message", "highlightPress|" + highlightId);
++            EventDispatcher highlightDispatcher = UIManagerHelper.getEventDispatcherForReactTag((ReactContext)getContext(), getId());
++            if (highlightDispatcher != null) highlightDispatcher.dispatchEvent(new TopChangeEvent(UIManagerHelper.getSurfaceId(this), getId(), payload));
++            return true;
++        }
++
+         // maybe change by other instance, restore zoom setting
+         //Constants.Pinch.MINIMUM_ZOOM = this.minScale;
+         //Constants.Pinch.MAXIMUM_ZOOM = this.maxScale;
+@@ -302,6 +367,14 @@ public class PdfView extends PDFView implements OnPageChangeListener,OnLoadCompl
+     public void drawPdf() {
+         showLog(format("drawPdf path:%s %s", this.path, this.page));
+ 
++        // Selection-only prop updates must not reload the PDF and reset zoom.
++        String configuration = new Gson().toJson(new Object[] { path, password, scale,
++            minScale, maxScale, horizontal, spacing, enableAntialiasing,
++            enableAnnotationRendering, enableDoubleTapZoom, enablePaging, fitPolicy,
++            singlePage, scrollEnabled, enableRTL });
++        if (configuration.equals(loadedConfiguration)) return;
++        textSelection.setSource(path, password);
++
+         if (this.path != null){
+ 
+             // set scale
+@@ -371,6 +444,7 @@ public class PdfView extends PDFView implements OnPageChangeListener,OnLoadCompl
+             }
+ 
+             configurator.load();
++            loadedConfiguration = configuration;
+         }
+     }
+ 
+diff --git a/fabric/RNPDFPdfNativeComponent.js b/fabric/RNPDFPdfNativeComponent.js
+index 43fea3bfc16a3b0c526ec96d993d2120cbb2ef0b..ce94300b2bc8dbfacf3453f17b5fde2412c906e3 100644
+--- a/fabric/RNPDFPdfNativeComponent.js
++++ b/fabric/RNPDFPdfNativeComponent.js
+@@ -22,6 +22,9 @@
+    enablePaging: ?boolean,
+    enableRTL: ?boolean,
+    enableAnnotationRendering: ?boolean,
++   enableTextSelection: ?boolean,
++   clearSelectionSeq: ?Int32,
++   highlights: ?string,
+    showsHorizontalScrollIndicator: ?boolean,
+    showsVerticalScrollIndicator: ?boolean,
+    scrollEnabled: ?boolean,
+diff --git a/index.d.ts b/index.d.ts
+index cfcea725a394ab90f7a156aaca737327b09a4b81..c5fac572d2feab5d80acf47021c01cf609ace2b3 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -27,7 +27,24 @@ export type Source = {
+     method?: string;
+ };
+ 
++export type TextSelectionChangeEvent = {
++    nativeEvent: {
++        type: 'selectionChanged' | 'selectionCleared';
++        text?: string;
++        page?: number;
++        /** Android: page text just before and after the selection. */
++        prefix?: string;
++        suffix?: string;
++    };
++};
++
+ export interface PdfProps {
++    enableTextSelection?: boolean,
++    clearSelectionSeq?: number,
++    /** Android: JSON array of {id, page (1-based), text, color "#RRGGBB", prefix?, suffix?} painted over the page. */
++    highlights?: string,
++    onHighlightPress?: (id: string) => void,
++    onTextSelectionChange?: (event: TextSelectionChangeEvent) => void,
+     style?: ReactNative.StyleProp<ReactNative.ViewStyle>,
+     progressContainerStyle?: ReactNative.StyleProp<ReactNative.ViewStyle>,
+     source: Source | number,
+diff --git a/index.js b/index.js
+index f807178a9f877eb896f64c56cbce39234c5a0dfb..42253eff844595bd0e55609497fb03d9ce4ee486 100644
+--- a/index.js
++++ b/index.js
+@@ -380,6 +380,16 @@ export default class Pdf extends Component {
+         if (message.length > 0) {
+ 
+             // Handle text selection messages
++            if (message[0] === 'highlightPress') {
++                this.props.onHighlightPress && this.props.onHighlightPress(message.slice(1).join('|'));
++                return;
++            }
++            if (message[0] === 'textSelection') {
++                this.props.onTextSelectionChange && this.props.onTextSelectionChange({
++                    nativeEvent: JSON.parse(message.slice(1).join('|'))
++                });
++                return;
++            }
+             if (message[0] === 'textSelected') {
+                 this.props.onTextSelectionChange && this.props.onTextSelectionChange({
+                     nativeEvent: { type: 'selectionChanged', text: message.slice(1).join('|') }

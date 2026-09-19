@@ -20,7 +20,12 @@ export const HIGHLIGHT_FILL: Record<HighlightColor, string> = {
   rose: palette.pen.rose,
 };
 
-export interface Annotation {
+export interface PassageContext {
+  prefix: string;
+  suffix: string;
+}
+
+export interface Annotation extends Partial<PassageContext> {
   id: string;
   uri: string;
   docKey?: string;
@@ -38,7 +43,7 @@ export type Tombstone = Omit<Annotation, "syncedAt" | "uri"> & {
   deletedAt: number;
 };
 
-export interface RemoteAnnotation {
+export interface RemoteAnnotation extends Partial<PassageContext> {
   id: string;
   docKey: string;
   page: number;
@@ -54,14 +59,16 @@ export interface RemoteAnnotation {
 interface AnnotationsState {
   items: Annotation[];
   deleted: Tombstone[];
-  add: (input: {
-    uri: string;
-    page: number;
-    text: string;
-    source?: string;
-    color: HighlightColor;
-    note?: string;
-  }) => string;
+  add: (
+    input: {
+      uri: string;
+      page: number;
+      text: string;
+      source?: string;
+      color: HighlightColor;
+      note?: string;
+    } & Partial<PassageContext>,
+  ) => string;
   setNote: (id: string, note: string) => void;
   setColor: (id: string, color: HighlightColor) => void;
   remove: (id: string) => void;
@@ -82,6 +89,8 @@ const entomb = (a: Annotation, deletedAt: number): Tombstone => ({
   docKey: a.docKey,
   page: a.page,
   text: a.text,
+  prefix: a.prefix,
+  suffix: a.suffix,
   source: a.source,
   color: a.color,
   note: a.note,
@@ -96,7 +105,7 @@ export const useAnnotationsStore = create<AnnotationsState>()(
       items: [],
       deleted: [],
 
-      add: ({ uri, page, text, source, color, note }) => {
+      add: ({ uri, page, text, prefix, suffix, source, color, note }) => {
         const id = newId();
         const now = Date.now();
         set((s) => ({
@@ -106,6 +115,8 @@ export const useAnnotationsStore = create<AnnotationsState>()(
               uri,
               page,
               text: text.trim(),
+              prefix: prefix || undefined,
+              suffix: suffix || undefined,
               source,
               color,
               note: note ?? "",
@@ -192,6 +203,8 @@ export const useAnnotationsStore = create<AnnotationsState>()(
               docKey: row.docKey,
               page: row.page,
               text: row.text,
+              prefix: row.prefix ?? local?.prefix,
+              suffix: row.suffix ?? local?.suffix,
               source: row.source,
               color: row.color,
               note: row.note,

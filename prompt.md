@@ -195,6 +195,8 @@ adding a note fills it in rather than creating a second row. Keep that.
   "docKey": "3f2a…",
   "page": 47,
   "text": "Ryan Holiday",
+  "prefix": "as the writer and strategist ",
+  "suffix": " put it, the ego is the ene",
   "source": "Ego Is the Enemy",
   "color": "sky",
   "note": "Come back to this.",
@@ -210,6 +212,11 @@ adding a note fills it in rather than creating a second row. Keep that.
   normalisation on your side (smart quotes, whitespace collapsing, trimming
   ellipses) silently breaks the mark on the next device. Store and return the
   bytes you were given.
+- `prefix` / `suffix` (optional, up to 32 chars each) are the page text just
+  before and after the passage when it was selected. When `text` occurs more
+  than once on its page, both readers use them to pick the right occurrence.
+  Same rule as `text`: store and return them byte-for-byte, and send them back
+  omitted (not `""`) for rows that never had them.
 - `id` is generated client-side (`Date.now().toString(36)-seq`). Accept it as
   given; do not reassign. If it collides for a user, return **409** `ID_CONFLICT`
   and the client will re-issue.

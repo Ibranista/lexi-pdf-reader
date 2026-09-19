@@ -7,6 +7,7 @@ import { WebView } from "react-native-webview";
 import { Box, Text } from "@/components/atoms";
 import { Tap } from "@/components/lexi-components";
 import { CONTEXT_CHUNK_PAGES } from "@/services/lexi-ai";
+import type { PassageContext } from "@/stores/annotations-store";
 import { LINE_SPACING, useAppStore } from "@/stores/app-store";
 import { useProtoTheme } from "@/theme/proto";
 import { fontStack, READ_WIDTH_PX, softInk } from "@/utils/reader-typography";
@@ -745,13 +746,42 @@ export function buildHtml(
       var node = sel.anchorNode;
       var el = node && (node.nodeType === 1 ? node : node.parentElement);
       var sec = el && el.closest ? el.closest('section[data-page]') : null;
+      var ctx = selectionContext(sel);
       post({
         type: 'selection',
         text: text,
         page: sec ? parseInt(sec.getAttribute('data-page'), 10) : 0,
+        prefix: ctx.prefix,
+        suffix: ctx.suffix,
       });
     }, 320);
   });
+
+  /* The page text either side of a selection, saved with a highlight so a
+     passage that occurs more than once on its page is re-found at the right
+     spot. Bounded by the page on each side, same as Page view's copy. */
+  var CONTEXT_CHARS = 32;
+  function sectionOf(node){
+    var el = node && (node.nodeType === 1 ? node : node.parentElement);
+    return el && el.closest ? el.closest('section[data-page]') : null;
+  }
+  function selectionContext(sel){
+    try {
+      var r = sel.getRangeAt(0);
+      var before = document.createRange();
+      before.selectNodeContents(sectionOf(r.startContainer) || document.body);
+      before.setEnd(r.startContainer, r.startOffset);
+      var after = document.createRange();
+      after.selectNodeContents(sectionOf(r.endContainer) || document.body);
+      after.setStart(r.endContainer, r.endOffset);
+      return {
+        prefix: before.toString().slice(-CONTEXT_CHARS),
+        suffix: after.toString().slice(0, CONTEXT_CHARS),
+      };
+    } catch (e) {
+      return { prefix: '', suffix: '' };
+    }
+  }
 
   /* ===== saved highlights =====
      Re-found by text rather than stored as offsets: reflow rebuilds the DOM
@@ -778,6 +808,51 @@ export function buildHtml(
     return { text: out, map: map };
   }
 
+  /* Context is compared ignoring spacing, hyphens and case: pdf.js and the
+     native page renderer break lines and hyphenate differently. Char codes
+     rather than escapes — this script lives in a template literal. */
+  function stripContext(s){
+    var out = '';
+    for (var i = 0; i < s.length; i++){
+      var ch = s[i], code = s.charCodeAt(i);
+      if (ch <= ' ' || ch === '-' || code === 173 || code === 8208 || code === 8209) continue;
+      out += ch.toLowerCase();
+    }
+    return out;
+  }
+
+  /* How many characters of saved context agree with the text around a match,
+     counted outward from the match on each side. */
+  function contextScore(text, at, len, prefix, suffix){
+    var score = 0;
+    if (prefix) {
+      var p = stripContext(prefix);
+      var b = stripContext(text.slice(Math.max(0, at - 4 * CONTEXT_CHARS), at));
+      for (var i = p.length - 1, j = b.length - 1; i >= 0 && j >= 0 && p[i] === b[j]; i--, j--) score++;
+    }
+    if (suffix) {
+      var q = stripContext(suffix);
+      var a = stripContext(text.slice(at + len, at + len + 4 * CONTEXT_CHARS));
+      for (var k = 0; k < q.length && k < a.length && q[k] === a[k]; k++) score++;
+    }
+    return score;
+  }
+
+  /* The occurrence of want whose surroundings best match the saved context —
+     the first one when there is no context (older highlights) or no
+     difference between them. */
+  function bestMatch(text, want, prefix, suffix){
+    var at = text.indexOf(want);
+    if (at < 0 || (!prefix && !suffix)) return at;
+    var best = at, bestScore = -1;
+    while (at >= 0){
+      var score = contextScore(text, at, want.length, prefix, suffix);
+      if (score > bestScore) { best = at; bestScore = score; }
+      at = text.indexOf(want, at + 1);
+    }
+    return best;
+  }
+
   function textNodesOf(root){
     var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
     var nodes = [], n;
@@ -788,7 +863,7 @@ export function buildHtml(
   /* Wraps one passage. Works per text node so a passage crossing paragraphs
      still marks — surroundContents throws on a range that straddles elements,
      but never on one confined to a single text node. */
-  function markPassage(sec, needle, color, id){
+  function markPassage(sec, needle, color, id, prefix, suffix){
     var nodes = textNodesOf(sec);
     if (!nodes.length) return false;
     var full = '', starts = [];
@@ -799,7 +874,7 @@ export function buildHtml(
     var nm = normMap(full);
     var want = normMap(needle).text.trim();
     if (!want) return false;
-    var at = nm.text.indexOf(want);
+    var at = bestMatch(nm.text, want, prefix, suffix);
     if (at < 0) return false;
     var from = nm.map[at], to = nm.map[at + want.length - 1] + 1;
 
@@ -865,11 +940,11 @@ export function buildHtml(
       if (placed[hl.id]) continue;
       var sec = document.querySelector('section[data-page="' + hl.page + '"]');
       if (!sec) { pendingHighlights++; continue; }   // retried as the page lands
-      if (markPassage(sec, hl.text, hl.color, hl.id)) continue;
+      if (markPassage(sec, hl.text, hl.color, hl.id, hl.prefix, hl.suffix)) continue;
       // A passage can run past its own page break; the next section is the
       // only other place it can be — and it may not have been extracted yet.
       if (sec.nextElementSibling) {
-        markPassage(sec.nextElementSibling, hl.text, hl.color, hl.id);
+        markPassage(sec.nextElementSibling, hl.text, hl.color, hl.id, hl.prefix, hl.suffix);
       } else {
         pendingHighlights++;
       }
@@ -2226,9 +2301,14 @@ interface Props {
   onPageChange?: (page: number) => void;
   onSearchResults?: (results: PdfSearchResult[]) => void;
   onSingleTap?: () => void;
-  onSelection?: (text: string, page: number) => void;
+  onSelection?: (text: string, page: number, context: PassageContext) => void;
   clearSelectionSeq?: number;
-  highlights?: { id: string; page: number; text: string; color: string }[];
+  highlights?: ({
+    id: string;
+    page: number;
+    text: string;
+    color: string;
+  } & Partial<PassageContext>)[];
   onHighlightPress?: (id: string) => void;
   checks?: { id: string; page: number; quote: string }[];
   openCheckId?: string | null;
@@ -2523,6 +2603,8 @@ export function PdfReflowView({
                 page?: number;
                 total?: number;
                 text?: string;
+                prefix?: string;
+                suffix?: string;
                 results?: PdfSearchResult[];
                 entries?: PdfOutlineEntry[];
                 wordCounts?: number[];
@@ -2536,7 +2618,10 @@ export function PdfReflowView({
                 onHighlightPress?.(msg.id ?? "");
               else if (msg.type === "checktap") onCheckPress?.(msg.id ?? "");
               else if (msg.type === "selection")
-                onSelection?.(msg.text ?? "", msg.page ?? 0);
+                onSelection?.(msg.text ?? "", msg.page ?? 0, {
+                  prefix: msg.prefix ?? "",
+                  suffix: msg.suffix ?? "",
+                });
               else if (msg.type === "tap") onSingleTap?.();
               else if (msg.type === "error") {
                 setStatus("error");
