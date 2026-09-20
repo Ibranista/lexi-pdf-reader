@@ -13,7 +13,10 @@ import {
 } from "react";
 import { Keyboard, StyleSheet, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import type { AnimatedRef } from "react-native-reanimated";
+
 import Reanimated, {
+  measure,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -38,11 +41,15 @@ const FLING_VELOCITY = 450;
 const COMMIT_TRAVEL = 0.25;
 const SCRIM_OPACITY = 0.45;
 
-type DrawerGesture = MutableRefObject<GestureType | undefined> | null;
+type DrawerGesture = {
+  gesture: MutableRefObject<GestureType | undefined>;
+  hold: (held: boolean) => void;
+  claimRegion: (region: AnimatedRef<never> | null) => void;
+};
 
-const DrawerGestureContext = createContext<DrawerGesture>(null);
+const DrawerGestureContext = createContext<DrawerGesture | null>(null);
 
-export const useDrawerGesture = (): DrawerGesture =>
+export const useDrawerGesture = (): DrawerGesture | null =>
   useContext(DrawerGestureContext);
 
 export function SlideDrawer({
@@ -97,6 +104,22 @@ export function SlideDrawer({
      eslint-disable-next-line is no use here: it flags each builder call. */
   /* eslint-disable react-hooks/refs */
   const panRef = useRef<GestureType | undefined>(undefined);
+  const dragLock = useSharedValue(0);
+  const hold = useCallback(
+    (held: boolean) => {
+      // eslint-disable-next-line react-hooks/immutability
+      dragLock.value = held ? 1 : 0;
+    },
+    [dragLock]
+  );
+  const [region, setRegion] = useState<AnimatedRef<never> | null>(null);
+  const claimRegion = useCallback((next: AnimatedRef<never> | null) => {
+    setRegion(() => next);
+  }, []);
+  const drawerGesture = useMemo(
+    () => ({ gesture: panRef, hold, claimRegion }),
+    [claimRegion, hold]
+  );
   const pan = useMemo(() => {
     const settle = (next: boolean, velocity: number) => {
       "worklet";
@@ -105,7 +128,7 @@ export function SlideDrawer({
         { ...SPRING, velocity },
         (finished) => {
           if (finished) runOnJS(reportArrived)(next);
-        },
+        }
       );
       runOnJS(syncJS)(next);
     };
@@ -116,7 +139,24 @@ export function SlideDrawer({
         .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
         .failOffsetY([-FAIL_Y, FAIL_Y])
         .onTouchesDown((event, manager) => {
+          if (dragLock.value) {
+            manager.fail();
+            return;
+          }
           const touch = event.allTouches[0];
+          if (touch && region) {
+            const frame = measure(region);
+            if (
+              frame &&
+              touch.absoluteY >= frame.pageY &&
+              touch.absoluteY <= frame.pageY + frame.height &&
+              touch.absoluteX >= frame.pageX &&
+              touch.absoluteX <= frame.pageX + frame.width
+            ) {
+              manager.fail();
+              return;
+            }
+          }
           if (!touch || (progress.value < 0.5 && touch.absoluteX > edgeWidth)) {
             manager.fail();
           }
@@ -138,8 +178,8 @@ export function SlideDrawer({
             Math.abs(event.velocityX) > FLING_VELOCITY
               ? event.velocityX > 0
               : Math.abs(travelled) > COMMIT_TRAVEL
-                ? travelled > 0
-                : start.value > 0.5;
+              ? travelled > 0
+              : start.value > 0.5;
           settle(next, event.velocityX / (width.value || 1));
         })
         .onFinalize((_event, success) => {
@@ -148,7 +188,7 @@ export function SlideDrawer({
         })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dismissKeyboard, edgeWidth, reportArrived, syncJS]);
+  }, [dismissKeyboard, edgeWidth, region, reportArrived, syncJS]);
   /* eslint-enable react-hooks/refs */
 
   useEffect(() => {
@@ -189,7 +229,7 @@ export function SlideDrawer({
             pointerEvents={arrived ? "auto" : "none"}
             style={[StyleSheet.absoluteFill, panelStyle]}
           >
-            <DrawerGestureContext.Provider value={panRef}>
+            <DrawerGestureContext.Provider value={drawerGesture}>
               {renderPanel()}
             </DrawerGestureContext.Provider>
           </Reanimated.View>

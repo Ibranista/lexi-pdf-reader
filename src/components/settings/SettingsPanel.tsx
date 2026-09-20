@@ -81,7 +81,7 @@ export const SettingsPanel = memo(function SettingsPanel({
           }}
           style={{ flex: 1 }}
         >
-          <VoiceSettings registerStop={registerStop} />
+          <VoiceSettings registerStop={registerStop} visible={visible} />
           <Card gap={12}>
             <SectionLabel>Appearance</SectionLabel>
             <Segmented

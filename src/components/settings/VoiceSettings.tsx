@@ -15,12 +15,14 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Reanimated, { useAnimatedRef } from "react-native-reanimated";
 import { useQuery } from "@tanstack/react-query";
 
 import { Box } from "@/components/atoms";
 import {
   Card,
   IconCheck,
+  IconSpeaker,
   SectionLabel,
   SpeakingWave,
   Text,
@@ -50,8 +52,10 @@ const GAP = 12;
 
 export function VoiceSettings({
   registerStop,
+  visible = true,
 }: {
   registerStop: (stop: () => void) => void;
+  visible?: boolean;
 }) {
   const t = useProtoTheme();
   const { width } = useWindowDimensions();
@@ -61,6 +65,7 @@ export function VoiceSettings({
   const showToast = useToastStore((s) => s.showToast);
   const [language, setLanguage] = useState<Lang>(defaultLanguage);
   const [preview, setPreview] = useState<string | null>(null);
+  const [highlighted, setHighlighted] = useState(0);
   const [loading, setLoading] = useState(false);
   const sequence = useRef(0);
   const player = useAudioPlayer(null);
@@ -75,11 +80,25 @@ export function VoiceSettings({
   const snap = cardWidth + GAP;
   const sidePadding = 16;
 
-  const drawerGesture = useDrawerGesture();
+  const drawer = useDrawerGesture();
   const rowGesture = useMemo(() => {
     const native = Gesture.Native();
-    return drawerGesture ? native.blocksExternalGesture(drawerGesture) : native;
-  }, [drawerGesture]);
+    return drawer ? native.blocksExternalGesture(drawer.gesture) : native;
+  }, [drawer]);
+  const holdRow = useCallback(
+    (held: boolean) => {
+      drawer?.hold(held);
+    },
+    [drawer]
+  );
+  useEffect(() => () => holdRow(false), [holdRow]);
+  const rowRegion = useAnimatedRef<Reanimated.View>();
+  const claimRegion = drawer?.claimRegion;
+  useEffect(() => {
+    if (!claimRegion) return;
+    claimRegion(rowRegion as never);
+    return () => claimRegion(null);
+  }, [claimRegion, rowRegion]);
 
   const stop = useCallback(() => {
     sequence.current += 1;
@@ -152,10 +171,31 @@ export function VoiceSettings({
   const onSettled = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const list = voices.data;
     if (!list?.length) return;
-    const index = Math.round(event.nativeEvent.contentOffset.x / snap);
-    const voice = list[Math.max(0, Math.min(list.length - 1, index))];
+    const index = Math.max(
+      0,
+      Math.min(
+        list.length - 1,
+        Math.round(event.nativeEvent.contentOffset.x / snap)
+      )
+    );
+    setHighlighted(index);
+    const voice = list[index];
     if (voice && voice.id !== preview) void play(voice);
   };
+
+  const spoken = useRef(false);
+  useEffect(() => {
+    if (!visible) {
+      spoken.current = false;
+      return;
+    }
+    if (spoken.current) return;
+    const voice = voices.data?.[highlighted];
+    if (!voice?.samples[language]) return;
+    spoken.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void play(voice);
+  }, [highlighted, language, play, visible, voices.data]);
 
   return (
     <Card gap={12}>
@@ -178,6 +218,7 @@ export function VoiceSettings({
             onPress={() => {
               stop();
               setLanguage(lang.id);
+              spoken.current = false;
             }}
             style={{
               alignItems: "center",
@@ -205,103 +246,162 @@ export function VoiceSettings({
           <Text size={13}>Couldn&apos;t load voices · Retry</Text>
         </Pressable>
       ) : (
-        <GestureDetector gesture={rowGesture}>
-          <ScrollView
-            contentContainerStyle={{ gap: GAP, paddingHorizontal: sidePadding }}
-            decelerationRate="fast"
-            horizontal
-            onMomentumScrollEnd={onSettled}
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={snap}
-            style={{ marginHorizontal: -16 }}
-          >
-            {voices.data.map((voice) => {
-              const supported = voice.supportedLanguages.includes(language);
-              const available = supported && Boolean(voice.samples[language]);
-              const playing = preview === voice.id;
-              const chosen = selected === voice.id;
-              return (
-                <Pressable
-                  key={voice.id}
-                  accessibilityHint={
-                    available
-                      ? "Double tap to hear it and choose it"
-                      : undefined
-                  }
-                  accessibilityLabel={`${voice.name}, ${voice.description}. ${
-                    chosen ? "Selected. " : ""
-                  }Speaks ${voice.supportedLanguages
-                    .map((id) => LANG_LABELS[id])
-                    .join(", ")}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: chosen }}
-                  onPress={() => {
-                    if (selected !== voice.id)
-                      showToast(`Liqrai will speak as ${voice.name}`);
-                    setApp({ voiceId: voice.id });
-                    void play(voice, { toggle: true });
-                  }}
-                  style={{ width: cardWidth }}
-                >
-                  <Box
-                    bg={chosen ? t.accentSoft : t.chip}
-                    borderColor={chosen ? t.accentMid : t.line}
-                    borderWidth={1}
-                    gap={8}
-                    padding={14}
-                    rounded={16}
-                    style={{ minHeight: 148 }}
+        <Reanimated.View ref={rowRegion}>
+          <GestureDetector gesture={rowGesture}>
+            <ScrollView
+              contentContainerStyle={{
+                gap: GAP,
+                paddingHorizontal: sidePadding,
+              }}
+              decelerationRate="fast"
+              horizontal
+              onMomentumScrollEnd={(event) => {
+                holdRow(false);
+                onSettled(event);
+              }}
+              onScrollEndDrag={() => holdRow(false)}
+              onTouchCancel={() => holdRow(false)}
+              onTouchEnd={() => holdRow(false)}
+              onTouchStart={() => holdRow(true)}
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={snap}
+              style={{ marginHorizontal: -16 }}
+            >
+              {voices.data.map((voice) => {
+                const supported = voice.supportedLanguages.includes(language);
+                const available = supported && Boolean(voice.samples[language]);
+                const playing = preview === voice.id;
+                const chosen = selected === voice.id;
+                return (
+                  <Pressable
+                    key={voice.id}
+                    accessibilityHint={
+                      available
+                        ? "Double tap to hear it and choose it"
+                        : undefined
+                    }
+                    accessibilityLabel={`${voice.name}, ${voice.description}. ${
+                      chosen ? "Selected. " : ""
+                    }Speaks ${voice.supportedLanguages
+                      .map((id) => LANG_LABELS[id])
+                      .join(", ")}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: chosen }}
+                    onPress={() => {
+                      if (selected !== voice.id)
+                        showToast(`Liqrai will speak as ${voice.name}`);
+                      setApp({ voiceId: voice.id });
+                      void play(voice, { toggle: true });
+                    }}
+                    style={{ width: cardWidth }}
                   >
-                    <Box align="center" direction="row" gap={8}>
-                      <Text size={15} weight="600">
-                        {voice.name}
+                    <Box
+                      bg={chosen ? t.accentSoft : t.chip}
+                      borderColor={chosen ? t.accentMid : t.line}
+                      borderWidth={1}
+                      gap={8}
+                      padding={14}
+                      rounded={16}
+                      style={{ minHeight: 148 }}
+                    >
+                      <Box align="center" direction="row" gap={8}>
+                        <Text size={15} weight="600">
+                          {voice.name}
+                        </Text>
+                        {chosen ? (
+                          <IconCheck color={t.accent} size={14} />
+                        ) : null}
+                      </Box>
+                      <Text color={t.sub} size={12}>
+                        {voice.description}
                       </Text>
-                      {chosen ? <IconCheck color={t.accent} size={14} /> : null}
-                    </Box>
-                    <Text color={t.sub} size={12}>
-                      {voice.description}
-                    </Text>
-                    <Text color={t.sub} size={11}>
-                      {voice.supportedLanguages
-                        .map((id) => LANG_LABELS[id])
-                        .join(" · ")}
-                    </Text>
+                      <Text color={t.sub} size={11}>
+                        {voice.supportedLanguages
+                          .map((id) => LANG_LABELS[id])
+                          .join(" · ")}
+                      </Text>
 
-                    <Box align="center" direction="row" gap={8} height={24}>
-                      {playing && loading ? (
-                        <>
-                          <ActivityIndicator color={t.accent} size="small" />
+                      <Box align="center" direction="row" gap={8} height={24}>
+                        {playing && loading ? (
+                          <>
+                            <ActivityIndicator color={t.accent} size="small" />
+                            <Text color={t.sub} size={11}>
+                              Loading…
+                            </Text>
+                          </>
+                        ) : playing ? (
+                          <>
+                            <SpeakingWave color={t.accent} />
+                            <Text color={t.accent} size={11} weight="600">
+                              Speaking
+                            </Text>
+                          </>
+                        ) : !supported ? (
                           <Text color={t.sub} size={11}>
-                            Loading…
+                            Not in this language
                           </Text>
-                        </>
-                      ) : playing ? (
-                        <>
-                          <SpeakingWave color={t.accent} />
-                          <Text color={t.accent} size={11} weight="600">
-                            Speaking
+                        ) : !available ? (
+                          <Text color={t.sub} size={11}>
+                            Sample not available yet
                           </Text>
-                        </>
-                      ) : !supported ? (
-                        <Text color={t.sub} size={11}>
-                          Not in this language
-                        </Text>
-                      ) : !available ? (
-                        <Text color={t.sub} size={11}>
-                          Sample not available yet
-                        </Text>
-                      ) : (
-                        <Text color={t.sub} size={11}>
-                          {chosen ? "Liqrai's voice" : "Tap to choose"}
-                        </Text>
-                      )}
+                        ) : (
+                          <Text color={t.sub} size={11}>
+                            {chosen ? "Liqrai's voice" : "Tap to choose"}
+                          </Text>
+                        )}
+
+                        {available ? (
+                          <>
+                            <Box flex={1} />
+                            <Pressable
+                              accessibilityLabel={
+                                playing
+                                  ? `Stop ${voice.name}`
+                                  : `Play ${voice.name}`
+                              }
+                              accessibilityRole="button"
+                              hitSlop={10}
+                              onPress={() => {
+                                if (playing) stop();
+                                else void play(voice);
+                              }}
+                              style={{
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minHeight: 32,
+                                minWidth: 32,
+                              }}
+                            >
+                              <Box
+                                align="center"
+                                bg={playing ? t.accentSoft : t.chip}
+                                height={26}
+                                justify="center"
+                                rounded={13}
+                                width={26}
+                              >
+                                {playing ? (
+                                  <Box
+                                    bg={t.accent}
+                                    height={9}
+                                    rounded={2}
+                                    width={9}
+                                  />
+                                ) : (
+                                  <IconSpeaker color={t.sub} size={13} />
+                                )}
+                              </Box>
+                            </Pressable>
+                          </>
+                        ) : null}
+                      </Box>
                     </Box>
-                  </Box>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </GestureDetector>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </GestureDetector>
+        </Reanimated.View>
       )}
     </Card>
   );
