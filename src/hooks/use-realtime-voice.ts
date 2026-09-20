@@ -3,15 +3,22 @@ import {
   initialize,
   playPCMData,
   requestMicrophonePermissionsAsync,
-  restart,
   tearDown,
   toggleRecording,
 } from "@speechmatics/expo-two-way-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { AppState } from "react-native";
+import { useFocusEffect } from "expo-router";
+import {
+  acquireAudioSession,
+  ownsAudioSession,
+  releaseAudioSession,
+} from "@/utils/audio-session";
+import { useToastStore } from "@/stores/app-store";
 
 import {
   liveAudioMessage,
+  liveContextMessage,
   liveSetupMessage,
   liveSocketUrl,
   openRealtimeSession,
@@ -27,6 +34,7 @@ import {
 } from "@/utils/pcm";
 
 export type RealtimePhase =
+  | "paused"
   | "off"
   | "connecting"
   | "listening"
@@ -34,15 +42,25 @@ export type RealtimePhase =
   | "speaking";
 
 export interface RealtimeVoiceHandlers {
-  onAsk: (text: string) => void;
+  onAsk: (text: string, context: RealtimeContext | null) => void;
   onReplyProgress: (text: string) => void;
-  onTurn: (turn: { message: string; reply: string }) => void;
+  onTurn: (turn: {
+    message: string;
+    reply: string;
+    context: RealtimeContext | null;
+  }) => void;
   onError: (message: string) => void;
+  onTurnEnd?: () => void;
 }
 
 export interface RealtimeVoice {
   phase: RealtimePhase;
   on: boolean;
+  level: number;
+  muted: boolean;
+  microphoneActive: boolean;
+  toggleMute: () => void;
+  pause: () => void;
   start: () => void;
   stop: () => void;
 }
@@ -58,6 +76,14 @@ const THINKING_AFTER_MS = 700;
 
 const SETUP_TIMEOUT_MS = 10000;
 
+const INACTIVITY_MS = 5 * 60 * 1000;
+const PERMISSION_RESUME_GRACE_MS = 800;
+const LEFT_BOOK_REASON =
+  "Conversation paused because you left the book. Tap Resume when you return.";
+const BACKGROUNDED_REASON =
+  "Conversation paused while the app was in the background. Tap Resume to pick it up.";
+let pausedBook: { docKey: string; expires: number } | null = null;
+
 type Subscription = { remove: () => void } | null;
 
 export function useRealtimeVoice({
@@ -67,7 +93,29 @@ export function useRealtimeVoice({
   context: () => RealtimeContext | null;
   handlers: RealtimeVoiceHandlers;
 }): RealtimeVoice {
-  const [phase, setPhase] = useState<RealtimePhase>("off");
+  const [phase, setPhase] = useState<RealtimePhase>(() =>
+    pausedBook &&
+    pausedBook.docKey === context()?.docKey &&
+    pausedBook.expires > Date.now()
+      ? "paused"
+      : "off",
+  );
+  const [muted, setMuted] = useState(false);
+  const [level, setLevel] = useState(0);
+  const mutedRef = useRef(false);
+  const owner = useRef(Symbol("reader-voice"));
+  const starting = useRef(false);
+  const prompting = useRef(false);
+  const promptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generation = useRef(0);
+  const focused = useRef(false);
+  const active = useRef(false);
+  const lastActivity = useRef(0);
+  const turnContext = useRef<RealtimeContext | null>(null);
+  const sentContext = useRef("");
+  const sentBook = useRef<RealtimeContext | null>(null);
+  const sessionDoc = useRef<string | null>(null);
+  const setupCancel = useRef<(() => void) | null>(null);
 
   const socket = useRef<WebSocket | null>(null);
   const micSub = useRef<Subscription>(null);
@@ -148,7 +196,14 @@ export function useRealtimeVoice({
     asked.current = "";
     reply.current = "";
     answering.current = false;
-    if (message && answer) handlersRef.current.onTurn({ message, reply: answer });
+    if (message && answer)
+      handlersRef.current.onTurn({
+        message,
+        reply: answer,
+        context: turnContext.current,
+      });
+    turnContext.current = null;
+    handlersRef.current.onTurnEnd?.();
   }, []);
 
   const beginAnswer = useCallback(() => {
@@ -157,11 +212,22 @@ export function useRealtimeVoice({
     clearThinking();
     reply.current = "";
     const text = asked.current.trim();
-    if (text) handlersRef.current.onAsk(text);
+    if (text) handlersRef.current.onAsk(text, turnContext.current);
+  }, []);
+
+  const endPrompt = useCallback(() => {
+    prompting.current = false;
+    if (promptTimer.current) clearTimeout(promptTimer.current);
+    promptTimer.current = null;
   }, []);
 
   const teardown = useCallback(() => {
+    endPrompt();
     closing.current = true;
+    active.current = false;
+    generation.current += 1;
+    setupCancel.current?.();
+    setupCancel.current = null;
     clearThinking();
     micSub.current?.remove();
     micSub.current = null;
@@ -170,25 +236,98 @@ export function useRealtimeVoice({
     if (pumpTimer.current) clearInterval(pumpTimer.current);
     pumpTimer.current = null;
     flushPlayback();
-    try {
-      toggleRecording(false);
-      tearDown();
-    } catch {}
+    if (ownsAudioSession(owner.current)) {
+      try {
+        toggleRecording(false);
+      } catch {}
+      try {
+        tearDown();
+      } catch {}
+    }
+    if (!starting.current) releaseAudioSession(owner.current);
     asked.current = "";
     reply.current = "";
     answering.current = false;
-  }, [flushPlayback]);
+    turnContext.current = null;
+    sentContext.current = "";
+  }, [endPrompt, flushPlayback]);
 
   const stop = useCallback(() => {
+    if (pausedBook?.docKey === contextRef.current()?.docKey) pausedBook = null;
     teardown();
     setPhase("off");
   }, [teardown]);
 
+  useEffect(() => {
+    if (active.current && context()?.docKey !== sessionDoc.current) stop();
+  }, [context, stop]);
+
+  const pause = useCallback(
+    (reason = LEFT_BOOK_REASON) => {
+      if (!active.current && !starting.current) return;
+      const book = contextRef.current();
+      if (book)
+        pausedBook = {
+          docKey: book.docKey,
+          expires: Date.now() + INACTIVITY_MS,
+        };
+      teardown();
+      setPhase("paused");
+      useToastStore.getState().showToast(reason);
+    },
+    [teardown],
+  );
+
+  const toggleMute = useCallback(() => {
+    if (!active.current || starting.current || !ownsAudioSession(owner.current))
+      return;
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    try {
+      const recording = toggleRecording(!next);
+      if (recording !== !next)
+        throw new Error("Microphone did not change state.");
+      setMuted(next);
+      lastActivity.current = Date.now();
+      if (next && socket.current?.readyState === WebSocket.OPEN) {
+        socket.current.send(
+          JSON.stringify({ realtimeInput: { audioStreamEnd: true } }),
+        );
+      }
+    } catch {
+      stop();
+      handlersRef.current.onError(
+        "Couldn't change the microphone. The conversation was ended.",
+      );
+    }
+  }, [stop]);
+
+  const updateContext = useCallback(() => {
+    const book = contextRef.current();
+    const ws = socket.current;
+    if (
+      !book ||
+      book.docKey !== sessionDoc.current ||
+      !active.current ||
+      !ws ||
+      ws.readyState !== WebSocket.OPEN
+    )
+      return;
+    if (asked.current || answering.current) return;
+    const message = JSON.stringify(liveContextMessage(book));
+    if (message === sentContext.current) return;
+    ws.send(message);
+    sentContext.current = message;
+    sentBook.current = { ...book };
+  }, []);
+
   const handleMessage = useCallback(
     (message: LiveServerMessage) => {
+      if (closing.current) return;
       const content = message.serverContent;
       if (!content) {
         if (message.error) {
+          stop();
           handlersRef.current.onError(
             message.error.message ?? "The voice connection dropped.",
           );
@@ -198,6 +337,8 @@ export function useRealtimeVoice({
 
       const heard = content.inputTranscription?.text;
       if (heard) {
+        lastActivity.current = Date.now();
+        if (!asked.current) turnContext.current = sentBook.current;
         asked.current += heard;
         if (!answering.current) {
           setPhase("listening");
@@ -214,6 +355,7 @@ export function useRealtimeVoice({
         beginAnswer();
         setPhase("speaking");
         enqueue(part.inlineData.data, part.inlineData.mimeType);
+        lastActivity.current = Date.now();
       }
 
       const said = content.outputTranscription?.text;
@@ -233,27 +375,66 @@ export function useRealtimeVoice({
       if (content.turnComplete) {
         finishTurn();
         pump();
+        if (!queue.current.length && playedUntil.current <= Date.now())
+          setPhase("listening");
       }
     },
-    [beginAnswer, enqueue, finishTurn, flushPlayback, pump],
+    [beginAnswer, enqueue, finishTurn, flushPlayback, pump, stop],
   );
 
   const start = useCallback(async () => {
     const book = contextRef.current();
-    if (!book || socket.current) return;
+    if (
+      !book ||
+      socket.current ||
+      starting.current ||
+      !focused.current ||
+      AppState.currentState !== "active"
+    )
+      return;
+    if (!acquireAudioSession(owner.current)) {
+      handlersRef.current.onError(
+        "The previous voice connection is still closing. Try again in a moment.",
+      );
+      return;
+    }
+    starting.current = true;
+    active.current = true;
+    const attempt = ++generation.current;
+    const cancelled = () =>
+      attempt !== generation.current ||
+      !focused.current ||
+      (!prompting.current && AppState.currentState !== "active");
+    lastActivity.current = Date.now();
+    pausedBook = null;
+    sessionDoc.current = book.docKey;
+    mutedRef.current = false;
+    setMuted(false);
 
     closing.current = false;
     setPhase("connecting");
     try {
-      const session = await openRealtimeSession(book);
-
-      const permission = await requestMicrophonePermissionsAsync();
+      prompting.current = true;
+      let permission;
+      try {
+        permission = await requestMicrophonePermissionsAsync();
+      } finally {
+        if (AppState.currentState === "active") endPrompt();
+        else promptTimer.current = setTimeout(endPrompt, PERMISSION_RESUME_GRACE_MS);
+      }
+      if (cancelled()) return;
       if (!permission.granted) {
-        throw new Error("Liqrai needs the microphone for a live conversation.");
+        throw new Error(
+          "Microphone permission is required. Enable it in your device Settings to talk to Liqrai.",
+        );
       }
 
-      await initialize();
-      if (Platform.OS === "ios") restart();
+      const session = await openRealtimeSession(book);
+      if (cancelled()) return;
+      const initialized = await initialize();
+      if (cancelled()) return;
+      if (initialized === false) throw new Error("Couldn't initialize audio.");
+      toggleRecording(false);
 
       const ws = new WebSocket(liveSocketUrl(session.clientSecret));
       ws.binaryType = "arraybuffer";
@@ -265,10 +446,18 @@ export function useRealtimeVoice({
           SETUP_TIMEOUT_MS,
         );
         let ready = false;
+        setupCancel.current = () => {
+          clearTimeout(timer);
+          reject(new Error("Voice connection cancelled."));
+        };
 
-        ws.onopen = () => ws.send(JSON.stringify(liveSetupMessage(session.model)));
+        ws.onopen = () => {
+          if (cancelled()) return;
+          ws.send(JSON.stringify(liveSetupMessage(session.model)));
+        };
 
         ws.onmessage = (event) => {
+          if (cancelled()) return;
           let message: LiveServerMessage;
           try {
             message = JSON.parse(
@@ -281,6 +470,7 @@ export function useRealtimeVoice({
           }
           if (!ready && message.setupComplete) {
             ready = true;
+            setupCancel.current = null;
             clearTimeout(timer);
             resolve();
             return;
@@ -289,18 +479,23 @@ export function useRealtimeVoice({
         };
 
         ws.onerror = () => {
-          if (ready) return;
+          if (ready) {
+            if (!cancelled()) {
+              stop();
+              handlersRef.current.onError("The voice connection dropped.");
+            }
+            return;
+          }
           clearTimeout(timer);
           reject(new Error("Couldn't open the voice line."));
         };
 
         ws.onclose = (event) => {
+          if (socket.current !== ws) return;
           socket.current = null;
           if (!ready) {
             clearTimeout(timer);
-            reject(
-              new Error(event.reason || "Couldn't open the voice line."),
-            );
+            reject(new Error(event.reason || "Couldn't open the voice line."));
             return;
           }
           if (closing.current) return;
@@ -312,37 +507,140 @@ export function useRealtimeVoice({
         };
       });
 
+      if (cancelled()) return;
+      updateContext();
       micSub.current = addExpoTwoWayAudioEventListener(
         "onMicrophoneData",
         (event) => {
           const ws = socket.current;
-          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          if (
+            cancelled() ||
+            mutedRef.current ||
+            !active.current ||
+            !ws ||
+            ws.readyState !== WebSocket.OPEN
+          )
+            return;
           ws.send(JSON.stringify(liveAudioMessage(bytesToBase64(event.data))));
         },
       );
-      toggleRecording(true);
+      if (!toggleRecording(true))
+        throw new Error("Could not start the microphone.");
 
       setPhase("listening");
     } catch (error) {
+      if (cancelled()) return;
       teardown();
       setPhase("off");
       handlersRef.current.onError(
-        error instanceof Error ? error.message : "Couldn't start the voice line.",
+        error instanceof Error
+          ? error.message
+          : "Couldn't start the voice line.",
       );
-      if (error && (error as { name?: string }).name === "AiQuotaError") {
-        throw error;
-      }
+    } finally {
+      starting.current = false;
+      if (cancelled()) teardown();
     }
-  }, [handleMessage, teardown]);
+  }, [endPrompt, handleMessage, stop, teardown, updateContext]);
 
-  const teardownRef = useRef(teardown);
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      if (pausedBook && pausedBook.expires <= Date.now()) {
+        pausedBook = null;
+        setPhase("off");
+      }
+      return () => {
+        focused.current = false;
+        pause();
+      };
+    }, [pause]),
+  );
+
   useEffect(() => {
-    teardownRef.current = teardown;
-  }, [teardown]);
-  useEffect(() => () => teardownRef.current(), []);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        endPrompt();
+        return;
+      }
+      if (prompting.current) return;
+      if (state === "background") pause(BACKGROUNDED_REASON);
+    });
+    return () => subscription.remove();
+  }, [endPrompt, pause]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (
+        active.current &&
+        Date.now() - lastActivity.current >= INACTIVITY_MS
+      ) {
+        stop();
+        handlersRef.current.onError(
+          "Conversation ended after five minutes of inactivity.",
+        );
+      } else if (
+        phase === "paused" &&
+        (!pausedBook || pausedBook.expires <= Date.now())
+      ) {
+        stop();
+      }
+      if (active.current && !starting.current) updateContext();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [phase, stop, updateContext]);
+
+  useEffect(() => {
+    const quantise = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 20) / 20;
+    const listen = (name: "onInputVolumeLevelData" | "onOutputVolumeLevelData") =>
+      addExpoTwoWayAudioEventListener(name, (event) => {
+        if (!active.current) return;
+        if (name === "onInputVolumeLevelData" && mutedRef.current) return;
+        setLevel((current) => {
+          const next = quantise(event.data);
+          return next === current ? current : next;
+        });
+      });
+    const subscriptions = [
+      listen("onInputVolumeLevelData"),
+      listen("onOutputVolumeLevelData"),
+    ];
+    return () => subscriptions.forEach((subscription) => subscription.remove());
+  }, []);
+
+  useEffect(() => {
+    if (!active.current) setLevel(0);
+  }, [phase]);
+
+  useEffect(() => {
+    const subscription = addExpoTwoWayAudioEventListener(
+      "onAudioInterruption",
+      () => {
+        if (ownsAudioSession(owner.current))
+          pause(
+            "Conversation paused because audio was interrupted. Tap Resume to continue.",
+          );
+      },
+    );
+    return () => subscription.remove();
+  }, [pause]);
+
+  useEffect(
+    () => () => {
+      pause();
+      teardown();
+    },
+    [pause, teardown],
+  );
 
   return {
-    on: phase !== "off",
+    on: phase !== "off" && phase !== "paused",
+    level: phase === "off" || phase === "paused" ? 0 : level,
+    muted,
+    microphoneActive:
+      !muted && ["listening", "thinking", "speaking"].includes(phase),
+    toggleMute,
+    pause,
     phase,
     start: () => {
       void start();

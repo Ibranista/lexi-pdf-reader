@@ -9,6 +9,10 @@ import {
 import { File } from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  acquireAudioSession,
+  releaseAudioSession,
+} from "@/utils/audio-session";
 import { AiQuotaError, transcribe } from "@/services/lexi-ai";
 
 const METER_INTERVAL_MS = 90;
@@ -66,6 +70,10 @@ export function useVoiceInput(
     durationRef.current = state.durationMillis ?? 0;
   }, [state.durationMillis]);
   const stoppingRef = useRef(false);
+  const generation = useRef(0);
+  const audioOwner = useRef(Symbol("dictation"));
+  const starting = useRef(false);
+  const recording = useRef(false);
   const optionsRef = useRef(options);
   useEffect(() => {
     optionsRef.current = options;
@@ -77,59 +85,93 @@ export function useVoiceInput(
     try {
       await recorder.stop();
     } catch {}
-    await setAudioModeAsync({
-      allowsRecording: false,
-      playsInSilentMode: true,
-    });
+    try {
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+      });
+    } catch {}
   }, [recorder]);
 
   const start = useCallback(async () => {
-    if (phase !== "idle") return;
-
-    const existing = await getRecordingPermissionsAsync();
-    const granted =
-      existing.granted || (await requestRecordingPermissionsAsync()).granted;
-
-    if (!granted) {
-      setPermissionBlocked(true);
-      onError(
-        "Liqrai needs the microphone to hear your question — enable it in Settings.",
-      );
+    if (phase !== "idle" || starting.current) return;
+    if (!acquireAudioSession(audioOwner.current)) {
+      onError("End the current audio session before dictating.");
       return;
     }
-    setPermissionBlocked(false);
-
+    starting.current = true;
+    const attempt = ++generation.current;
+    const cancelled = () => attempt !== generation.current;
     try {
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      stoppingRef.current = false;
-      heardSpeech.current = false;
-      lastSpeechAt.current = 0;
-      setPhase("recording");
+      const existing = await getRecordingPermissionsAsync();
+      const granted =
+        existing.granted || (await requestRecordingPermissionsAsync()).granted;
+
+      if (cancelled()) return;
+      if (!granted) {
+        setPermissionBlocked(true);
+        onError(
+          "Liqrai needs the microphone to hear your question — enable it in Settings.",
+        );
+        return;
+      }
+      setPermissionBlocked(false);
+
+      try {
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+        });
+        if (cancelled()) {
+          await finishRecording();
+          return;
+        }
+        await recorder.prepareToRecordAsync();
+        if (cancelled()) {
+          await finishRecording();
+          return;
+        }
+        recorder.record();
+        recording.current = true;
+        stoppingRef.current = false;
+        heardSpeech.current = false;
+        lastSpeechAt.current = 0;
+        setPhase("recording");
+      } catch {
+        await finishRecording();
+        setPhase("idle");
+        onError("Couldn't start recording just then");
+      }
     } catch {
-      await finishRecording();
-      setPhase("idle");
-      onError("Couldn't start recording just then");
+      if (!cancelled())
+        onError(
+          "Could not access the microphone. Check device permissions and try again.",
+        );
+    } finally {
+      starting.current = false;
+      if (!recording.current) releaseAudioSession(audioOwner.current);
     }
   }, [finishRecording, onError, phase, recorder]);
 
   const cancel = useCallback(async () => {
-    if (phase !== "recording") return;
+    generation.current += 1;
+    if (!recording.current) return;
+    recording.current = false;
     stoppingRef.current = true;
     setPhase("idle");
     await finishRecording();
-  }, [finishRecording, phase]);
+    releaseAudioSession(audioOwner.current);
+  }, [finishRecording]);
 
   const stop = useCallback(async (): Promise<string> => {
     if (phase !== "recording") return "";
+    recording.current = false;
+    const attempt = generation.current;
     stoppingRef.current = true;
 
     const heldFor = durationRef.current;
     await finishRecording();
+    releaseAudioSession(audioOwner.current);
     const uri = recorder.uri;
 
     if (heldFor < MIN_DURATION_MS || !uri) {
@@ -137,10 +179,12 @@ export function useVoiceInput(
       return "";
     }
 
-      setPhase("transcribing");
+    setPhase("transcribing");
     try {
       const audio = await new File(uri).base64();
+      if (attempt !== generation.current) return "";
       const text = await transcribe({ audio, mimeType: "audio/m4a" });
+      if (attempt !== generation.current) return "";
       if (!text) onError("Didn't catch that — try again");
       return text;
     } catch (error) {
@@ -194,7 +238,13 @@ export function useVoiceInput(
 
   useEffect(
     () => () => {
-      void finishRecording();
+      generation.current += 1;
+      if (recording.current) {
+        recording.current = false;
+        void finishRecording().finally(() =>
+          releaseAudioSession(audioOwner.current),
+        );
+      }
     },
     [finishRecording],
   );

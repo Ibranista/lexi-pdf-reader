@@ -1,5 +1,6 @@
 import { router } from "expo-router";
-import { memo } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
+import { VoiceSettings } from "./VoiceSettings";
 import { ScrollView } from "react-native";
 
 import { Box } from "@/components/atoms";
@@ -43,9 +44,14 @@ const LANGS = [
 
 export const SettingsPanel = memo(function SettingsPanel({
   onClose,
+  visible = true,
 }: {
+  visible?: boolean;
   onClose: () => void;
 }) {
+  const stopPreview = useRef(() => {});
+  const registerStop = useCallback((stop: () => void) => { stopPreview.current = stop; }, []);
+  useEffect(() => { if (!visible) stopPreview.current(); }, [visible]);
   const t = useProtoTheme();
   const showToast = useToastStore((s) => s.showToast);
   const mode = useThemeModeStore((s) => s.mode);
@@ -64,7 +70,7 @@ export const SettingsPanel = memo(function SettingsPanel({
 
   return (
     <ProtoScreen>
-      <ScreenHeader onBack={onClose} title="Settings" />
+      <ScreenHeader onBack={() => { stopPreview.current(); onClose(); }} title="Settings" />
       <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
         <ScrollView
           contentContainerStyle={{
@@ -75,6 +81,7 @@ export const SettingsPanel = memo(function SettingsPanel({
           }}
           style={{ flex: 1 }}
         >
+          <VoiceSettings registerStop={registerStop} />
           <Card gap={12}>
             <SectionLabel>Appearance</SectionLabel>
             <Segmented

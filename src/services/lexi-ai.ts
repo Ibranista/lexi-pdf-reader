@@ -4,6 +4,7 @@ import EventSource from "react-native-sse";
 import { DICT, LANG_NAMES } from "@/constants/library";
 import { ensureSession } from "@/services/device-session";
 import type { SpokenWord } from "@/utils/spoken-words";
+import { useAppStore } from "@/stores/app-store";
 import type { ExplainStyle, Lang } from "@/stores/app-store";
 import { API_BASE_URL, api, tokenStorage } from "@/utils/axios";
 
@@ -110,6 +111,7 @@ export async function translate(
 ): Promise<TranslateResult> {
   try {
     const { data } = await api.post<TranslateResult>("/ai/translate", {
+      voiceId: useAppStore.getState().voiceId,
       context: input.context,
       docKey: input.docKey,
       page: input.page,
@@ -162,6 +164,7 @@ export async function streamTranslate(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({
+      voiceId: useAppStore.getState().voiceId,
       context: input.context,
       docKey: input.docKey,
       page: input.page,
@@ -444,6 +447,7 @@ export async function streamChatLive(
       page: input.page,
       sessionId: input.sessionId,
       spoken: true,
+      voiceId: useAppStore.getState().voiceId,
       style: input.style ?? "balanced",
       title: input.title,
     }),
@@ -512,6 +516,10 @@ export async function streamChatLive(
   return () => finish();
 }
 
+export function invalidateChatHistory(sessionId: string): void {
+  chatHistoryCache.delete(sessionId);
+}
+
 export function cachedChatHistory(
   sessionId: string,
 ): ChatHistoryMessage[] | undefined {
@@ -565,7 +573,7 @@ export async function speakText(
     const { data } = await api.post<{
       audioUrl?: string;
       words?: SpokenWord[];
-    }>("/ai/speak", { text });
+    }>("/ai/speak", { text, voiceId: useAppStore.getState().voiceId });
     return { audioUrl: data.audioUrl, words: data.words ?? [] };
   } catch {
     return { words: [] };
@@ -593,7 +601,7 @@ export async function speak(
 ): Promise<string | undefined> {
   try {
     const { data } = await api.get<{ audioUrl?: string }>("/ai/tts", {
-      params: { lang, text },
+      params: { lang, text, voiceId: useAppStore.getState().voiceId },
     });
     return data.audioUrl;
   } catch (error) {

@@ -34,7 +34,6 @@ import type { BottomSheetModalReference } from "@/components/modals/BottomSheetM
 import {
   AnnotateBar,
   FocusChrome,
-  LexiBubble,
   LexiSheet,
   PdfOutlineDrawer,
   PdfSearchPanel,
@@ -49,6 +48,7 @@ import { usePageCheck } from "@/hooks/use-page-check";
 import { ReaderSettingsSheet } from "@/components/reader/ReaderSettingsSheet";
 import type { TranslateTarget } from "@/components/reader/TranslateCard";
 import { TranslateCard } from "@/components/reader/TranslateCard";
+import { useReadingContext } from "@/hooks/use-reading-context";
 import { preloadChatHistory, uploadContext } from "@/services/lexi-ai";
 import {
   HIGHLIGHT_FILL,
@@ -85,14 +85,16 @@ function savedPageFor(uri: string | undefined): number {
   return saved && saved > 0 ? saved : 1;
 }
 
+type PdfReaderParams = { uri: string; name?: string; view?: ViewMode };
+
 export default function PdfViewerScreen() {
+  const params = useLocalSearchParams<PdfReaderParams>();
+  return <PdfReader key={params.uri} {...params} />;
+}
+
+function PdfReader({ uri, name, view }: PdfReaderParams) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
-  const { uri, name, view } = useLocalSearchParams<{
-    uri: string;
-    name?: string;
-    view?: ViewMode;
-  }>();
   const docKey = useDocKey(uri, name);
   const zoom = useAppStore((s) => s.zoom);
   const aiOn = useAppStore((s) => s.aiOn);
@@ -157,6 +159,7 @@ export default function PdfViewerScreen() {
   const pageTexts = useRef(new Map<number, string>());
   const [extractedPages, setExtractedPages] = useState(0);
   const [pageText, setPageText] = useState("");
+  const [visiblePassage, setVisiblePassage] = useState<{ page: number; text: string; uri: string } | null>(null);
   const [openClaim, setOpenClaim] = useState<{
     page: number;
     id: string;
@@ -213,6 +216,16 @@ export default function PdfViewerScreen() {
     () => annotations.find((a) => a.id === openNoteId) ?? null,
     [annotations, openNoteId],
   );
+
+  const selectedPassage = selection?.page === page ? selection : null;
+  const visible = mode === "reflow" && visiblePassage?.uri === uri ? visiblePassage : null;
+  const contextPage = selectedPassage?.page ?? visible?.page ?? page;
+  const readingContext = useReadingContext({
+    docKey: docKey ?? "", title: name ?? "Document", uri, page: contextPage,
+    chapter: [...outline].filter((entry) => entry.page <= contextPage).sort((a, b) => b.page - a.page)[0]?.title,
+    excerpt: selectedPassage?.text ?? visible?.text ?? pageText,
+    source: selectedPassage ? "selection" : visible ? "visible" : "page",
+  });
 
   useEffect(() => {
     setPageText(pageTexts.current.get(page) ?? "");
@@ -651,6 +664,7 @@ export default function PdfViewerScreen() {
               onTextSelectionChange={({ nativeEvent }) => {
                 if (mode !== "page" || composing) return;
                 const text = nativeEvent.text?.trim() ?? "";
+                if (lexiOpen && !text) return;
                 setSelection(
                   nativeEvent.type === "selectionChanged" && text
                     ? {
@@ -794,6 +808,7 @@ export default function PdfViewerScreen() {
                   : undefined
               }
               onOutline={setReflowOutline}
+              onVisibleContext={(context) => { if (mode === "reflow") setVisiblePassage({ ...context, uri }); }}
               onWordCounts={(counts) => {
                 useRecentsStore.getState().setReadingPlan(
                   uri,
@@ -803,7 +818,7 @@ export default function PdfViewerScreen() {
               }}
               onSearchResults={setSearchResults}
               onSelection={(text, selPage, context) => {
-                if (mode !== "reflow" || composing) return;
+                if (mode !== "reflow" || composing || (lexiOpen && !text)) return;
                 setSelection(
                   text ? { text, page: selPage || page, context } : null,
                 );
@@ -989,19 +1004,6 @@ export default function PdfViewerScreen() {
 
       <FocusChrome onExit={toggleFocus} pillVisible={immersive} />
 
-      {pageShown &&
-      !immersive &&
-      !focusOn &&
-      !searchOpen &&
-      summary === "closed" &&
-      !lexiOpen &&
-      aiOn ? (
-        <LexiBubble
-          onPress={() => {
-            setLexiOpen(true);
-          }}
-        />
-      ) : null}
       {(outline.length || bookmarks.length || outlineOpen) && !searchOpen ? (
         <PdfOutlineDrawer
           bookmarks={bookmarks}
@@ -1057,10 +1059,14 @@ export default function PdfViewerScreen() {
           />
         </Box>
       ) : null}
-      {lexiOpen && aiOn && docKey ? (
+      {aiOn && docKey ? (
         <LexiSheet
+          key={docKey}
+          open={lexiOpen}
+          onOpen={() => setLexiOpen(true)}
+          bubbleVisible={pageShown && !immersive && !focusOn && !searchOpen && summary === "closed"}
           ask={lexiAsk}
-          book={{ docKey, page, title: name ?? "Document" }}
+          book={readingContext}
           onClose={() => {
             setLexiOpen(false);
             setLexiAsk(undefined);

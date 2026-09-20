@@ -64,8 +64,8 @@ export default function LibraryScreen() {
     return true;
   }, [closeSettings]);
   const renderSettings = useCallback(
-    () => <SettingsPanel onClose={closeSettings} />,
-    [closeSettings],
+    () => <SettingsPanel onClose={closeSettings} visible={settingsOpen} />,
+    [closeSettings, settingsOpen],
   );
 
   return (

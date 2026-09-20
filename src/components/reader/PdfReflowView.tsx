@@ -710,6 +710,37 @@ export function buildHtml(
     if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
   }, { passive: true });
 
+  /* One bounded visible passage after scrolling settles, not per frame. */
+  var contextTimer = null, lastVisibleContext = '';
+  function reportVisibleContext(){
+    var secs = document.querySelectorAll('#content section[data-page]');
+    var chosen = null, bestArea = 0;
+    for (var i = 0; i < secs.length; i++) {
+      var rect = secs[i].getBoundingClientRect();
+      if (rect.bottom < 0) continue;
+      if (rect.top > innerHeight) break;
+      var area = Math.max(0, Math.min(rect.bottom, innerHeight - 96) - Math.max(rect.top, 80));
+      if (area > bestArea) { bestArea = area; chosen = secs[i]; }
+    }
+    if (!chosen) return;
+    var parts = [];
+    for (var j = 0; j < chosen.children.length; j++) {
+      var block = chosen.children[j], r = block.getBoundingClientRect();
+      if (r.bottom <= 80 || r.top >= innerHeight - 96) continue;
+      var text = (block.innerText || '').trim();
+      if (text) parts.push(text);
+    }
+    var payload = { type: 'visiblecontext', page: Number(chosen.getAttribute('data-page')), text: parts.join('\\n\\n').slice(0, 4000) };
+    var key = JSON.stringify(payload);
+    if (key !== lastVisibleContext) { lastVisibleContext = key; post(payload); }
+  }
+  function scheduleVisibleContext(){
+    clearTimeout(contextTimer);
+    contextTimer = setTimeout(reportVisibleContext, 450);
+  }
+  window.addEventListener('scroll', scheduleVisibleContext, { passive: true });
+  window.addEventListener('resize', scheduleVisibleContext);
+
   /* ---- report reading position ---- */
   var ticking = false;
   window.addEventListener('scroll', function(){
@@ -2172,6 +2203,7 @@ export function buildHtml(
       tryPendingScroll();
       document.getElementById('status').className = 'hidden';
       post({ type: 'firstpaint' });
+      scheduleVisibleContext();
       buildOutline(pdf); // not awaited — the outline arrives as pages extract
     }
 
@@ -2316,6 +2348,7 @@ interface Props {
   onIndexed?: () => void;
   onFirstPaint?: () => void;
   onOutline?: (entries: PdfOutlineEntry[]) => void;
+  onVisibleContext?: (context: { page: number; text: string }) => void;
   onWordCounts?: (counts: number[]) => void;
   onContext?: (pages: { page: number; text: string }[], done: boolean) => void;
   onSwitchToPage?: () => void;
@@ -2389,6 +2422,7 @@ export function PdfReflowView({
   onIndexed,
   onFirstPaint,
   onOutline,
+  onVisibleContext,
   onWordCounts,
   onContext,
   onSwitchToPage,
@@ -2617,6 +2651,8 @@ export function PdfReflowView({
                 setStatus("ready");
                 onFirstPaint?.();
               }
+              else if (msg.type === "visiblecontext" && msg.page)
+                onVisibleContext?.({ page: msg.page, text: (msg.text ?? "").slice(0, 4000) });
               else if (msg.type === "page" && msg.page)
                 onPageChange?.(msg.page);
               else if (msg.type === "highlighttap")

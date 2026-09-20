@@ -1,6 +1,10 @@
 import { api } from "@/utils/axios";
 import type { ExplainStyle } from "@/stores/app-store";
-import { asQuotaError, type AiQuota } from "@/services/lexi-ai";
+import {
+  asQuotaError,
+  invalidateChatHistory,
+  type AiQuota,
+} from "@/services/lexi-ai";
 
 const LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
@@ -35,6 +39,11 @@ export interface RealtimeContext {
   author?: string;
   page: number;
   style?: ExplainStyle;
+  excerpt?: string;
+  chapter?: string;
+  source?: "selection" | "visible" | "page";
+  recent?: { page: number; excerpt: string };
+  voiceId?: string;
 }
 
 export async function openRealtimeSession(
@@ -43,6 +52,9 @@ export async function openRealtimeSession(
   try {
     const { data } = await api.post<RealtimeSession>("/ai/realtime/session", {
       author: context.author,
+      excerpt: context.excerpt?.slice(0, 4000),
+      chapter: context.chapter?.slice(0, 300),
+      voiceId: context.voiceId,
       docKey: context.docKey,
       page: context.page,
       style: context.style ?? "balanced",
@@ -71,6 +83,7 @@ export async function recordRealtimeTurn(input: {
       sessionId: input.sessionId,
       title: input.title,
     });
+    invalidateChatHistory(input.sessionId);
     return data.quota;
   } catch (error) {
     throw asQuotaError(error) ?? error;
@@ -91,3 +104,31 @@ export interface LiveServerMessage {
   goAway?: { timeLeft?: string };
   error?: { message?: string };
 }
+
+export const liveContextMessage = (context: RealtimeContext) => ({
+  clientContent: {
+    turns: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `READING_CONTEXT ${JSON.stringify({
+              docKey: context.docKey,
+              page: context.page,
+              chapter: context.chapter?.slice(0, 300),
+              source: context.source ?? "page",
+              passage: context.excerpt?.slice(0, 4000) ?? "",
+              recent: context.recent
+                ? {
+                    page: context.recent.page,
+                    passage: context.recent.excerpt.slice(0, 1000),
+                  }
+                : undefined,
+            })}`,
+          },
+        ],
+      },
+    ],
+    turnComplete: false,
+  },
+});

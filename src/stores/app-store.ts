@@ -96,6 +96,7 @@ interface AppState {
   factCheck: boolean;
   lang: Lang;
   explStyle: ExplainStyle;
+  voiceId: string;
   defaultReader: ReaderMode;
   thoughtOn: boolean;
   cardsPerDay: number;
@@ -143,6 +144,7 @@ export const useAppStore = create<AppState>()(
       factCheck: false,
       lang: "am",
       explStyle: "balanced",
+      voiceId: "Aoede",
       defaultReader: "reflow",
       thoughtOn: true,
       cardsPerDay: 3,

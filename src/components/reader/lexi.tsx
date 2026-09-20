@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Keyboard,
   Pressable,
   ScrollView,
@@ -17,9 +18,17 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import { useFocusEffect } from "expo-router";
+import { VoiceController } from "./VoiceController";
+import type { RealtimeContext } from "@/services/realtime";
+import {
+  AndroidSoftInputModes,
+  KeyboardController,
+  useKeyboardContext,
+} from "react-native-keyboard-controller";
 import Reanimated, {
   Easing,
+  FadeIn,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -77,6 +86,7 @@ interface LexiMsg {
   kind: "drift" | "normal" | "recap" | "error";
   text: string;
   cite?: { page: number; text: string };
+  readingContext?: { page: number; text: string; source?: string };
 }
 
 const INPUT_MIN = 22;
@@ -221,7 +231,14 @@ function citedHighlight(reply: string, highlights: Annotation[]) {
   return best ? { page: best.page, text: best.text } : undefined;
 }
 
-export function LexiBubble({ onPress }: { onPress: () => void }) {
+export function LexiBubble({
+  onPress,
+  onTalk,
+}: {
+  onPress: () => void;
+  onTalk?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const entry = useSharedValue(0);
@@ -237,43 +254,101 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
     transform: [{ translateY: (1 - entry.value) * 10 }],
   }));
   return (
-    <Tap
-      onPress={onPress}
-      scale={0.95}
-      style={{
-        position: "absolute",
-        left: 18,
-        bottom: 24 + insets.bottom,
-        zIndex: 31,
-      }}
-    >
-      <Reanimated.View style={entryStyle}>
-      <Box
-        align="center"
-        bg={t.card}
-        borderColor={t.line}
-        borderWidth={1}
-        direction="row"
-        gap={8}
-        paddingLeft={12}
-        paddingRight={16}
-        paddingY={10}
-        rounded={24}
+    <>
+      {expanded ? (
+        <Reanimated.View
+          entering={FadeIn.duration(180)}
+          style={{
+            position: "absolute",
+            left: 18,
+            bottom: 82 + insets.bottom,
+            zIndex: 32,
+          }}
+        >
+          <Box
+            bg={t.card}
+            borderColor={t.line}
+            borderWidth={1}
+            rounded={16}
+            padding={6}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Talk to Liqrai"
+              disabled={!onTalk}
+              onPress={() => {
+                setExpanded(false);
+                onTalk?.();
+              }}
+              style={{
+                minHeight: 48,
+                justifyContent: "center",
+                paddingHorizontal: 16,
+                opacity: onTalk ? 1 : 0.5,
+              }}
+            >
+              <Text size={14}>Talk to Liqrai</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open chat"
+              onPress={() => {
+                setExpanded(false);
+                onPress();
+              }}
+              style={{
+                minHeight: 48,
+                justifyContent: "center",
+                paddingHorizontal: 16,
+              }}
+            >
+              <Text size={14}>Open chat</Text>
+            </Pressable>
+          </Box>
+        </Reanimated.View>
+      ) : null}
+      <Pressable
+        onPress={() => setExpanded((value) => !value)}
+        accessibilityRole="button"
+        accessibilityLabel={
+          expanded ? "Close Liqrai actions" : "Hey Liqrai, open actions"
+        }
+        accessibilityState={{ expanded }}
         style={{
-          shadowColor: "#14100C",
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: 0.2,
-          shadowRadius: 26,
-          elevation: 8,
+          position: "absolute",
+          left: 18,
+          bottom: 24 + insets.bottom,
+          zIndex: 31,
         }}
       >
-        <IconSpark color={t.accent} size={16} />
-        <Text size={13} weight="600">
-          Hey Liqrai
-        </Text>
-      </Box>
-      </Reanimated.View>
-    </Tap>
+        <Reanimated.View style={entryStyle}>
+          <Box
+            align="center"
+            bg={t.card}
+            borderColor={t.line}
+            borderWidth={1}
+            direction="row"
+            gap={8}
+            paddingLeft={12}
+            paddingRight={16}
+            paddingY={14}
+            rounded={24}
+            style={{
+              shadowColor: "#14100C",
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.2,
+              shadowRadius: 26,
+              elevation: 8,
+            }}
+          >
+            <IconSpark color={t.accent} size={16} />
+            <Text size={13} weight="600">
+              Hey Liqrai
+            </Text>
+          </Box>
+        </Reanimated.View>
+      </Pressable>
+    </>
   );
 }
 
@@ -285,13 +360,21 @@ export interface LexiBook {
   chapter?: string;
   excerpt?: string;
   uri?: string;
+  source?: "selection" | "visible" | "page";
+  recent?: { page: number; excerpt: string };
 }
 
 export function LexiSheet({
   ask,
   book,
   onClose,
+  open = true,
+  onOpen,
+  bubbleVisible = true,
 }: {
+  open?: boolean;
+  onOpen?: () => void;
+  bubbleVisible?: boolean;
   ask?: string;
   book?: LexiBook;
   onClose: () => void;
@@ -300,6 +383,7 @@ export function LexiSheet({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const explStyle = useAppStore((s) => s.explStyle);
+  const voiceId = useAppStore((s) => s.voiceId);
   const fontFam = useAppStore((s) => s.fontFam);
   const bodyFont = readerBodyFont(fontFam);
   const bodyFontBold = readerBodyFont(fontFam, true);
@@ -312,20 +396,17 @@ export function LexiSheet({
   const scrollRef = useRef<ScrollView>(null);
   const panelWidth = Math.min(width * 0.9, 420);
 
-  const waveBars = Math.floor(width / 6);
-
   const anim = useSharedValue(0);
-  const kb = useReanimatedKeyboardAnimation();
-
-  const entered = useRef(false);
-  const onPanelLayout = () => {
-    if (entered.current) return;
-    entered.current = true;
-    anim.value = withTiming(1, {
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-    });
-  };
+  const kb = useKeyboardContext().reanimated;
+  useFocusEffect(
+    useCallback(() => {
+      if (!open) return;
+      KeyboardController.setInputMode(
+        AndroidSoftInputModes.SOFT_INPUT_ADJUST_RESIZE,
+      );
+      return () => KeyboardController.setDefaultMode();
+    }, [open]),
+  );
 
   const close = useCallback(() => {
     Keyboard.dismiss();
@@ -338,6 +419,10 @@ export function LexiSheet({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
+
+  useEffect(() => {
+    anim.set(withTiming(open ? 1 : 0, { duration: 240 }));
+  }, [anim, open]);
 
   const panelStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: (1 - anim.value) * panelWidth }],
@@ -398,6 +483,19 @@ export function LexiSheet({
   );
   const [historyVisible, setHistoryVisible] = useState(!book);
   const [input, setInput] = useState(ask ?? "");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (ask && open) setInput(ask);
+  }, [ask, open]);
+  const capturePassage = (context?: RealtimeContext | LexiBook | null) => {
+    if (!context) return undefined;
+    const passage = {
+      page: context.page,
+      text: context.excerpt?.slice(0, 4000) ?? "",
+      source: context.source,
+    };
+    return passage;
+  };
   const [inputH, setInputH] = useState(INPUT_MIN);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -450,7 +548,8 @@ export function LexiSheet({
     return () => {
       cancelled = true;
     };
-  }, [book, greeting, sessionId, showToast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, showToast]);
 
   useEffect(() => () => abortRef.current?.(), []);
 
@@ -550,6 +649,10 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
   }, [voice]);
 
   const toggleVoice = async (key: number, text: string) => {
+    if (live.on) {
+      showToast("End the live conversation before replaying a reply.");
+      return;
+    }
     if (voice?.key === key) {
       setVoice(null);
       return;
@@ -614,7 +717,13 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
           setStreaming(accRef.current);
           scrollToEnd();
         },
-        onDone: ({ kind, quota }: { kind: LexiMsg["kind"]; quota?: AiQuota }) => {
+        onDone: ({
+          kind,
+          quota,
+        }: {
+          kind: LexiMsg["kind"];
+          quota?: AiQuota;
+        }) => {
           settled = true;
           abortRef.current = null;
           setStreaming(null);
@@ -690,7 +799,12 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
     const q = raw.trim();
     if (!q || busy) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    push({ role: "user", kind: "normal", text: q });
+    push({
+      role: "user",
+      kind: "normal",
+      text: q,
+      readingContext: capturePassage(book),
+    });
     setInput("");
     setInputH(INPUT_MIN);
     scrollToEnd();
@@ -726,6 +840,11 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
       book
         ? {
             author: book.author,
+            excerpt: book.excerpt,
+            chapter: book.chapter,
+            source: book.source,
+            recent: book.recent,
+            voiceId,
             docKey: book.docKey,
             page: book.page,
             style: explStyle,
@@ -733,8 +852,13 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
           }
         : null,
     handlers: {
-      onAsk: (text) => {
-        push({ role: "user", kind: "normal", text });
+      onAsk: (text, context) => {
+        push({
+          role: "user",
+          kind: "normal",
+          text,
+          readingContext: capturePassage(context),
+        });
         lastQuestion.current = text;
         setStreaming("");
         scrollToEnd();
@@ -743,7 +867,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
         setStreaming(text);
         scrollToEnd();
       },
-      onTurn: ({ message, reply }) => {
+      onTurn: ({ message, reply, context }) => {
         setStreaming(null);
         push({
           role: "lexi",
@@ -755,7 +879,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
         recordRealtimeTurn({
           docKey: book!.docKey,
           message,
-          page: book!.page,
+          page: context?.page ?? book!.page,
           reply,
           sessionId,
           title: book!.title,
@@ -771,6 +895,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
             close();
           });
       },
+      onTurnEnd: () => setStreaming(null),
       onError: showToast,
     },
   });
@@ -779,7 +904,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Keyboard.dismiss();
     setVoice(null);
-    live.start();
+    if (mic.phase === "idle" && !busy) live.start();
   };
 
   const endLive = () => {
@@ -808,6 +933,35 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
     void mic.start();
   };
 
+  const auxiliaryCleanup = useRef(() => {});
+  useEffect(() => {
+    auxiliaryCleanup.current = () => {
+      void mic.cancel();
+      setVoice(null);
+      abortRef.current?.();
+      setStreaming(null);
+    };
+  }, [mic]);
+  useFocusEffect(useCallback(() => () => auxiliaryCleanup.current(), []));
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") auxiliaryCleanup.current();
+    });
+    return () => sub.remove();
+  }, []);
+  const cancelMic = mic.cancel;
+  useEffect(() => {
+    if (!open) {
+      void cancelMic();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVoice(null);
+    }
+  }, [open, cancelMic]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!live.on) setStreaming(null);
+  }, [live.on]);
+
   const renderMessage = (m: LexiMsg, i: number): ReactNode => {
     const user = m.role === "user";
     const special = m.kind === "drift" || m.kind === "recap";
@@ -818,16 +972,32 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
     const dimmed = Boolean(voice?.url) && !playing;
     return (
       <Box key={i} paddingY={5} style={{ opacity: dimmed ? 0.27 : 1 }}>
+        {m.readingContext ? (
+          <Box bg={t.chip} padding={10} rounded={10}>
+            <Text size={11} color={t.sub}>
+              Using{" "}
+              {m.readingContext.source === "selection"
+                ? "selection"
+                : m.readingContext.source === "visible"
+                ? "visible passage"
+                : "page text"}{" "}
+              · p. {m.readingContext.page}
+            </Text>
+            <Text size={12} numberOfLines={4}>
+              {m.readingContext.text || "No readable text available"}
+            </Text>
+          </Box>
+        ) : null}
         <Box
           bg={user ? t.onAccent : isError ? t.accentSoft : t.card}
           borderColor={
             isError
               ? t.accentMid
               : special
-                ? t.accentMid
-                : user
-                  ? t.onAccent
-                  : t.line
+              ? t.accentMid
+              : user
+              ? t.onAccent
+              : t.line
           }
           borderWidth={1}
           gap={9}
@@ -972,6 +1142,19 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
     );
   };
 
+  if (!open) {
+    if (live.on || live.phase === "paused")
+      return (
+        <VoiceController live={live} onEnd={endLive} onOpen={() => onOpen?.()} />
+      );
+    return bubbleVisible ? (
+      <LexiBubble
+        onPress={() => onOpen?.()}
+        onTalk={book ? startLive : undefined}
+      />
+    ) : null;
+  }
+
   return (
     <>
       <Reanimated.View
@@ -988,11 +1171,15 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
           },
         ]}
       >
-        <Pressable onPress={close} style={{ flex: 1 }} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close chat, keep voice conversation"
+          onPress={close}
+          style={{ flex: 1 }}
+        />
       </Reanimated.View>
 
       <Reanimated.View
-        onLayout={onPanelLayout}
         style={[
           panelStyle,
           {
@@ -1058,7 +1245,17 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                 </Box>
               </Tap>
             ) : null}
-            <Tap onPress={close}>
+            <Pressable
+              onPress={close}
+              accessibilityRole="button"
+              accessibilityLabel="Close chat"
+              style={{
+                minWidth: 48,
+                minHeight: 48,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               <Box
                 align="center"
                 height={32}
@@ -1068,7 +1265,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
               >
                 <IconClose color={t.sub} size={15} />
               </Box>
-            </Tap>
+            </Pressable>
           </Box>
 
           <Box flex={1} style={{ position: "relative" }}>
@@ -1197,7 +1394,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
               </Box>
             ) : null}
 
-            {live.on ? (
+            {live.on || live.phase === "paused" ? (
               <Box align="center" direction="row" gap={10} paddingX={12}>
                 <Tap onPress={endLive} scale={0.9}>
                   <Box
@@ -1215,7 +1412,9 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                   align="center"
                   bg={t.chip}
                   borderColor={
-                    live.phase === "listening" ? t.accentMid : t.line
+                    live.phase === "listening" && !live.muted
+                      ? t.accentMid
+                      : t.line
                   }
                   borderWidth={1}
                   direction="row"
@@ -1225,16 +1424,45 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                   paddingY={9}
                   rounded={22}
                 >
-                  {live.phase === "connecting" ? (
+                  {live.phase === "paused" ? (
+                    <>
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Paused — you stepped away
+                        </Text>
+                      </Box>
+                      <Tap onPress={live.start} scale={0.94}>
+                        <Text color={t.accent} size={11.5} weight="600">
+                          Resume
+                        </Text>
+                      </Tap>
+                    </>
+                  ) : live.phase === "connecting" ? (
                     <>
                       <ActivityIndicator color={t.accent} size="small" />
                       <Text color={t.sub} size={12}>
                         Connecting…
                       </Text>
                     </>
+                  ) : live.muted ? (
+                    <>
+                      <IconMic color={t.sub} size={16} />
+                      <Box flex={1}>
+                        <Text color={t.sub} size={12}>
+                          Muted — Liqrai can&apos;t hear you
+                        </Text>
+                      </Box>
+                    </>
                   ) : live.phase === "speaking" ? (
                     <>
-                      <SpeakingWave color={t.accent} />
+                      <Box height={22} justify="center" width={46}>
+                        <LiveWave
+                          color={t.accent}
+                          level={live.level}
+                          style={{ width: "100%" }}
+                          waveStyle={{ flex: 1 }}
+                        />
+                      </Box>
                       <Box flex={1}>
                         <Text color={t.sub} size={12}>
                           Speaking
@@ -1255,7 +1483,14 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                     </>
                   ) : (
                     <>
-                      <SpeakingWave color={t.accent} />
+                      <Box height={22} justify="center" width={46}>
+                        <LiveWave
+                          color={t.sub}
+                          level={live.level}
+                          style={{ width: "100%" }}
+                          waveStyle={{ flex: 1 }}
+                        />
+                      </Box>
                       <Box flex={1}>
                         <Text color={t.sub} size={12}>
                           Listening — just talk
@@ -1264,6 +1499,21 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                     </>
                   )}
                 </Box>
+
+                <Tap onPress={live.toggleMute} scale={0.9}>
+                  <Box
+                    align="center"
+                    bg={live.muted ? t.chip : t.accentSoft}
+                    borderColor={live.muted ? t.line : t.accentMid}
+                    borderWidth={1}
+                    height={38}
+                    justify="center"
+                    rounded={19}
+                    width={38}
+                  >
+                    <IconMic color={live.muted ? t.sub : t.accent} size={17} />
+                  </Box>
+                </Tap>
               </Box>
             ) : mic.phase !== "idle" ? (
               <Box align="center" direction="row" gap={10} paddingX={12}>
@@ -1411,7 +1661,17 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                 ) : (
                   <>
                     {book ? (
-                      <Tap onPress={startLive} scale={0.92}>
+                      <Pressable
+                        onPress={startLive}
+                        accessibilityRole="button"
+                        accessibilityLabel="Talk to Liqrai"
+                        style={{
+                          minWidth: 48,
+                          minHeight: 48,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
                         <Box
                           align="center"
                           bg={t.accentSoft}
@@ -1424,7 +1684,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
                         >
                           <IconWave color={t.accent} size={18} />
                         </Box>
-                      </Tap>
+                      </Pressable>
                     ) : null}
                     <Tap onPress={startVoice} scale={0.92}>
                       <Box
