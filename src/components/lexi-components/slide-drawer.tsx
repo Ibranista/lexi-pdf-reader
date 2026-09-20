@@ -1,7 +1,16 @@
-import type { ReactNode } from "react";
+import type { GestureType } from "react-native-gesture-handler";
+import type { MutableRefObject, ReactNode } from "react";
 import type { LayoutChangeEvent } from "react-native";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Keyboard, StyleSheet, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, {
@@ -28,6 +37,13 @@ const FAIL_Y = 26;
 const FLING_VELOCITY = 450;
 const COMMIT_TRAVEL = 0.25;
 const SCRIM_OPACITY = 0.45;
+
+type DrawerGesture = MutableRefObject<GestureType | undefined> | null;
+
+const DrawerGestureContext = createContext<DrawerGesture>(null);
+
+export const useDrawerGesture = (): DrawerGesture =>
+  useContext(DrawerGestureContext);
 
 export function SlideDrawer({
   children,
@@ -80,6 +96,7 @@ export function SlideDrawer({
      while this renders — which is the only thing the rule is guarding.
      eslint-disable-next-line is no use here: it flags each builder call. */
   /* eslint-disable react-hooks/refs */
+  const panRef = useRef<GestureType | undefined>(undefined);
   const pan = useMemo(() => {
     const settle = (next: boolean, velocity: number) => {
       "worklet";
@@ -95,6 +112,7 @@ export function SlideDrawer({
 
     return (
       Gesture.Pan()
+        .withRef(panRef)
         .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
         .failOffsetY([-FAIL_Y, FAIL_Y])
         .onTouchesDown((event, manager) => {
@@ -171,7 +189,9 @@ export function SlideDrawer({
             pointerEvents={arrived ? "auto" : "none"}
             style={[StyleSheet.absoluteFill, panelStyle]}
           >
-            {renderPanel()}
+            <DrawerGestureContext.Provider value={panRef}>
+              {renderPanel()}
+            </DrawerGestureContext.Provider>
           </Reanimated.View>
         </Reanimated.View>
       </GestureDetector>
