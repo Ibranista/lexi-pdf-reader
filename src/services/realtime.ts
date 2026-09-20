@@ -2,11 +2,26 @@ import { api } from "@/utils/axios";
 import type { ExplainStyle } from "@/stores/app-store";
 import { asQuotaError, type AiQuota } from "@/services/lexi-ai";
 
-const CALLS_URL = "https://api.openai.com/v1/realtime/calls";
+const LIVE_URL =
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
 
-export const EVENT_CHANNEL = "oai-events";
+export const liveSocketUrl = (token: string) =>
+  `${LIVE_URL}?access_token=${encodeURIComponent(token)}`;
+
+export const liveSetupMessage = (model: string) => ({
+  setup: {
+    model: model.startsWith("models/") ? model : `models/${model}`,
+  },
+});
+
+export const liveAudioMessage = (base64Pcm: string) => ({
+  realtimeInput: {
+    audio: { data: base64Pcm, mimeType: "audio/pcm;rate=16000" },
+  },
+});
 
 export interface RealtimeSession {
+  provider?: "gemini";
   clientSecret: string;
   expiresAt: number | null;
   model: string;
@@ -39,28 +54,6 @@ export async function openRealtimeSession(
   }
 }
 
-export async function exchangeSdp(
-  offer: string,
-  clientSecret: string,
-): Promise<string> {
-  const response = await fetch(CALLS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${clientSecret}`,
-      "Content-Type": "application/sdp",
-    },
-    body: offer,
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(
-      `Couldn't open the voice line (${response.status}). ${detail.slice(0, 200)}`,
-    );
-  }
-  return response.text();
-}
-
 export async function recordRealtimeTurn(input: {
   docKey: string;
   sessionId: string;
@@ -84,21 +77,17 @@ export async function recordRealtimeTurn(input: {
   }
 }
 
-export interface RealtimeEvent {
-  type: string;
-  delta?: string;
-  transcript?: string;
+export interface LiveServerMessage {
+  setupComplete?: object;
+  serverContent?: {
+    modelTurn?: {
+      parts?: { inlineData?: { data?: string; mimeType?: string } }[];
+    };
+    inputTranscription?: { text?: string };
+    outputTranscription?: { text?: string };
+    interrupted?: boolean;
+    turnComplete?: boolean;
+  };
+  goAway?: { timeLeft?: string };
   error?: { message?: string };
-  response?: { status?: string };
 }
-
-export const isTranscriptDelta = (type: string) =>
-  type === "response.output_audio_transcript.delta" ||
-  type === "response.audio_transcript.delta";
-
-export const isTranscriptDone = (type: string) =>
-  type === "response.output_audio_transcript.done" ||
-  type === "response.audio_transcript.done";
-
-export const isUserTranscript = (type: string) =>
-  type === "conversation.item.input_audio_transcription.completed";
