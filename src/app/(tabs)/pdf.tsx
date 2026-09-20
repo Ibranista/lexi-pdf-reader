@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Animated,
   AppState,
+  BackHandler,
   Dimensions,
   Easing,
   Platform,
@@ -142,6 +143,9 @@ export default function PdfViewerScreen() {
   const readingVisit = useRef({ uri, page: savedPageFor(uri), startedAt: 0 });
   const appIsActive = useRef(AppState.currentState === "active");
   const [error, setError] = useState<string | null>(null);
+  const [reflowPainted, setReflowPainted] = useState(false);
+  const pageShown =
+    mode === "reflow" ? reflowPainted : pageCount > 0 && !error;
   const [immersive, setImmersive] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -403,6 +407,66 @@ export default function PdfViewerScreen() {
     setSearchQuery("");
     setSearchResults([]);
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBack = () => {
+        if (lexiOpen) {
+          setLexiOpen(false);
+          setLexiAsk(undefined);
+          return true;
+        }
+        if (filingOpen) {
+          setFilingOpen(false);
+          return true;
+        }
+        if (summary !== "closed") {
+          setSummary("closed");
+          return true;
+        }
+        if (translating) {
+          setTranslating(null);
+          setSelection(null);
+          setClearSelSeq((n) => n + 1);
+          return true;
+        }
+        if (openClaim) {
+          setOpenClaim(null);
+          return true;
+        }
+        if (openNoteId) {
+          setOpenNoteId(null);
+          return true;
+        }
+        if (selection) {
+          setSelection(null);
+          setClearSelSeq((n) => n + 1);
+          return true;
+        }
+        if (searchOpen) {
+          closeSearch();
+          return true;
+        }
+        if (outlineOpen) {
+          setOutlineOpen(false);
+          return true;
+        }
+        return false;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBack);
+      return () => sub.remove();
+    }, [
+      filingOpen,
+      lexiOpen,
+      openClaim,
+      openNoteId,
+      outlineOpen,
+      searchOpen,
+      selection,
+      summary,
+      translating,
+    ]),
+  );
 
   const goToPage = (requestedPage: number) => {
     const nextPage = clampPage(requestedPage);
@@ -705,6 +769,7 @@ export default function PdfViewerScreen() {
                 setPage(nextPage);
                 setApp({ page: nextPage });
               }}
+              onFirstPaint={() => setReflowPainted(true)}
               onIndexed={() => setIndexed(true)}
               onContext={
                 aiOn && docKey
@@ -924,7 +989,8 @@ export default function PdfViewerScreen() {
 
       <FocusChrome onExit={toggleFocus} pillVisible={immersive} />
 
-      {!immersive &&
+      {pageShown &&
+      !immersive &&
       !focusOn &&
       !searchOpen &&
       summary === "closed" &&
@@ -942,6 +1008,7 @@ export default function PdfViewerScreen() {
           entries={outline}
           handleVisible={!immersive}
           hintKey={uri}
+          hintReady={pageShown}
           onClose={() => setOutlineOpen(false)}
           onGoPage={(target) => {
             setOutlineOpen(false);

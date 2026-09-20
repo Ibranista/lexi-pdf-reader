@@ -39,9 +39,9 @@ const SPRING = {
   restSpeedThreshold: 0.02,
   stiffness: 450,
 } as const;
-const PEEK_PX = 26;
-const PEEK_OUT = { duration: 260, easing: Easing.out(Easing.cubic) } as const;
-const PEEK_BACK = { damping: 15, mass: 0.6, stiffness: 190 } as const;
+const NUDGE_PX = 8;
+const NUDGE_OUT = { duration: 260, easing: Easing.inOut(Easing.quad) } as const;
+const NUDGE_BACK = { duration: 340, easing: Easing.inOut(Easing.quad) } as const;
 const PEEK_DELAY = 900;
 const ACTIVATE_X = 12;
 const FAIL_Y = 26;
@@ -65,6 +65,7 @@ type ListProps = {
 export function PdfOutlineDrawer({
   handleVisible = true,
   hintKey,
+  hintReady = true,
   onClose,
   onOpen,
   open,
@@ -72,6 +73,7 @@ export function PdfOutlineDrawer({
 }: ListProps & {
   handleVisible?: boolean;
   hintKey: string;
+  hintReady?: boolean;
   onClose: () => void;
   onOpen: () => void;
   open: boolean;
@@ -83,6 +85,7 @@ export function PdfOutlineDrawer({
   const progress = useSharedValue(open ? 1 : 0);
   const start = useSharedValue(open ? 1 : 0);
   const active = useSharedValue(false);
+  const nudge = useSharedValue(0);
   const widthSV = useSharedValue(panelWidth);
   useEffect(() => {
     widthSV.value = panelWidth;
@@ -167,17 +170,19 @@ export function PdfOutlineDrawer({
       progress.value = withSpring(open ? 1 : 0, SPRING);
       return;
     }
-    if (open || peeked.has(hintKey)) return;
+    if (open || !hintReady || peeked.has(hintKey)) return;
     peeked.add(hintKey);
-    progress.value = withDelay(
+    nudge.value = withDelay(
       PEEK_DELAY,
       withSequence(
-        withTiming(PEEK_PX / (widthSV.value || 1), PEEK_OUT),
-        withSpring(0, PEEK_BACK),
+        withTiming(NUDGE_PX, NUDGE_OUT),
+        withTiming(0, NUDGE_BACK),
+        withTiming(NUDGE_PX * 0.55, NUDGE_OUT),
+        withTiming(0, NUDGE_BACK),
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hintKey, open]);
+  }, [hintKey, hintReady, open]);
 
   const scrimStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
@@ -194,7 +199,9 @@ export function PdfOutlineDrawer({
     zIndex: progress.value === 0 ? 39 : 40,
   }));
   const handleStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: Math.max(progress.value, 0) * widthSV.value }],
+    transform: [
+      { translateX: Math.max(progress.value, 0) * widthSV.value + nudge.value },
+    ],
   }));
 
   return (

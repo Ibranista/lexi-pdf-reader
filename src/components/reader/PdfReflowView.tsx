@@ -2314,6 +2314,7 @@ interface Props {
   openCheckId?: string | null;
   onCheckPress?: (id: string) => void;
   onIndexed?: () => void;
+  onFirstPaint?: () => void;
   onOutline?: (entries: PdfOutlineEntry[]) => void;
   onWordCounts?: (counts: number[]) => void;
   onContext?: (pages: { page: number; text: string }[], done: boolean) => void;
@@ -2386,6 +2387,7 @@ export function PdfReflowView({
   onSelection,
   onSingleTap,
   onIndexed,
+  onFirstPaint,
   onOutline,
   onWordCounts,
   onContext,
@@ -2611,7 +2613,10 @@ export function PdfReflowView({
                 pages?: { page: number; text: string }[];
                 done?: boolean;
               };
-              if (msg.type === "firstpaint") setStatus("ready");
+              if (msg.type === "firstpaint") {
+                setStatus("ready");
+                onFirstPaint?.();
+              }
               else if (msg.type === "page" && msg.page)
                 onPageChange?.(msg.page);
               else if (msg.type === "highlighttap")

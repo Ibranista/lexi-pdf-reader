@@ -224,6 +224,18 @@ function citedHighlight(reply: string, highlights: Annotation[]) {
 export function LexiBubble({ onPress }: { onPress: () => void }) {
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
+  const entry = useSharedValue(0);
+  useEffect(() => {
+    entry.value = withDelay(
+      120,
+      withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const entryStyle = useAnimatedStyle(() => ({
+    opacity: entry.value,
+    transform: [{ translateY: (1 - entry.value) * 10 }],
+  }));
   return (
     <Tap
       onPress={onPress}
@@ -235,6 +247,7 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
         zIndex: 31,
       }}
     >
+      <Reanimated.View style={entryStyle}>
       <Box
         align="center"
         bg={t.card}
@@ -259,6 +272,7 @@ export function LexiBubble({ onPress }: { onPress: () => void }) {
           Hey Liqrai
         </Text>
       </Box>
+      </Reanimated.View>
     </Tap>
   );
 }
