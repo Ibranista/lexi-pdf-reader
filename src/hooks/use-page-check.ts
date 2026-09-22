@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { checkPage, type FlaggedClaim } from "@/services/fact-check";
 import { useAppStore } from "@/stores/app-store";
+import { useIsOnline } from "@/utils/connectivity";
 
 const SETTLE_MS = 1500;
 
@@ -26,16 +27,18 @@ export function usePageCheck({
 }): PageCheckResult {
   const on = useAppStore((s) => s.factCheck);
   const aiOn = useAppStore((s) => s.aiOn);
+  const online = useIsOnline();
 
   const [settled, setSettled] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!on || !aiOn) return;
+    if (!on || !aiOn || !online) return;
     const timer = setTimeout(() => setSettled(page), SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [aiOn, on, page]);
+  }, [aiOn, on, online, page]);
 
-  const ready = on && aiOn && settled === page && Boolean(docKey) && text.length > 0;
+  const ready =
+    on && aiOn && online && settled === page && Boolean(docKey) && text.length > 0;
 
   const { data, isFetching } = useQuery({
     enabled: ready,

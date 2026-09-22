@@ -25,6 +25,7 @@ import { BOOK_PAGES, chapterOf, PARAGRAPHS } from "@/constants/library";
 import { LINE_SPACING, useAppStore, useToastStore } from "@/stores/app-store";
 import { serifFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
+import { useIsOnline } from "@/utils/connectivity";
 
 export default function ReaderScreen() {
   const t = useProtoTheme();
@@ -32,6 +33,7 @@ export default function ReaderScreen() {
   const params = useLocalSearchParams<{ focus?: string; resume?: string }>();
   const showToast = useToastStore((s) => s.showToast);
   const app = useAppStore();
+  const online = useIsOnline();
 
   const [controls, setControls] = useState(false);
   const [toc, setToc] = useState(false);
@@ -369,7 +371,7 @@ export default function ReaderScreen() {
         />
       ) : null}
 
-      {!overlayOpen && !focusMode && app.aiOn ? (
+      {!overlayOpen && !focusMode && app.aiOn && online ? (
         <LexiBubble
           onPress={() => {
             setLexiOpen(true);

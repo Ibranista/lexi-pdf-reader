@@ -292,17 +292,25 @@ export function Segmented<K extends string>({
 }
 
 export function Toggle({
+  disabled,
   on,
   onToggle,
 }: {
+  disabled?: boolean;
   on: boolean;
   onToggle: () => void;
 }) {
   const t = useProtoTheme();
   const off = t.dark ? "rgba(241,235,226,.2)" : "rgba(32,27,21,.18)";
   return (
-    <Pressable onPress={onToggle}>
-      <Box bg={on ? t.accent : off} height={28} rounded={14} width={46}>
+    <Pressable disabled={disabled} onPress={onToggle}>
+      <Box
+        bg={on ? t.accent : off}
+        height={28}
+        rounded={14}
+        style={disabled ? { opacity: 0.45 } : undefined}
+        width={46}
+      >
         <Box
           bg="#FFFFFF"
           height={24}

@@ -26,6 +26,7 @@ import { useAppStore, useToastStore } from "@/stores/app-store";
 import { accountLabel, useAuthStore } from "@/stores/auth-store";
 import type { ThemeMode } from "@/theme/proto";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
+import { useIsOnline } from "@/utils/connectivity";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const ZOOM_TICKS = [100];
@@ -53,6 +54,7 @@ export const SettingsPanel = memo(function SettingsPanel({
   const registerStop = useCallback((stop: () => void) => { stopPreview.current = stop; }, []);
   useEffect(() => { if (!visible) stopPreview.current(); }, [visible]);
   const t = useProtoTheme();
+  const online = useIsOnline();
   const showToast = useToastStore((s) => s.showToast);
   const mode = useThemeModeStore((s) => s.mode);
   const setMode = useThemeModeStore((s) => s.setMode);
@@ -115,7 +117,9 @@ export const SettingsPanel = memo(function SettingsPanel({
                   AI assistance
                 </Text>
                 <Text color={t.sub} size={12} style={{ marginTop: 2 }}>
-                  Summaries, translation & context
+                  {online
+                    ? "Summaries, translation & context"
+                    : "Summaries, translation & context — needs internet to run"}
                 </Text>
               </Box>
               <Toggle

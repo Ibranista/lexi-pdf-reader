@@ -37,6 +37,7 @@ import type {
 import { useAppStore } from "@/stores/app-store";
 import { atkinsonFamily, comicFamily, hankenFamily } from "@/theme/app-fonts";
 import { useProtoTheme, useThemeModeStore } from "@/theme/proto";
+import { useIsOnline } from "@/utils/connectivity";
 
 type ThemeMode = "auto" | "dark" | "light";
 type ViewMode = "page" | "reflow";
@@ -282,6 +283,7 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
     const t = useProtoTheme();
     const insets = useSafeAreaInsets();
     const app = useAppStore();
+    const online = useIsOnline();
     const themeMode = useThemeModeStore((s) => s.mode);
     const setThemeMode = useThemeModeStore((s) => s.setMode);
 
@@ -590,10 +592,15 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         </Box>
 
         <Row
-          sub="Underline claims worth checking as you read. Skips fiction; uses a credit per page."
+          sub={
+            online
+              ? "Underline claims worth checking as you read. Skips fiction; uses a credit per page."
+              : "Needs an internet connection — reconnect to check facts as you read."
+          }
           title="Check facts"
         >
           <Toggle
+            disabled={!online}
             on={app.factCheck}
             onToggle={() => app.set({ factCheck: !app.factCheck })}
           />
@@ -654,7 +661,11 @@ export const ReaderSettingsSheet = forwardRef<BottomSheetModalReference, Props>(
         ) : null}
 
         <Row
-          sub="Explain, summarize and define as you read"
+          sub={
+            online
+              ? "Explain, summarize and define as you read"
+              : "Explain, summarize and define as you read — needs internet to run"
+          }
           title="AI companion"
         >
           <Toggle on={app.aiOn} onToggle={() => app.set({ aiOn: !app.aiOn })} />

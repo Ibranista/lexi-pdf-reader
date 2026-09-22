@@ -79,6 +79,7 @@ import { useAppStore, useToastStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { readerBodyFont, sansFamily } from "@/theme/app-fonts";
 import { useProtoTheme } from "@/theme/proto";
+import { useIsOnline } from "@/utils/connectivity";
 import { alignWords, tokenize, type WordSpan } from "@/utils/spoken-words";
 
 interface LexiMsg {
@@ -382,6 +383,7 @@ export function LexiSheet({
   const t = useProtoTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const online = useIsOnline();
   const explStyle = useAppStore((s) => s.explStyle);
   const voiceId = useAppStore((s) => s.voiceId);
   const fontFam = useAppStore((s) => s.fontFam);
@@ -1147,7 +1149,7 @@ a.addEventListener('ended',done);a.addEventListener('error',done);
       return (
         <VoiceController live={live} onEnd={endLive} onOpen={() => onOpen?.()} />
       );
-    return bubbleVisible ? (
+    return bubbleVisible && online ? (
       <LexiBubble
         onPress={() => onOpen?.()}
         onTalk={book ? startLive : undefined}
